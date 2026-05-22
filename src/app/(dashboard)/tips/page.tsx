@@ -1,20 +1,18 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
-const tipData = [
-  {id:'TIP-001',subject:'Çanakkale Boğazı\'nda Gemi Trafiği Durdu',source:'Anonim',sourceType:'email',priority:'urgent',status:'new',reporter:null,date:'2026-05-23 01:45',content:'Boğazda büyük bir gemi arızası nedeniyle trafik durdu. Yaklaşık 20 gemi bekliyor.'},
-  {id:'TIP-002',subject:'Belediye Başkanı İstifa Edecek İddiaları',source:'Güvenilir Kaynak',sourceType:'phone',priority:'high',status:'new',reporter:null,date:'2026-05-23 00:30',content:'Belediye başkanının önümüzdeki hafta istifa edeceği iddia ediliyor.'},
-  {id:'TIP-003',subject:'Tarım Alanlarında Kaçak Yapılaşma',source:'Vatandaş İhbarı',sourceType:'email',priority:'high',status:'investigating',reporter:'Mehmet K.',date:'2026-05-22 18:20',content:'Merkeze bağlı köyde tarım arazileri üzerine kaçak yapılar inşa ediliyor.'},
-  {id:'TIP-004',subject:'Okulda Gıda Zehirlenmesi Şüphesi',source:'Veli İhbarı',sourceType:'phone',priority:'urgent',status:'new',reporter:null,date:'2026-05-22 16:45',content:'İlköğretim okulunda 15 öğrenci yemekten sonra hastaneye kaldırıldı.'},
-  {id:'TIP-005',subject:'Sahilde Petrol Sızıntısı',source:'Çevreci Grup',sourceType:'email',priority:'high',status:'investigating',reporter:'Ayşe T.',date:'2026-05-22 14:00',content:'Kepez sahilinde denize petrol sızıntısı tespit edildi.'},
-  {id:'TIP-006',subject:'Festival Tarihleri Değişti',source:'Belediye Kaynağı',sourceType:'email',priority:'normal',status:'verified',reporter:'Ali R.',date:'2026-05-22 12:30',content:'Troya festivali tarihleri 2 hafta öne alındı.'},
-  {id:'TIP-007',subject:'Yeni Alışveriş Merkezi Açılıyor',source:'Basın Bülteni',sourceType:'email',priority:'low',status:'verified',reporter:'Zeynep M.',date:'2026-05-22 10:00',content:'Şehir merkezinde yeni AVM gelecek ay açılacak.'},
-  {id:'TIP-008',subject:'Su Kesintisi Planlanıyor',source:'Kurum Kaynağı',sourceType:'email',priority:'normal',status:'investigating',reporter:'Can D.',date:'2026-05-21 16:00',content:'Hafta sonu boyunca planlı su kesintisi uygulanacak.'},
-  {id:'TIP-009',subject:'Arkeolojik Kazıda Önemli Buluş',source:'Akademik Kaynak',sourceType:'phone',priority:'high',status:'converted',reporter:'Elif Y.',date:'2026-05-21 14:30',content:'Troya kazılarında yeni bir katman keşfedildi.'},
-  {id:'TIP-010',subject:'Trafik Kazasında Yaşanan Sorunlar',source:'Görgü Tanığı',sourceType:'phone',priority:'urgent',status:'new',reporter:null,date:'2026-05-21 09:00',content:'Ana yolda zincirleme kaza, ambulans ulaşamıyor.'},
-  {id:'TIP-011',subject:'Orman Yangını Riski Uyarısı',source:'Meteoroloji',sourceType:'email',priority:'high',status:'converted',reporter:'Burak S.',date:'2026-05-20 15:00',content:'Sıcaklar nedeniyle bölgede yangın riski çok yüksek.'},
-  {id:'TIP-012',subject:'Gençlik Festivali Hazırlıkları',source:'Organizatör',sourceType:'email',priority:'low',status:'rejected',reporter:null,date:'2026-05-20 11:00',content:'Gençlik festivali için hazırlıklar tamamlandı. Reklam amaçlı ihbar.'},
-];
+type Tip = {
+  id: string;
+  tipNumber: string;
+  subject: string;
+  content: string;
+  source: string;
+  sourceType: string;
+  priority: string;
+  status: string;
+  reporter?: { name: string } | null;
+  createdAt: string;
+};
 
 const columns = [
   {key:'new',title:'Yeni İhbarlar',color:'var(--primary)'},
@@ -41,14 +39,70 @@ const statusLabels: Record<string,{label:string;cls:string}> = {
 
 export default function TipsPage() {
   const [view, setView] = useState<'kanban'|'list'>('kanban');
-  const [selected, setSelected] = useState<typeof tipData[0]|null>(null);
+  const [selected, setSelected] = useState<Tip|null>(null);
+  const [tips, setTips] = useState<Tip[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isAdding, setIsAdding] = useState(false);
+  const [newTip, setNewTip] = useState({ subject: '', content: '', source: '', priority: 'normal', sourceType: 'phone' });
+
+  useEffect(() => {
+    fetchTips();
+  }, []);
+
+  const fetchTips = async () => {
+    try {
+      const res = await fetch('/api/tips');
+      const data = await res.json();
+      setTips(data);
+    } catch (error) {
+      console.error('Error fetching tips:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateTipStatus = async (id: string, newStatus: string) => {
+    try {
+      const res = await fetch(`/api/tips/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        setTips(tips.map(t => t.id === id ? { ...t, status: newStatus } : t));
+        if (selected?.id === id) {
+          setSelected({ ...selected, status: newStatus });
+        }
+      }
+    } catch (error) {
+      console.error('Error updating tip:', error);
+    }
+  };
+
+  const handleCreateTip = async () => {
+    try {
+      const res = await fetch('/api/tips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newTip),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setTips([created, ...tips]);
+        setIsAdding(false);
+        setNewTip({ subject: '', content: '', source: '', priority: 'normal', sourceType: 'phone' });
+      }
+    } catch (error) {
+      console.error('Error creating tip:', error);
+    }
+  };
 
   const stats = [
-    {label:'Yeni',value:tipData.filter(t=>t.status==='new').length,color:'var(--primary)',icon:'🆕'},
-    {label:'İnceleniyor',value:tipData.filter(t=>t.status==='investigating').length,color:'var(--info)',icon:'🔍'},
-    {label:'Doğrulandı',value:tipData.filter(t=>t.status==='verified').length,color:'var(--success)',icon:'✅'},
-    {label:'Habere Dönüştü',value:156,color:'var(--accent)',icon:'📰'},
-    {label:'Reddedildi',value:43,color:'var(--error)',icon:'❌'},
+    {label:'Yeni',value:tips.filter(t=>t.status==='new').length,color:'var(--primary)',icon:'🆕'},
+    {label:'İnceleniyor',value:tips.filter(t=>t.status==='investigating').length,color:'var(--info)',icon:'🔍'},
+    {label:'Doğrulandı',value:tips.filter(t=>t.status==='verified').length,color:'var(--success)',icon:'✅'},
+    {label:'Habere Dönüştü',value:tips.filter(t=>t.status==='converted').length,color:'var(--accent)',icon:'📰'},
+    {label:'Reddedildi',value:tips.filter(t=>t.status==='rejected').length,color:'var(--error)',icon:'❌'},
   ];
 
   return (
@@ -63,7 +117,7 @@ export default function TipsPage() {
             <button className={`tab ${view==='kanban'?'active':''}`} onClick={()=>setView('kanban')}>Kanban</button>
             <button className={`tab ${view==='list'?'active':''}`} onClick={()=>setView('list')}>Liste</button>
           </div>
-          <button className="btn btn-primary">+ Manuel İhbar</button>
+          <button className="btn btn-primary" onClick={()=>setIsAdding(true)}>+ Manuel İhbar</button>
         </div>
       </div>
 
@@ -73,16 +127,18 @@ export default function TipsPage() {
             <div className="stat-card-top">
               <span style={{fontSize:'var(--text-xl)'}}>{s.icon}</span>
             </div>
-            <div className="stat-card-value" style={{fontSize:'var(--text-2xl)'}}>{s.value}</div>
+            <div className="stat-card-value" style={{fontSize:'var(--text-2xl)'}}>{loading ? '-' : s.value}</div>
             <div className="stat-card-label">{s.label}</div>
           </div>
         ))}
       </div>
 
-      {view === 'kanban' ? (
+      {loading ? (
+        <div style={{textAlign:'center', padding:'var(--space-8)'}}>Yükleniyor...</div>
+      ) : view === 'kanban' ? (
         <div className="kanban-board">
           {columns.map(col => {
-            const items = tipData.filter(t => t.status === col.key);
+            const items = tips.filter(t => t.status === col.key);
             return (
               <div key={col.key} className="kanban-column">
                 <div className="kanban-column-header">
@@ -96,20 +152,26 @@ export default function TipsPage() {
                   {items.map(tip => (
                     <div key={tip.id} className="kanban-card" onClick={()=>setSelected(tip)} style={{cursor:'pointer'}}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'start',marginBottom:'var(--space-2)'}}>
-                        <span className={`badge ${priorityMap[tip.priority].cls}`}>{priorityMap[tip.priority].label}</span>
-                        <span style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>{tip.id}</span>
+                        <span className={`badge ${priorityMap[tip.priority]?.cls || 'badge-primary'}`}>{priorityMap[tip.priority]?.label || tip.priority}</span>
+                        <span style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>{tip.tipNumber}</span>
                       </div>
                       <div className="kanban-card-title">{tip.subject}</div>
                       <div className="kanban-card-desc">{tip.content}</div>
                       <div className="kanban-card-footer">
                         <div style={{display:'flex',alignItems:'center',gap:'var(--space-2)'}}>
-                          <span style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>📧 {tip.source}</span>
+                          <span style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>
+                            {tip.sourceType === 'email' ? '📧' : '📞'} {tip.source}
+                          </span>
                         </div>
                         {tip.reporter && (
-                          <div className="avatar avatar-sm" style={{background:'var(--primary-gradient)',color:'white',fontSize:9}}>{tip.reporter.split(' ').map(n=>n[0]).join('')}</div>
+                          <div className="avatar avatar-sm" style={{background:'var(--primary-gradient)',color:'white',fontSize:9}}>
+                            {tip.reporter.name.split(' ').map(n=>n[0]).join('')}
+                          </div>
                         )}
                       </div>
-                      <div style={{fontSize:'var(--text-xs)',color:'var(--text-muted)',marginTop:'var(--space-2)'}}>{tip.date}</div>
+                      <div style={{fontSize:'var(--text-xs)',color:'var(--text-muted)',marginTop:'var(--space-2)'}}>
+                        {new Date(tip.createdAt).toLocaleDateString('tr-TR')}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -132,15 +194,15 @@ export default function TipsPage() {
               </tr>
             </thead>
             <tbody>
-              {tipData.map(tip=>(
+              {tips.map(tip=>(
                 <tr key={tip.id} onClick={()=>setSelected(tip)} style={{cursor:'pointer'}}>
-                  <td><span className="font-mono" style={{color:'var(--primary-light)'}}>{tip.id}</span></td>
+                  <td><span className="font-mono" style={{color:'var(--primary-light)'}}>{tip.tipNumber}</span></td>
                   <td style={{maxWidth:280,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{tip.subject}</td>
                   <td><span style={{fontSize:'var(--text-xs)'}}>{tip.source}</span></td>
-                  <td><span className={`badge ${priorityMap[tip.priority].cls}`}>{priorityMap[tip.priority].label}</span></td>
-                  <td>{tip.reporter || <span style={{color:'var(--text-muted)'}}>—</span>}</td>
-                  <td><span className={`badge ${statusLabels[tip.status].cls}`}>{statusLabels[tip.status].label}</span></td>
-                  <td style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>{tip.date}</td>
+                  <td><span className={`badge ${priorityMap[tip.priority]?.cls}`}>{priorityMap[tip.priority]?.label}</span></td>
+                  <td>{tip.reporter?.name || <span style={{color:'var(--text-muted)'}}>—</span>}</td>
+                  <td><span className={`badge ${statusLabels[tip.status]?.cls}`}>{statusLabels[tip.status]?.label}</span></td>
+                  <td style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>{new Date(tip.createdAt).toLocaleDateString('tr-TR')}</td>
                   <td><button className="btn btn-ghost btn-sm" onClick={(e)=>{e.stopPropagation();setSelected(tip)}}>Detay</button></td>
                 </tr>
               ))}
@@ -149,6 +211,7 @@ export default function TipsPage() {
         </div>
       )}
 
+      {/* DETAY MODALI */}
       {selected && (
         <>
           <div className="modal-backdrop" onClick={()=>setSelected(null)} />
@@ -156,14 +219,14 @@ export default function TipsPage() {
             <div className="modal-header">
               <div>
                 <div className="modal-title">{selected.subject}</div>
-                <div style={{fontSize:'var(--text-xs)',color:'var(--text-muted)',marginTop:4}}>{selected.id} • {selected.date}</div>
+                <div style={{fontSize:'var(--text-xs)',color:'var(--text-muted)',marginTop:4}}>{selected.tipNumber} • {new Date(selected.createdAt).toLocaleString('tr-TR')}</div>
               </div>
               <button className="modal-close" onClick={()=>setSelected(null)}>✕</button>
             </div>
             <div className="modal-body">
               <div style={{display:'flex',gap:'var(--space-3)',marginBottom:'var(--space-4)',flexWrap:'wrap'}}>
-                <span className={`badge ${priorityMap[selected.priority].cls}`}>Öncelik: {priorityMap[selected.priority].label}</span>
-                <span className={`badge ${statusLabels[selected.status].cls}`}>Durum: {statusLabels[selected.status].label}</span>
+                <span className={`badge ${priorityMap[selected.priority]?.cls}`}>Öncelik: {priorityMap[selected.priority]?.label}</span>
+                <span className={`badge ${statusLabels[selected.status]?.cls}`}>Durum: {statusLabels[selected.status]?.label}</span>
                 <span className="badge badge-info">Kaynak: {selected.sourceType === 'email' ? '📧 E-posta' : '📞 Telefon'}</span>
               </div>
               <div className="form-group">
@@ -176,18 +239,64 @@ export default function TipsPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">Atanan Muhabir</label>
-                <div style={{padding:'var(--space-3)',background:'var(--surface-2)',borderRadius:'var(--border-radius)',fontSize:'var(--text-sm)'}}>{selected.reporter || 'Henüz atanmadı'}</div>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Editör Notu</label>
-                <textarea className="form-textarea" placeholder="İhbar hakkında not ekleyin..." rows={3}></textarea>
+                <div style={{padding:'var(--space-3)',background:'var(--surface-2)',borderRadius:'var(--border-radius)',fontSize:'var(--text-sm)'}}>{selected.reporter?.name || 'Henüz atanmadı'}</div>
               </div>
             </div>
             <div className="modal-footer" style={{flexWrap:'wrap'}}>
-              <button className="btn btn-ghost">Muhabir Ata</button>
-              <button className="btn btn-danger btn-sm">Reddet</button>
-              <button className="btn btn-accent">✅ Onayla</button>
-              <button className="btn btn-primary">📰 Habere Dönüştür</button>
+              <button className="btn btn-ghost" onClick={()=>updateTipStatus(selected.id, 'investigating')}>🔍 İncelemeye Al</button>
+              <button className="btn btn-danger btn-sm" onClick={()=>updateTipStatus(selected.id, 'rejected')}>Reddet</button>
+              <button className="btn btn-accent" onClick={()=>updateTipStatus(selected.id, 'verified')}>✅ Doğrula</button>
+              <button className="btn btn-primary" onClick={()=>updateTipStatus(selected.id, 'converted')}>📰 Habere Dönüştür</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* YENİ İHBAR EKLEME MODALI */}
+      {isAdding && (
+        <>
+          <div className="modal-backdrop" onClick={()=>setIsAdding(false)} />
+          <div className="modal" style={{maxWidth:500}}>
+            <div className="modal-header">
+              <div className="modal-title">Yeni Manuel İhbar</div>
+              <button className="modal-close" onClick={()=>setIsAdding(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Konu / Başlık</label>
+                <input className="form-input" value={newTip.subject} onChange={e=>setNewTip({...newTip, subject: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">İçerik Detayı</label>
+                <textarea className="form-textarea" rows={4} value={newTip.content} onChange={e=>setNewTip({...newTip, content: e.target.value})}></textarea>
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Kaynak (İsim/Tel)</label>
+                  <input className="form-input" value={newTip.source} onChange={e=>setNewTip({...newTip, source: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">İletişim Türü</label>
+                  <select className="form-select" value={newTip.sourceType} onChange={e=>setNewTip({...newTip, sourceType: e.target.value})}>
+                    <option value="phone">Telefon</option>
+                    <option value="email">E-posta</option>
+                    <option value="social">Sosyal Medya</option>
+                  </select>
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Öncelik Durumu</label>
+                <select className="form-select" value={newTip.priority} onChange={e=>setNewTip({...newTip, priority: e.target.value})}>
+                  <option value="low">Düşük</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">Yüksek</option>
+                  <option value="urgent">Acil</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={()=>setIsAdding(false)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleCreateTip}>Kaydet</button>
             </div>
           </div>
         </>
