@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  role      String   @default("user")
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  tips      Tip[]    @relation("TipReporter")
+}
+
+model Tip {
+  id          String   @id @default(uuid())
+  tipNumber   String   @unique // e.g. TIP-001
+  subject     String
+  content     String
+  source      String   // E.g., Anonim, Veli İhbarı
+  sourceType  String   @default("email") // email, phone
+  priority    String   @default("normal") // low, normal, high, urgent
+  status      String   @default("new") // new, investigating, verified, converted, rejected
+  
+  reporterId  String?
+  reporter    User?    @relation("TipReporter", fields: [reporterId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Contact {
+  id        String   @id @default(uuid())
+  firstName String
+  lastName  String
+  email     String   @unique
+  phone     String?
+  company   String?
+  status    String   @default("active") // active, inactive
+  notes     String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Client {
+  id           String   @id @default(uuid())
+  companyName  String
+  contactName  String
+  email        String   @unique
+  phone        String?
+  status       String   @default("active") // active, inactive
+  satisfaction Int      @default(100) // 0-100 score
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
