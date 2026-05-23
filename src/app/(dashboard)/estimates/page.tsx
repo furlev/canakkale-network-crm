@@ -1,231 +1,219 @@
 'use client';
+import { useState, useEffect } from 'react';
 
-import { useState } from 'react';
-
-type EstimateStatus = 'sent' | 'approved' | 'rejected' | 'draft';
-
-interface Estimate {
+type Estimate = {
   id: string;
-  number: string;
-  customer: string;
-  date: string;
-  validUntil: string;
+  estimateNo: string;
+  client?: { companyName: string };
+  clientId: string | null;
   amount: number;
-  status: EstimateStatus;
-}
-
-const estimates: Estimate[] = [
-  { id: '1', number: 'TKL-2024-001', customer: 'Anadolu Medya Grubu', date: '2024-05-10', validUntil: '2024-06-10', amount: 125000, status: 'approved' },
-  { id: '2', number: 'TKL-2024-002', customer: 'Boğaz İletişim Ltd.', date: '2024-05-14', validUntil: '2024-06-14', amount: 68000, status: 'sent' },
-  { id: '3', number: 'TKL-2024-003', customer: 'Ege Yayıncılık A.Ş.', date: '2024-05-17', validUntil: '2024-06-17', amount: 42500, status: 'rejected' },
-  { id: '4', number: 'TKL-2024-004', customer: 'Trakya Dijital Hizmetler', date: '2024-05-20', validUntil: '2024-06-20', amount: 89700, status: 'draft' },
-  { id: '5', number: 'TKL-2024-005', customer: 'Marmara Reklam Ajansı', date: '2024-05-22', validUntil: '2024-06-22', amount: 156200, status: 'approved' },
-  { id: '6', number: 'TKL-2024-006', customer: 'Karadeniz Teknoloji A.Ş.', date: '2024-05-25', validUntil: '2024-06-25', amount: 73000, status: 'sent' },
-];
-
-const statusConfig: Record<EstimateStatus, { label: string; badge: string }> = {
-  sent: { label: 'Gönderildi', badge: 'badge badge-info' },
-  approved: { label: 'Onaylandı', badge: 'badge badge-success' },
-  rejected: { label: 'Reddedildi', badge: 'badge badge-error' },
-  draft: { label: 'Taslak', badge: 'badge badge-warning' },
+  status: string;
+  validUntil?: string;
+  createdAt: string;
 };
 
-function formatCurrency(value: number): string {
-  return '₺' + value.toLocaleString('tr-TR');
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('tr-TR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-}
+type Client = {
+  id: string;
+  companyName: string;
+};
 
 export default function EstimatesPage() {
-  const [searchTerm, setSearchTerm] = useState('');
+  const [estimates, setEstimates] = useState<Estimate[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isAdding, setIsAdding] = useState(false);
+  const [newEstimate, setNewEstimate] = useState({ clientId: '', amount: 0, status: 'draft', validUntil: '' });
 
-  const totalValue = estimates.reduce((sum, e) => sum + e.amount, 0);
-  const approvedValue = estimates.filter((e) => e.status === 'approved').reduce((sum, e) => sum + e.amount, 0);
-  const pendingCount = estimates.filter((e) => e.status === 'sent').length;
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-  const filtered = estimates.filter(
-    (e) =>
-      e.number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      e.customer.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const fetchData = async () => {
+    try {
+      const [estRes, cliRes] = await Promise.all([
+        fetch('/api/estimates'),
+        fetch('/api/clients')
+      ]);
+      setEstimates(await estRes.json());
+      setClients(await cliRes.json());
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateEstimate = async () => {
+    if (!newEstimate.amount) return;
+    try {
+      const res = await fetch('/api/estimates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newEstimate),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        const client = clients.find(c => c.id === created.clientId);
+        created.client = client;
+        
+        setEstimates([created, ...estimates]);
+        setIsAdding(false);
+        setNewEstimate({ clientId: '', amount: 0, status: 'draft', validUntil: '' });
+      }
+    } catch (error) {
+      console.error('Error creating estimate:', error);
+    }
+  };
+
+  const updateStatus = async (id: string, status: string) => {
+    try {
+      const res = await fetch(`/api/estimates/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        setEstimates(estimates.map(e => e.id === id ? { ...e, status } : e));
+      }
+    } catch (error) {
+      console.error('Error updating estimate:', error);
+    }
+  };
+
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Bu teklifi silmek istediğinize emin misiniz?')) return;
+    try {
+      const res = await fetch(`/api/estimates/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setEstimates(estimates.filter(i => i.id !== id));
+      }
+    } catch (error) {
+      console.error('Error deleting estimate:', error);
+    }
+  };
+
+  const totalAmount = estimates.reduce((acc, curr) => acc + curr.amount, 0);
 
   return (
-    <div className="main-content">
-      {/* Header */}
+    <div>
       <div className="page-header">
         <div className="page-header-left">
-          <h1 className="page-title">
-            <span>📋</span> Teklifler
-          </h1>
-          <p className="page-subtitle">Teklif yönetimi</p>
+          <h1 className="page-title">📄 Teklifler</h1>
+          <p className="page-subtitle">Müşterilere sunulan fiyat teklifleri</p>
         </div>
         <div className="page-header-actions">
-          <button className="btn btn-ghost">
-            <span>📥</span> Dışa Aktar
-          </button>
-          <button className="btn btn-primary">
-            <span>+</span> Yeni Teklif
-          </button>
+          <button className="btn btn-primary" onClick={() => setIsAdding(true)}>+ Yeni Teklif</button>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="stats-grid stagger-children">
-        <div className="stat-card primary">
-          <div className="stat-card-top">
-            <div className="stat-card-icon">📊</div>
-            <div className="stat-card-change up">+15%</div>
-          </div>
-          <div className="stat-card-value font-mono counter-animate">{formatCurrency(totalValue)}</div>
-          <div className="stat-card-label">Toplam Teklif Değeri</div>
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-card-label">Toplam Teklif Sayısı</div>
+          <div className="stat-card-value">{loading ? '-' : estimates.length}</div>
         </div>
-        <div className="stat-card success">
-          <div className="stat-card-top">
-            <div className="stat-card-icon">✅</div>
-            <div className="stat-card-change up">+22%</div>
-          </div>
-          <div className="stat-card-value font-mono counter-animate">{formatCurrency(approvedValue)}</div>
-          <div className="stat-card-label">Onaylanan Değer</div>
+        <div className="stat-card" style={{borderTop:'2px solid var(--accent)'}}>
+          <div className="stat-card-label">Toplam Hacim</div>
+          <div className="stat-card-value" style={{color:'var(--accent)'}}>₺{loading ? '-' : totalAmount.toLocaleString('tr-TR')}</div>
         </div>
-        <div className="stat-card info">
-          <div className="stat-card-top">
-            <div className="stat-card-icon">📨</div>
+        <div className="stat-card" style={{borderTop:'2px solid var(--success)'}}>
+          <div className="stat-card-label">Kabul Edilen</div>
+          <div className="stat-card-value" style={{color:'var(--success)'}}>
+            {loading ? '-' : estimates.filter(e => e.status === 'accepted').length}
           </div>
-          <div className="stat-card-value font-mono counter-animate">{pendingCount}</div>
-          <div className="stat-card-label">Yanıt Beklenen</div>
-        </div>
-        <div className="stat-card accent">
-          <div className="stat-card-top">
-            <div className="stat-card-icon">📈</div>
-          </div>
-          <div className="stat-card-value font-mono counter-animate">%67</div>
-          <div className="stat-card-label">Onay Oranı</div>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="data-table-container slide-up">
-        <div className="data-table-header">
-          <div className="data-table-search">
-            <span>🔍</span>
-            <input
-              type="text"
-              placeholder="Teklif ara..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <span className="text-muted" style={{ fontSize: 'var(--text-sm)' }}>
-            {filtered.length} teklif
-          </span>
-        </div>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Teklif No</th>
-              <th>Müşteri</th>
-              <th>Tarih</th>
-              <th>Geçerlilik</th>
-              <th style={{ textAlign: 'right' }}>Tutar</th>
-              <th>Durum</th>
-              <th style={{ textAlign: 'right' }}>İşlemler</th>
-            </tr>
-          </thead>
-          <tbody className="stagger-children">
-            {filtered.map((est) => (
-              <tr key={est.id}>
-                <td>
-                  <span className="font-mono font-semibold" style={{ color: 'var(--primary-light)' }}>
-                    {est.number}
-                  </span>
-                </td>
-                <td>
-                  <div className="flex items-center gap-3">
-                    <div
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: '50%',
-                        background: 'var(--accent-gradient)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        color: '#0a0a0f',
-                        flexShrink: 0,
-                      }}
-                    >
-                      {est.customer.charAt(0)}
-                    </div>
-                    <span className="truncate" style={{ maxWidth: 200 }}>
-                      {est.customer}
-                    </span>
-                  </div>
-                </td>
-                <td className="text-muted">{formatDate(est.date)}</td>
-                <td className="text-muted">{formatDate(est.validUntil)}</td>
-                <td style={{ textAlign: 'right' }}>
-                  <span className="font-mono font-semibold">{formatCurrency(est.amount)}</span>
-                </td>
-                <td>
-                  <span className={statusConfig[est.status].badge}>
-                    <span
-                      className={`badge-dot ${
-                        est.status === 'approved'
-                          ? 'success'
-                          : est.status === 'sent'
-                          ? 'primary'
-                          : est.status === 'rejected'
-                          ? 'error'
-                          : 'warning'
-                      }`}
-                    />
-                    {statusConfig[est.status].label}
-                  </span>
-                </td>
-                <td style={{ textAlign: 'right' }}>
-                  <div className="flex gap-2" style={{ justifyContent: 'flex-end' }}>
-                    <button className="btn btn-ghost btn-sm tooltip" data-tooltip="Görüntüle">👁️</button>
-                    <button className="btn btn-ghost btn-sm tooltip" data-tooltip="Düzenle">✏️</button>
-                    {est.status === 'approved' && (
-                      <button
-                        className="btn btn-accent btn-sm tooltip"
-                        data-tooltip="Faturaya Dönüştür"
-                        style={{ gap: '4px' }}
-                      >
-                        🧾 Faturala
-                      </button>
-                    )}
-                    {est.status === 'draft' && (
-                      <button
-                        className="btn btn-primary btn-sm tooltip"
-                        data-tooltip="Gönder"
-                      >
-                        📤 Gönder
-                      </button>
-                    )}
-                  </div>
-                </td>
+      <div className="data-table-container">
+        {loading ? (
+          <div style={{padding:'var(--space-8)', textAlign:'center'}}>Yükleniyor...</div>
+        ) : estimates.length === 0 ? (
+          <div style={{padding:'var(--space-8)', textAlign:'center', color:'var(--text-muted)'}}>Kayıtlı teklif yok.</div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Teklif No</th>
+                <th>Müşteri</th>
+                <th>Tutar</th>
+                <th>Geçerlilik</th>
+                <th>Durum</th>
+                <th>İşlemler</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="data-table-footer">
-          <span>{filtered.length} kayıt gösteriliyor</span>
-          <div className="pagination">
-            <button className="pagination-btn">‹</button>
-            <button className="pagination-btn active">1</button>
-            <button className="pagination-btn">›</button>
-          </div>
-        </div>
+            </thead>
+            <tbody>
+              {estimates.map((est) => (
+                <tr key={est.id}>
+                  <td><span className="font-mono" style={{color:'var(--primary-light)'}}>{est.estimateNo}</span></td>
+                  <td style={{fontWeight:500}}>{est.client?.companyName || 'Belirtilmemiş'}</td>
+                  <td>₺{est.amount.toLocaleString('tr-TR')}</td>
+                  <td style={{color:'var(--text-muted)'}}>{est.validUntil ? new Date(est.validUntil).toLocaleDateString('tr-TR') : '-'}</td>
+                  <td>
+                    <select 
+                      className="form-select" 
+                      style={{padding:'4px', fontSize:'var(--text-xs)', width:'110px'}} 
+                      value={est.status} 
+                      onChange={(e) => updateStatus(est.id, e.target.value)}
+                    >
+                      <option value="draft">Taslak</option>
+                      <option value="sent">Gönderildi</option>
+                      <option value="accepted">Kabul Edildi</option>
+                      <option value="rejected">Reddedildi</option>
+                    </select>
+                  </td>
+                  <td>
+                    <button className="btn btn-ghost btn-sm" onClick={(e) => handleDelete(est.id, e)}>Sil</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
+
+      {isAdding && (
+        <>
+          <div className="modal-backdrop" onClick={() => setIsAdding(false)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Yeni Teklif Oluştur</h2>
+              <button className="modal-close" onClick={() => setIsAdding(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Müşteri Seçin</label>
+                <select className="form-select" value={newEstimate.clientId} onChange={e=>setNewEstimate({...newEstimate, clientId: e.target.value})}>
+                  <option value="">-- Müşteri Seçin --</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>{c.companyName}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Tutar (₺) *</label>
+                  <input type="number" className="form-input" value={newEstimate.amount} onChange={e=>setNewEstimate({...newEstimate, amount: Number(e.target.value)})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Geçerlilik Tarihi</label>
+                  <input type="date" className="form-input" value={newEstimate.validUntil} onChange={e=>setNewEstimate({...newEstimate, validUntil: e.target.value})} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Durum</label>
+                <select className="form-select" value={newEstimate.status} onChange={e=>setNewEstimate({...newEstimate, status: e.target.value})}>
+                  <option value="draft">Taslak</option>
+                  <option value="sent">Gönderildi</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setIsAdding(false)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleCreateEstimate}>Teklif Oluştur</button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

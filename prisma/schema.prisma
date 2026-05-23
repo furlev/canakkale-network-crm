@@ -61,6 +61,8 @@ model Client {
   satisfaction Int      @default(100) // 0-100 score
   
   projects     Project[]
+  invoices     Invoice[]
+  estimates    Estimate[]
   
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -107,6 +109,46 @@ model Lead {
   value       Float     @default(0)
   status      String    @default("new") // new, contacted, proposal, won, lost
   priority    String    @default("normal") // low, normal, high, urgent
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Invoice {
+  id          String    @id @default(uuid())
+  invoiceNo   String    @unique
+  amount      Float
+  status      String    @default("unpaid") // unpaid, paid, overdue, cancelled
+  dueDate     DateTime?
+  
+  clientId    String?
+  client      Client?   @relation(fields: [clientId], references: [id])
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Estimate {
+  id          String    @id @default(uuid())
+  estimateNo  String    @unique
+  amount      Float
+  status      String    @default("draft") // draft, sent, accepted, rejected
+  validUntil  DateTime?
+  
+  clientId    String?
+  client      Client?   @relation(fields: [clientId], references: [id])
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Expense {
+  id          String    @id @default(uuid())
+  category    String
+  amount      Float
+  description String?
+  receiptUrl  String?
+  date        DateTime  @default(now())
   
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

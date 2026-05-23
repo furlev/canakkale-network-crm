@@ -1,232 +1,227 @@
 'use client';
+import { useState, useEffect } from 'react';
 
-import { useState } from 'react';
-
-type InvoiceStatus = 'paid' | 'pending' | 'overdue' | 'draft';
-type TabKey = 'all' | 'paid' | 'pending' | 'overdue' | 'draft';
-
-interface Invoice {
+type Invoice = {
   id: string;
-  number: string;
-  customer: string;
-  date: string;
-  dueDate: string;
+  invoiceNo: string;
+  client?: { companyName: string };
+  clientId: string | null;
   amount: number;
-  status: InvoiceStatus;
-}
-
-const invoices: Invoice[] = [
-  { id: '1', number: 'FTR-2024-001', customer: 'Anadolu Medya Grubu', date: '2024-05-15', dueDate: '2024-06-15', amount: 78500, status: 'paid' },
-  { id: '2', number: 'FTR-2024-002', customer: 'Ege Yayıncılık A.Ş.', date: '2024-05-18', dueDate: '2024-06-18', amount: 45200, status: 'paid' },
-  { id: '3', number: 'FTR-2024-003', customer: 'Boğaz İletişim Ltd.', date: '2024-05-20', dueDate: '2024-06-20', amount: 92000, status: 'pending' },
-  { id: '4', number: 'FTR-2024-004', customer: 'Trakya Dijital Hizmetler', date: '2024-04-10', dueDate: '2024-05-10', amount: 34000, status: 'overdue' },
-  { id: '5', number: 'FTR-2024-005', customer: 'Marmara Reklam Ajansı', date: '2024-05-22', dueDate: '2024-06-22', amount: 63400, status: 'paid' },
-  { id: '6', number: 'FTR-2024-006', customer: 'Karadeniz Teknoloji A.Ş.', date: '2024-05-25', dueDate: '2024-06-25', amount: 55800, status: 'pending' },
-  { id: '7', number: 'FTR-2024-007', customer: 'Akdeniz Basım Yayın', date: '2024-03-28', dueDate: '2024-04-28', amount: 10000, status: 'overdue' },
-  { id: '8', number: 'FTR-2024-008', customer: 'İstanbul Medya Platformu', date: '2024-05-28', dueDate: '2024-06-28', amount: 106300, status: 'draft' },
-];
-
-const statusConfig: Record<InvoiceStatus, { label: string; badge: string }> = {
-  paid: { label: 'Ödendi', badge: 'badge badge-success' },
-  pending: { label: 'Bekliyor', badge: 'badge badge-warning' },
-  overdue: { label: 'Gecikmiş', badge: 'badge badge-error' },
-  draft: { label: 'Taslak', badge: 'badge badge-info' },
+  status: string;
+  dueDate?: string;
+  createdAt: string;
 };
 
-const tabs: { key: TabKey; label: string }[] = [
-  { key: 'all', label: 'Tümü' },
-  { key: 'paid', label: 'Ödenen' },
-  { key: 'pending', label: 'Bekleyen' },
-  { key: 'overdue', label: 'Geciken' },
-  { key: 'draft', label: 'Taslak' },
-];
+type Client = {
+  id: string;
+  companyName: string;
+};
 
-function formatCurrency(value: number): string {
-  return '₺' + value.toLocaleString('tr-TR');
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('tr-TR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-}
+const statusLabels: Record<string,{label:string;cls:string}> = {
+  paid:{label:'Ödendi',cls:'badge-success'},
+  unpaid:{label:'Bekliyor',cls:'badge-warning'},
+  overdue:{label:'Gecikmiş',cls:'badge-error'},
+  cancelled:{label:'İptal',cls:'badge-info'},
+};
 
 export default function InvoicesPage() {
-  const [activeTab, setActiveTab] = useState<TabKey>('all');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isAdding, setIsAdding] = useState(false);
+  const [newInvoice, setNewInvoice] = useState({ clientId: '', amount: 0, status: 'unpaid', dueDate: '' });
 
-  const filtered = invoices.filter((inv) => {
-    const matchTab = activeTab === 'all' || inv.status === activeTab;
-    const matchSearch =
-      inv.number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      inv.customer.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchTab && matchSearch;
-  });
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      const [invRes, cliRes] = await Promise.all([
+        fetch('/api/invoices'),
+        fetch('/api/clients')
+      ]);
+      setInvoices(await invRes.json());
+      setClients(await cliRes.json());
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateInvoice = async () => {
+    if (!newInvoice.amount) return;
+    try {
+      const res = await fetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newInvoice),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        // Append client info for UI display
+        const client = clients.find(c => c.id === created.clientId);
+        created.client = client;
+        
+        setInvoices([created, ...invoices]);
+        setIsAdding(false);
+        setNewInvoice({ clientId: '', amount: 0, status: 'unpaid', dueDate: '' });
+      }
+    } catch (error) {
+      console.error('Error creating invoice:', error);
+    }
+  };
+
+  const updateStatus = async (id: string, status: string) => {
+    try {
+      const res = await fetch(`/api/invoices/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        setInvoices(invoices.map(inv => inv.id === id ? { ...inv, status } : inv));
+      }
+    } catch (error) {
+      console.error('Error updating invoice:', error);
+    }
+  };
+
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Bu faturayı silmek istediğinize emin misiniz?')) return;
+    try {
+      const res = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setInvoices(invoices.filter(i => i.id !== id));
+      }
+    } catch (error) {
+      console.error('Error deleting invoice:', error);
+    }
+  };
+
+  const totalAmount = invoices.reduce((acc, curr) => acc + curr.amount, 0);
+  const totalPaid = invoices.filter(i => i.status === 'paid').reduce((acc, curr) => acc + curr.amount, 0);
+  const totalUnpaid = invoices.filter(i => i.status === 'unpaid').reduce((acc, curr) => acc + curr.amount, 0);
 
   return (
-    <div className="main-content">
-      {/* Header */}
+    <div>
       <div className="page-header">
         <div className="page-header-left">
-          <h1 className="page-title">
-            <span>🧾</span> Faturalar
-          </h1>
-          <p className="page-subtitle">Fatura yönetimi</p>
+          <h1 className="page-title">💳 Faturalar</h1>
+          <p className="page-subtitle">Gelen ve giden tüm fatura kayıtları</p>
         </div>
         <div className="page-header-actions">
-          <button className="btn btn-ghost">
-            <span>📥</span> Dışa Aktar
-          </button>
-          <button className="btn btn-primary">
-            <span>+</span> Yeni Fatura
-          </button>
+          <button className="btn btn-primary" onClick={() => setIsAdding(true)}>+ Yeni Fatura</button>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="stats-grid stagger-children">
-        <div className="stat-card primary">
-          <div className="stat-card-top">
-            <div className="stat-card-icon">💰</div>
-            <div className="stat-card-change up">+12%</div>
-          </div>
-          <div className="stat-card-value font-mono counter-animate">₺485.200</div>
-          <div className="stat-card-label">Toplam</div>
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-card-label">Toplam Fatura Tutarı</div>
+          <div className="stat-card-value">₺{loading ? '-' : totalAmount.toLocaleString('tr-TR')}</div>
         </div>
-        <div className="stat-card success">
-          <div className="stat-card-top">
-            <div className="stat-card-icon">✅</div>
-            <div className="stat-card-change up">+8%</div>
-          </div>
-          <div className="stat-card-value font-mono counter-animate">₺342.800</div>
-          <div className="stat-card-label">Ödenen</div>
+        <div className="stat-card" style={{borderTop:'2px solid var(--success)'}}>
+          <div className="stat-card-label">Ödenen (Tahsil Edilen)</div>
+          <div className="stat-card-value" style={{color:'var(--success)'}}>₺{loading ? '-' : totalPaid.toLocaleString('tr-TR')}</div>
         </div>
-        <div className="stat-card warning">
-          <div className="stat-card-top">
-            <div className="stat-card-icon">⏳</div>
-            <div className="stat-card-change down">+5%</div>
-          </div>
-          <div className="stat-card-value font-mono counter-animate">₺98.400</div>
-          <div className="stat-card-label">Bekleyen</div>
-        </div>
-        <div className="stat-card error">
-          <div className="stat-card-top">
-            <div className="stat-card-icon">⚠️</div>
-            <div className="stat-card-change down">-3%</div>
-          </div>
-          <div className="stat-card-value font-mono counter-animate">₺44.000</div>
-          <div className="stat-card-label">Geciken</div>
+        <div className="stat-card" style={{borderTop:'2px solid var(--warning)'}}>
+          <div className="stat-card-label">Bekleyen (Alacak)</div>
+          <div className="stat-card-value" style={{color:'var(--warning)'}}>₺{loading ? '-' : totalUnpaid.toLocaleString('tr-TR')}</div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="tabs">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            className={`tab ${activeTab === t.key ? 'active' : ''}`}
-            onClick={() => setActiveTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Table */}
-      <div className="data-table-container slide-up">
-        <div className="data-table-header">
-          <div className="data-table-search">
-            <span>🔍</span>
-            <input
-              type="text"
-              placeholder="Fatura ara..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <span className="text-muted" style={{ fontSize: 'var(--text-sm)' }}>
-            {filtered.length} fatura
-          </span>
-        </div>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Fatura No</th>
-              <th>Müşteri</th>
-              <th>Tarih</th>
-              <th>Vade Tarihi</th>
-              <th style={{ textAlign: 'right' }}>Tutar</th>
-              <th>Durum</th>
-              <th style={{ textAlign: 'right' }}>İşlemler</th>
-            </tr>
-          </thead>
-          <tbody className="stagger-children">
-            {filtered.map((inv) => (
-              <tr key={inv.id}>
-                <td>
-                  <span className="font-mono font-semibold" style={{ color: 'var(--primary-light)' }}>
-                    {inv.number}
-                  </span>
-                </td>
-                <td>
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="avatar-sm"
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: '50%',
-                        background: 'var(--primary-gradient)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        color: 'white',
-                        flexShrink: 0,
-                      }}
-                    >
-                      {inv.customer.charAt(0)}
-                    </div>
-                    <span className="truncate" style={{ maxWidth: 200 }}>
-                      {inv.customer}
-                    </span>
-                  </div>
-                </td>
-                <td className="text-muted">{formatDate(inv.date)}</td>
-                <td className="text-muted">{formatDate(inv.dueDate)}</td>
-                <td style={{ textAlign: 'right' }}>
-                  <span className="font-mono font-semibold">{formatCurrency(inv.amount)}</span>
-                </td>
-                <td>
-                  <span className={statusConfig[inv.status].badge}>
-                    <span className={`badge-dot ${inv.status === 'paid' ? 'success' : inv.status === 'pending' ? 'warning' : inv.status === 'overdue' ? 'error' : 'primary'}`} />
-                    {statusConfig[inv.status].label}
-                  </span>
-                </td>
-                <td style={{ textAlign: 'right' }}>
-                  <div className="flex gap-2" style={{ justifyContent: 'flex-end' }}>
-                    <button className="btn btn-ghost btn-sm tooltip" data-tooltip="Görüntüle">👁️</button>
-                    <button className="btn btn-ghost btn-sm tooltip" data-tooltip="Düzenle">✏️</button>
-                    <button className="btn btn-ghost btn-sm tooltip" data-tooltip="PDF İndir">📄</button>
-                  </div>
-                </td>
+      <div className="data-table-container">
+        {loading ? (
+          <div style={{padding:'var(--space-8)', textAlign:'center'}}>Yükleniyor...</div>
+        ) : invoices.length === 0 ? (
+          <div style={{padding:'var(--space-8)', textAlign:'center', color:'var(--text-muted)'}}>Kayıtlı fatura yok.</div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Fatura No</th>
+                <th>Müşteri</th>
+                <th>Tutar</th>
+                <th>Son Ödeme</th>
+                <th>Durum</th>
+                <th>İşlemler</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="data-table-footer">
-          <span>{filtered.length} kayıt gösteriliyor</span>
-          <div className="pagination">
-            <button className="pagination-btn">‹</button>
-            <button className="pagination-btn active">1</button>
-            <button className="pagination-btn">2</button>
-            <button className="pagination-btn">›</button>
-          </div>
-        </div>
+            </thead>
+            <tbody>
+              {invoices.map((inv) => (
+                <tr key={inv.id}>
+                  <td><span className="font-mono" style={{color:'var(--primary-light)'}}>{inv.invoiceNo}</span></td>
+                  <td style={{fontWeight:500}}>{inv.client?.companyName || 'Belirtilmemiş'}</td>
+                  <td>₺{inv.amount.toLocaleString('tr-TR')}</td>
+                  <td style={{color:'var(--text-muted)'}}>{inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('tr-TR') : '-'}</td>
+                  <td>
+                    <select 
+                      className="form-select" 
+                      style={{padding:'4px', fontSize:'var(--text-xs)', width:'100px'}} 
+                      value={inv.status} 
+                      onChange={(e) => updateStatus(inv.id, e.target.value)}
+                    >
+                      <option value="unpaid">Bekliyor</option>
+                      <option value="paid">Ödendi</option>
+                      <option value="overdue">Gecikmiş</option>
+                      <option value="cancelled">İptal</option>
+                    </select>
+                  </td>
+                  <td>
+                    <button className="btn btn-ghost btn-sm" onClick={(e) => handleDelete(inv.id, e)}>Sil</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
+
+      {isAdding && (
+        <>
+          <div className="modal-backdrop" onClick={() => setIsAdding(false)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Yeni Fatura</h2>
+              <button className="modal-close" onClick={() => setIsAdding(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Müşteri Seçin</label>
+                <select className="form-select" value={newInvoice.clientId} onChange={e=>setNewInvoice({...newInvoice, clientId: e.target.value})}>
+                  <option value="">-- Müşteri Seçin --</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>{c.companyName}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Tutar (₺) *</label>
+                  <input type="number" className="form-input" value={newInvoice.amount} onChange={e=>setNewInvoice({...newInvoice, amount: Number(e.target.value)})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Son Ödeme Tarihi</label>
+                  <input type="date" className="form-input" value={newInvoice.dueDate} onChange={e=>setNewInvoice({...newInvoice, dueDate: e.target.value})} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Durum</label>
+                <select className="form-select" value={newInvoice.status} onChange={e=>setNewInvoice({...newInvoice, status: e.target.value})}>
+                  <option value="unpaid">Bekliyor (Ödenmedi)</option>
+                  <option value="paid">Ödendi (Tahsil Edildi)</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setIsAdding(false)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleCreateInvoice}>Fatura Oluştur</button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
