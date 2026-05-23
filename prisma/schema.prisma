@@ -17,6 +17,7 @@ model User {
   updatedAt DateTime @updatedAt
   
   tips      Tip[]    @relation("TipReporter")
+  tasks     Task[]   @relation("TaskAssignee")
 }
 
 model Tip {
@@ -59,6 +60,54 @@ model Client {
   status       String   @default("active") // active, inactive
   satisfaction Int      @default(100) // 0-100 score
   
+  projects     Project[]
+  
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model Project {
+  id          String    @id @default(uuid())
+  name        String
+  status      String    @default("active") // active, completed, on_hold
+  progress    Int       @default(0) // 0-100
+  deadline    DateTime?
+  
+  clientId    String?
+  client      Client?   @relation(fields: [clientId], references: [id])
+  
+  tasks       Task[]
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Task {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  status      String    @default("todo") // todo, in_progress, review, done
+  priority    String    @default("normal") // low, normal, high, urgent
+  dueDate     DateTime?
+  
+  projectId   String?
+  project     Project?  @relation(fields: [projectId], references: [id])
+  
+  assigneeId  String?
+  assignee    User?     @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Lead {
+  id          String    @id @default(uuid())
+  name        String
+  company     String?
+  value       Float     @default(0)
+  status      String    @default("new") // new, contacted, proposal, won, lost
+  priority    String    @default("normal") // low, normal, high, urgent
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
