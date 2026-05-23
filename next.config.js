@@ -2,7 +2,10 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ['canakkale.network', 'crm.canakkale.network'],
+    remotePatterns: [
+      { protocol: 'https', hostname: 'canakkale.network' },
+      { protocol: 'https', hostname: 'crm.canakkale.network' },
+    ],
     unoptimized: true,
   },
   async headers() {
