@@ -1,85 +1,197 @@
 'use client';
+import { useState, useEffect } from 'react';
 
-const subscribers = [
-  {id:1,email:'ahmet.yilmaz@gmail.com',name:'Ahmet Yılmaz',date:'22.05.2026',status:'active',segment:'VIP',source:'Web'},
-  {id:2,email:'zeynep@outlook.com',name:'Zeynep Kaya',date:'21.05.2026',status:'active',segment:'Regular',source:'Sosyal Medya'},
-  {id:3,email:'can.demir@hotmail.com',name:'Can Demir',date:'20.05.2026',status:'active',segment:'New',source:'Referans'},
-  {id:4,email:'elif@gmail.com',name:'Elif Arslan',date:'19.05.2026',status:'active',segment:'VIP',source:'Web'},
-  {id:5,email:'burak@yahoo.com',name:'Burak Şahin',date:'18.05.2026',status:'inactive',segment:'Regular',source:'Web'},
-  {id:6,email:'selin@gmail.com',name:'Selin Yıldız',date:'17.05.2026',status:'active',segment:'New',source:'Sosyal Medya'},
-  {id:7,email:'mert@outlook.com',name:'Mert Koç',date:'16.05.2026',status:'active',segment:'Regular',source:'Web'},
-  {id:8,email:'ayse@hotmail.com',name:'Ayşe Öztürk',date:'15.05.2026',status:'inactive',segment:'Regular',source:'Referans'},
-];
-
-const segMap: Record<string,string> = {VIP:'badge-warning',Regular:'badge-primary',New:'badge-accent'};
-const srcMap: Record<string,string> = {Web:'badge-info','Sosyal Medya':'badge-accent',Referans:'badge-success'};
-const growthData = [18,22,15,28,20,32,24];
-const growthDays = ['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'];
-const maxGrowth = Math.max(...growthData);
+type Subscriber = {
+  id: string;
+  email: string;
+  source: string;
+  status: string;
+  createdAt: string;
+};
 
 export default function SubscribersPage() {
+  const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isAdding, setIsAdding] = useState(false);
+  const [newSubscriber, setNewSubscriber] = useState({ email: '', source: 'website', status: 'active' });
+
+  useEffect(() => {
+    fetchSubscribers();
+  }, []);
+
+  const fetchSubscribers = async () => {
+    try {
+      const res = await fetch('/api/subscribers');
+      const data = await res.json();
+      setSubscribers(data);
+    } catch (error) {
+      console.error('Error fetching subscribers:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateSubscriber = async () => {
+    if (!newSubscriber.email) return;
+    try {
+      const res = await fetch('/api/subscribers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSubscriber),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setSubscribers([created, ...subscribers]);
+        setIsAdding(false);
+        setNewSubscriber({ email: '', source: 'website', status: 'active' });
+      }
+    } catch (error) {
+      console.error('Error creating subscriber:', error);
+    }
+  };
+
+  const updateStatus = async (id: string, status: string) => {
+    try {
+      const res = await fetch(`/api/subscribers/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        setSubscribers(subscribers.map(s => s.id === id ? { ...s, status } : s));
+      }
+    } catch (error) {
+      console.error('Error updating subscriber:', error);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Bu aboneyi silmek istediğinize emin misiniz?')) return;
+    try {
+      const res = await fetch(`/api/subscribers/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setSubscribers(subscribers.filter(s => s.id !== id));
+      }
+    } catch (error) {
+      console.error('Error deleting subscriber:', error);
+    }
+  };
+
   return (
     <div>
       <div className="page-header">
         <div className="page-header-left">
-          <h1 className="page-title">👤 Aboneler</h1>
-          <p className="page-subtitle">Newsletter ve abonelik yönetimi</p>
+          <h1 className="page-title">📩 Bülten Aboneleri</h1>
+          <p className="page-subtitle">E-posta bültenine kayıtlı kullanıcılar</p>
         </div>
         <div className="page-header-actions">
-          <button className="btn btn-ghost">📤 Dışa Aktar</button>
-          <button className="btn btn-primary">+ Abone Ekle</button>
+          <button className="btn btn-ghost">Dışa Aktar (CSV)</button>
+          <button className="btn btn-primary" onClick={() => setIsAdding(true)}>+ Abone Ekle</button>
         </div>
       </div>
 
-      <div className="stats-grid">
-        {[{l:'Toplam Abone',v:'8,420',c:'primary',i:'👥',ch:'+12%'},{l:'Aktif',v:'7,650',c:'success',i:'✅',ch:'+8%'},{l:'Bugün',v:'+24',c:'accent',i:'📈',ch:'+15%'},{l:'Çıkan',v:'45',c:'error',i:'📉',ch:'-3%'}].map((s,i)=>(
-          <div key={i} className={`stat-card ${s.c}`}>
-            <div className="stat-card-top">
-              <div className="stat-card-icon">{s.i}</div>
-              <span className={`stat-card-change ${s.ch.startsWith('+')?'up':'down'}`}>{s.ch}</span>
-            </div>
-            <div className="stat-card-value">{s.v}</div>
-            <div className="stat-card-label">{s.l}</div>
+      <div className="stats-grid" style={{marginBottom: 'var(--space-6)'}}>
+        <div className="stat-card">
+          <div className="stat-card-label">Toplam Abone</div>
+          <div className="stat-card-value">{loading ? '-' : subscribers.length}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-label">Aktif Aboneler</div>
+          <div className="stat-card-value" style={{color:'var(--success)'}}>
+            {loading ? '-' : subscribers.filter(s => s.status === 'active').length}
           </div>
-        ))}
-      </div>
-
-      <div className="card" style={{marginBottom:'var(--space-6)'}}>
-        <h3 className="card-title" style={{marginBottom:'var(--space-4)'}}>Haftalık Büyüme</h3>
-        <div className="chart-bar-group">
-          {growthData.map((v,i) => (
-            <div key={i} className="chart-bar-wrapper">
-              <div className="chart-bar primary" style={{height:`${(v/maxGrowth)*100}%`, animationDelay:`${i*0.1}s`}} />
-              <span className="chart-bar-label">{growthDays[i]}</span>
-            </div>
-          ))}
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-label">Ayrılanlar</div>
+          <div className="stat-card-value" style={{color:'var(--error)'}}>
+            {loading ? '-' : subscribers.filter(s => s.status === 'unsubscribed').length}
+          </div>
         </div>
       </div>
 
       <div className="data-table-container">
-        <div className="data-table-header">
-          <h3 className="card-title">Abone Listesi</h3>
-          <div className="data-table-search"><span>🔍</span><input placeholder="E-posta ara..." /></div>
-        </div>
-        <table className="data-table">
-          <thead>
-            <tr><th>E-posta</th><th>Ad</th><th>Abone Tarihi</th><th>Durum</th><th>Segment</th><th>Kaynak</th></tr>
-          </thead>
-          <tbody>
-            {subscribers.map(s=>(
-              <tr key={s.id}>
-                <td>{s.email}</td>
-                <td style={{fontWeight:500}}>{s.name}</td>
-                <td style={{fontSize:'var(--text-xs)'}}>{s.date}</td>
-                <td><span className={`badge ${s.status==='active'?'badge-success':'badge-error'}`}>{s.status==='active'?'Aktif':'Pasif'}</span></td>
-                <td><span className={`badge ${segMap[s.segment]}`}>{s.segment}</span></td>
-                <td><span className={`badge ${srcMap[s.source]}`}>{s.source}</span></td>
+        {loading ? (
+          <div style={{padding:'var(--space-8)', textAlign:'center'}}>Yükleniyor...</div>
+        ) : subscribers.length === 0 ? (
+          <div style={{padding:'var(--space-8)', textAlign:'center', color:'var(--text-muted)'}}>Henüz abone yok.</div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>E-Posta Adresi</th>
+                <th>Kayıt Kaynağı</th>
+                <th>Kayıt Tarihi</th>
+                <th>Durum</th>
+                <th>İşlemler</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="data-table-footer"><span>1-8 / 8,420 abone</span><div className="pagination">{[1,2,3,'...',842].map((p,i)=><button key={i} className={`pagination-btn ${p===1?'active':''}`}>{p}</button>)}</div></div>
+            </thead>
+            <tbody>
+              {subscribers.map((sub) => (
+                <tr key={sub.id}>
+                  <td style={{fontWeight:500}}>{sub.email}</td>
+                  <td>
+                    <span className="badge badge-info">{sub.source === 'website' ? 'Web Sitesi' : sub.source}</span>
+                  </td>
+                  <td style={{color:'var(--text-muted)'}}>{new Date(sub.createdAt).toLocaleDateString('tr-TR')}</td>
+                  <td>
+                    <select 
+                      className="form-select" 
+                      style={{padding:'4px', fontSize:'var(--text-xs)'}} 
+                      value={sub.status} 
+                      onChange={(e) => updateStatus(sub.id, e.target.value)}
+                    >
+                      <option value="active">Aktif</option>
+                      <option value="unsubscribed">Ayrıldı</option>
+                    </select>
+                  </td>
+                  <td>
+                    <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(sub.id)}>Sil</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
+
+      {isAdding && (
+        <>
+          <div className="modal-backdrop" onClick={() => setIsAdding(false)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Yeni Abone Ekle</h2>
+              <button className="modal-close" onClick={() => setIsAdding(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">E-Posta Adresi *</label>
+                <input type="email" className="form-input" value={newSubscriber.email} onChange={e=>setNewSubscriber({...newSubscriber, email: e.target.value})} />
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Kaynak</label>
+                  <select className="form-select" value={newSubscriber.source} onChange={e=>setNewSubscriber({...newSubscriber, source: e.target.value})}>
+                    <option value="website">Web Sitesi</option>
+                    <option value="manual">Manuel Ekleme</option>
+                    <option value="campaign">Kampanya</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Durum</label>
+                  <select className="form-select" value={newSubscriber.status} onChange={e=>setNewSubscriber({...newSubscriber, status: e.target.value})}>
+                    <option value="active">Aktif</option>
+                    <option value="unsubscribed">Ayrıldı</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setIsAdding(false)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleCreateSubscriber}>Abone Ekle</button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

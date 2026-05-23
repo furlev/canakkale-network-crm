@@ -153,3 +153,51 @@ model Expense {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
+
+model News {
+  id          String    @id @default(uuid())
+  title       String
+  category    String
+  author      String
+  status      String    @default("draft") // draft, published
+  views       Int       @default(0)
+  publishDate DateTime?
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Subscriber {
+  id          String    @id @default(uuid())
+  email       String    @unique
+  source      String    @default("website")
+  status      String    @default("active") // active, unsubscribed
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Advertiser {
+  id          String    @id @default(uuid())
+  company     String
+  contactName String
+  email       String
+  phone       String?
+  activeAds   Int       @default(0)
+  totalSpent  Float     @default(0)
+  status      String    @default("active") // active, inactive
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Event {
+  id          String    @id @default(uuid())
+  title       String
+  date        DateTime
+  type        String    @default("meeting") // meeting, deadline, event
+  description String?
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
