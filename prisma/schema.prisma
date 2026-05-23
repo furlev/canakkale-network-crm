@@ -11,13 +11,16 @@ model User {
   id        String   @id @default(uuid())
   email     String   @unique
   name      String
-  role      String   @default("user")
+  role      String   @default("user") // admin, editor, user
+  department String?
+  status    String   @default("active")
   avatar    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   
   tips      Tip[]    @relation("TipReporter")
   tasks     Task[]   @relation("TaskAssignee")
+  tickets   Ticket[] @relation("TicketAssignee")
 }
 
 model Tip {
@@ -63,6 +66,7 @@ model Client {
   projects     Project[]
   invoices     Invoice[]
   estimates    Estimate[]
+  tickets      Ticket[]
   
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -197,6 +201,35 @@ model Event {
   date        DateTime
   type        String    @default("meeting") // meeting, deadline, event
   description String?
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Ticket {
+  id          String    @id @default(uuid())
+  ticketNo    String    @unique
+  subject     String
+  description String?
+  status      String    @default("open") // open, in_progress, resolved, closed
+  priority    String    @default("normal") // low, normal, high, urgent
+  
+  clientId    String?
+  client      Client?   @relation(fields: [clientId], references: [id])
+  
+  assigneeId  String?
+  assignee    User?     @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Document {
+  id          String    @id @default(uuid())
+  name        String
+  type        String    @default("pdf") // pdf, word, excel, image, other
+  size        Int       @default(0) // in bytes
+  url         String?   
   
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

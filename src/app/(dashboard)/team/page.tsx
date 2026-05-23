@@ -1,64 +1,209 @@
 'use client';
+import { useState, useEffect } from 'react';
 
-const team = [
-  {id:1,name:'Ahmet Yılmaz',role:'Yönetici',email:'ahmet@canakkale.network',phone:'+90 532 111 2233',status:'online',avatar:'AY',color:'var(--primary)'},
-  {id:2,name:'Zeynep Kaya',role:'Editör',email:'zeynep@canakkale.network',phone:'+90 533 222 3344',status:'online',avatar:'ZK',color:'var(--accent)'},
-  {id:3,name:'Mehmet Demir',role:'Muhabir',email:'mehmet@canakkale.network',phone:'+90 534 333 4455',status:'busy',avatar:'MD',color:'var(--warning)'},
-  {id:4,name:'Ayşe Yıldız',role:'Muhabir',email:'ayse@canakkale.network',phone:'+90 535 444 5566',status:'online',avatar:'AY',color:'var(--success)'},
-  {id:5,name:'Can Özkan',role:'Satış',email:'can@canakkale.network',phone:'+90 536 555 6677',status:'offline',avatar:'CÖ',color:'var(--info)'},
-  {id:6,name:'Elif Arslan',role:'Stajyer',email:'elif@canakkale.network',phone:'+90 537 666 7788',status:'online',avatar:'EA',color:'var(--error)'},
-];
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  department?: string;
+  status: string;
+  createdAt: string;
+};
 
-const statusColors: Record<string,{color:string;label:string}> = {
-  online:{color:'var(--success)',label:'Çevrimiçi'},
-  offline:{color:'var(--text-muted)',label:'Çevrimdışı'},
-  busy:{color:'var(--warning)',label:'Meşgul'},
+const roleMap: Record<string,{label:string;cls:string}> = {
+  admin:{label:'Yönetici',cls:'badge-error'},
+  editor:{label:'Editör',cls:'badge-warning'},
+  user:{label:'Kullanıcı',cls:'badge-info'},
 };
 
 export default function TeamPage() {
+  const [team, setTeam] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isAdding, setIsAdding] = useState(false);
+  const [newUser, setNewUser] = useState({ name: '', email: '', role: 'user', department: '', status: 'active' });
+
+  useEffect(() => {
+    fetchTeam();
+  }, []);
+
+  const fetchTeam = async () => {
+    try {
+      const res = await fetch('/api/team');
+      const data = await res.json();
+      setTeam(data);
+    } catch (error) {
+      console.error('Error fetching team:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateUser = async () => {
+    if (!newUser.name || !newUser.email) return;
+    try {
+      const res = await fetch('/api/team', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setTeam([created, ...team]);
+        setIsAdding(false);
+        setNewUser({ name: '', email: '', role: 'user', department: '', status: 'active' });
+      }
+    } catch (error) {
+      console.error('Error creating user:', error);
+    }
+  };
+
+  const updateStatus = async (id: string, status: string) => {
+    try {
+      const res = await fetch(`/api/team/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        setTeam(team.map(t => t.id === id ? { ...t, status } : t));
+      }
+    } catch (error) {
+      console.error('Error updating user:', error);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Kullanıcıyı silmek istediğinize emin misiniz?')) return;
+    try {
+      const res = await fetch(`/api/team/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setTeam(team.filter(t => t.id !== id));
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+    }
+  };
+
   return (
     <div>
       <div className="page-header">
         <div className="page-header-left">
-          <h1 className="page-title">👨‍💼 Ekip</h1>
-          <p className="page-subtitle">Ekip üyelerinizi yönetin</p>
+          <h1 className="page-title">👥 Ekip ve Kullanıcılar</h1>
+          <p className="page-subtitle">Sistem erişimi ve personel yönetimi</p>
         </div>
         <div className="page-header-actions">
-          <button className="btn btn-primary">+ Üye Ekle</button>
+          <button className="btn btn-primary" onClick={() => setIsAdding(true)}>+ Yeni Kullanıcı</button>
         </div>
       </div>
 
-      <div className="stats-grid" style={{gridTemplateColumns:'repeat(3,1fr)'}}>
-        {[{l:'Toplam',v:'12',c:'primary',i:'👥'},{l:'Çevrimiçi',v:'8',c:'success',i:'🟢'},{l:'İzinde',v:'2',c:'warning',i:'🏖️'}].map((s,i)=>(
-          <div key={i} className={`stat-card ${s.c}`}>
-            <div className="stat-card-top"><div className="stat-card-icon">{s.i}</div></div>
-            <div className="stat-card-value" style={{fontSize:'var(--text-2xl)'}}>{s.v}</div>
-            <div className="stat-card-label">{s.l}</div>
-          </div>
-        ))}
+      <div className="stats-grid" style={{marginBottom: 'var(--space-6)'}}>
+        <div className="stat-card">
+          <div className="stat-card-label">Toplam Personel</div>
+          <div className="stat-card-value">{loading ? '-' : team.length}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-label">Aktif Kullanıcı</div>
+          <div className="stat-card-value" style={{color:'var(--success)'}}>{loading ? '-' : team.filter(t => t.status === 'active').length}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-label">Yöneticiler</div>
+          <div className="stat-card-value" style={{color:'var(--error)'}}>{loading ? '-' : team.filter(t => t.role === 'admin').length}</div>
+        </div>
       </div>
 
-      <div className="grid-3 stagger-children">
-        {team.map(m=>(
-          <div key={m.id} className="card" style={{textAlign:'center'}}>
-            <div style={{position:'relative',display:'inline-block',marginBottom:'var(--space-4)'}}>
-              <div className="avatar avatar-xl" style={{background:`linear-gradient(135deg, ${m.color}, ${m.color}88)`,color:'white',margin:'0 auto'}}>{m.avatar}</div>
-              <div style={{position:'absolute',bottom:2,right:2,width:14,height:14,borderRadius:'50%',background:statusColors[m.status].color,border:'3px solid var(--bg-primary)'}} />
+      <div className="data-table-container">
+        {loading ? (
+          <div style={{padding:'var(--space-8)', textAlign:'center'}}>Yükleniyor...</div>
+        ) : team.length === 0 ? (
+          <div style={{padding:'var(--space-8)', textAlign:'center', color:'var(--text-muted)'}}>Sistemde kayıtlı kullanıcı yok.</div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Personel</th>
+                <th>Departman</th>
+                <th>Rol</th>
+                <th>Durum</th>
+                <th>Kayıt Tarihi</th>
+                <th>İşlemler</th>
+              </tr>
+            </thead>
+            <tbody>
+              {team.map((user) => (
+                <tr key={user.id}>
+                  <td>
+                    <div style={{display:'flex', alignItems:'center', gap:'var(--space-3)'}}>
+                      <div className="avatar avatar-sm">{user.name.substring(0,2).toUpperCase()}</div>
+                      <div>
+                        <div style={{fontWeight:500}}>{user.name}</div>
+                        <div style={{fontSize:'var(--text-xs)', color:'var(--text-muted)'}}>{user.email}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>{user.department || '-'}</td>
+                  <td><span className={`badge ${roleMap[user.role]?.cls}`}>{roleMap[user.role]?.label}</span></td>
+                  <td>
+                    <select 
+                      className="form-select" 
+                      style={{padding:'4px', fontSize:'var(--text-xs)'}} 
+                      value={user.status} 
+                      onChange={(e) => updateStatus(user.id, e.target.value)}
+                    >
+                      <option value="active">Aktif</option>
+                      <option value="inactive">Pasif</option>
+                    </select>
+                  </td>
+                  <td style={{fontSize:'var(--text-xs)', color:'var(--text-muted)'}}>{new Date(user.createdAt).toLocaleDateString('tr-TR')}</td>
+                  <td>
+                    <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(user.id)}>Sil</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {isAdding && (
+        <>
+          <div className="modal-backdrop" onClick={() => setIsAdding(false)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Yeni Kullanıcı Ekle</h2>
+              <button className="modal-close" onClick={() => setIsAdding(false)}>✕</button>
             </div>
-            <h3 style={{fontSize:'var(--text-md)',fontWeight:600,marginBottom:'var(--space-1)'}}>{m.name}</h3>
-            <span className="badge badge-primary" style={{marginBottom:'var(--space-3)'}}>{m.role}</span>
-            <div style={{fontSize:'var(--text-xs)',color:statusColors[m.status].color,marginBottom:'var(--space-4)'}}>{statusColors[m.status].label}</div>
-            <div style={{display:'flex',flexDirection:'column',gap:'var(--space-2)',textAlign:'left'}}>
-              <div style={{fontSize:'var(--text-sm)',color:'var(--text-secondary)',display:'flex',gap:'var(--space-2)'}}>📧 {m.email}</div>
-              <div style={{fontSize:'var(--text-sm)',color:'var(--text-secondary)',display:'flex',gap:'var(--space-2)'}}>📞 {m.phone}</div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Ad Soyad *</label>
+                <input className="form-input" value={newUser.name} onChange={e=>setNewUser({...newUser, name: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">E-Posta Adresi *</label>
+                <input type="email" className="form-input" value={newUser.email} onChange={e=>setNewUser({...newUser, email: e.target.value})} />
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Rol</label>
+                  <select className="form-select" value={newUser.role} onChange={e=>setNewUser({...newUser, role: e.target.value})}>
+                    <option value="user">Kullanıcı (Standart)</option>
+                    <option value="editor">Editör (Haber Yönetimi)</option>
+                    <option value="admin">Yönetici (Tam Yetki)</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Departman</label>
+                  <input className="form-input" value={newUser.department} onChange={e=>setNewUser({...newUser, department: e.target.value})} />
+                </div>
+              </div>
             </div>
-            <div style={{display:'flex',gap:'var(--space-2)',marginTop:'var(--space-4)'}}>
-              <button className="btn btn-ghost btn-sm" style={{flex:1}}>💬 Mesaj</button>
-              <button className="btn btn-ghost btn-sm" style={{flex:1}}>✏️ Düzenle</button>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setIsAdding(false)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleCreateUser}>Kullanıcı Ekle</button>
             </div>
           </div>
-        ))}
-      </div>
+        </>
+      )}
     </div>
   );
 }
