@@ -1,35 +1,33 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError } from '@/lib/api';
+import { eventUpdate } from '@/lib/schemas';
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const body = await request.json();
+    const body = await parseBody(request, eventUpdate);
     const params = await context.params;
-    
-    const updatedEvent = await prisma.event.update({
+    const updated = await prisma.event.update({
       where: { id: params.id },
       data: {
         title: body.title,
         date: body.date ? new Date(body.date) : undefined,
         type: body.type,
         description: body.description,
-      }
+      },
     });
-
-    return NextResponse.json(updatedEvent);
+    return NextResponse.json(updated);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to update event' }, { status: 500 });
+    return handleApiError(error, 'Etkinlik güncellenemedi');
   }
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const params = await context.params;
-    await prisma.event.delete({
-      where: { id: params.id }
-    });
+    await prisma.event.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to delete event' }, { status: 500 });
+    return handleApiError(error, 'Etkinlik silinemedi');
   }
 }

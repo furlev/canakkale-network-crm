@@ -44,6 +44,47 @@ export default function TipsPage() {
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [newTip, setNewTip] = useState({ subject: '', content: '', source: '', priority: 'normal', sourceType: 'phone' });
+  const [checkingMail, setCheckingMail] = useState(false);
+  const [actionMsg, setActionMsg] = useState('');
+
+  const handleCheckMail = async () => {
+    setCheckingMail(true);
+    setActionMsg('');
+    try {
+      const res = await fetch('/api/cron/check-tips', { method: 'POST' });
+      const data = await res.json();
+      setActionMsg(res.ok ? `✅ ${data.message}` : `❌ ${data.error || 'Mail kontrolü başarısız'}`);
+      if (res.ok && data.created > 0) fetchTips();
+    } catch {
+      setActionMsg('❌ Sunucuya ulaşılamadı');
+    } finally {
+      setCheckingMail(false);
+    }
+  };
+
+  const convertToWordPress = async (tip: Tip) => {
+    setActionMsg('');
+    try {
+      const res = await fetch('/api/wordpress/convert-tip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipId: tip.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setActionMsg(`✅ ${data.message}`);
+        setTips(prev => prev.map(t => t.id === tip.id ? { ...t, status: 'converted' } : t));
+        setSelected(null);
+      } else {
+        // WP yapılandırılmamışsa yerel olarak işaretleme seçeneği sun
+        if (confirm(`WordPress'e gönderilemedi: ${data.error}\n\nİhbar yine de "Habere Dönüştü" olarak işaretlensin mi?`)) {
+          updateTipStatus(tip.id, 'converted');
+        }
+      }
+    } catch {
+      setActionMsg('❌ Sunucuya ulaşılamadı');
+    }
+  };
 
   useEffect(() => {
     fetchTips();
@@ -117,9 +158,18 @@ export default function TipsPage() {
             <button className={`tab ${view==='kanban'?'active':''}`} onClick={()=>setView('kanban')}>Kanban</button>
             <button className={`tab ${view==='list'?'active':''}`} onClick={()=>setView('list')}>Liste</button>
           </div>
+          <button className="btn btn-ghost" disabled={checkingMail} onClick={handleCheckMail}>
+            📬 {checkingMail ? 'Kontrol ediliyor...' : 'Mailleri Kontrol Et'}
+          </button>
           <button className="btn btn-primary" onClick={()=>setIsAdding(true)}>+ Manuel İhbar</button>
         </div>
       </div>
+
+      {actionMsg && (
+        <div style={{padding:'var(--space-3) var(--space-4)', borderRadius:'var(--border-radius)', background: actionMsg.startsWith('✅') ? 'rgba(0,184,148,0.12)' : 'rgba(255,118,117,0.12)', color: actionMsg.startsWith('✅') ? 'var(--success)' : 'var(--error)', fontSize:'var(--text-sm)', marginBottom:'var(--space-4)'}}>
+          {actionMsg}
+        </div>
+      )}
 
       <div className="stats-grid" style={{gridTemplateColumns:'repeat(5,1fr)'}}>
         {stats.map((s,i)=>(
@@ -246,7 +296,7 @@ export default function TipsPage() {
               <button className="btn btn-ghost" onClick={()=>updateTipStatus(selected.id, 'investigating')}>🔍 İncelemeye Al</button>
               <button className="btn btn-danger btn-sm" onClick={()=>updateTipStatus(selected.id, 'rejected')}>Reddet</button>
               <button className="btn btn-accent" onClick={()=>updateTipStatus(selected.id, 'verified')}>✅ Doğrula</button>
-              <button className="btn btn-primary" onClick={()=>updateTipStatus(selected.id, 'converted')}>📰 Habere Dönüştür</button>
+              <button className="btn btn-primary" onClick={()=>convertToWordPress(selected)}>📰 Habere Dönüştür (WP Taslak)</button>
             </div>
           </div>
         </>

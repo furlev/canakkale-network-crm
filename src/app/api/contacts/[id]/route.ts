@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError } from '@/lib/api';
+import { contactUpdate } from '@/lib/schemas';
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const body = await request.json();
+    const body = await parseBody(request, contactUpdate);
     const params = await context.params;
-    
-    const updatedContact = await prisma.contact.update({
+    const updated = await prisma.contact.update({
       where: { id: params.id },
       data: {
         firstName: body.firstName,
@@ -15,23 +16,21 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         phone: body.phone,
         company: body.company,
         status: body.status,
-      }
+        notes: body.notes,
+      },
     });
-
-    return NextResponse.json(updatedContact);
+    return NextResponse.json(updated);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to update contact' }, { status: 500 });
+    return handleApiError(error, 'Kişi güncellenemedi');
   }
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const params = await context.params;
-    await prisma.contact.delete({
-      where: { id: params.id }
-    });
+    await prisma.contact.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to delete contact' }, { status: 500 });
+    return handleApiError(error, 'Kişi silinemedi');
   }
 }

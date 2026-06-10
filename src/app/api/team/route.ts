@@ -1,31 +1,48 @@
 import { NextResponse } from 'next/server';
+import bcrypt from 'bcryptjs';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError, getPagination, listResponse, ApiError } from '@/lib/api';
+import { teamCreate } from '@/lib/schemas';
+import { getSession } from '@/lib/auth';
 
-export async function GET() {
+// password alanı asla API'den dönmez
+const safeSelect = {
+  id: true, email: true, name: true, role: true, department: true,
+  status: true, avatar: true, createdAt: true, updatedAt: true,
+};
+
+export async function GET(request: Request) {
   try {
-    const team = await prisma.user.findMany({
-      orderBy: { createdAt: 'desc' }
-    });
-    return NextResponse.json(team);
+    const pagination = getPagination(request);
+    const [items, total] = await Promise.all([
+      prisma.user.findMany({ orderBy: { createdAt: 'desc' }, select: safeSelect, ...(pagination ?? {}) }),
+      pagination ? prisma.user.count() : Promise.resolve(undefined),
+    ]);
+    return listResponse(items, total);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch team' }, { status: 500 });
+    return handleApiError(error, 'Ekip listesi alınamadı');
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const newMember = await prisma.user.create({
+    const session = await getSession();
+    if (session?.role !== 'admin') throw new ApiError(403, 'Bu işlem için yönetici yetkisi gerekli');
+
+    const body = await parseBody(request, teamCreate);
+    const created = await prisma.user.create({
       data: {
         name: body.name,
         email: body.email,
         role: body.role || 'user',
-        department: body.department,
+        department: body.department || null,
         status: body.status || 'active',
-      }
+        password: body.password ? await bcrypt.hash(body.password, 12) : null,
+      },
+      select: safeSelect,
     });
-    return NextResponse.json(newMember, { status: 201 });
+    return NextResponse.json(created, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to create team member' }, { status: 500 });
+    return handleApiError(error, 'Ekip üyesi oluşturulamadı');
   }
 }

@@ -1,12 +1,23 @@
 import { NextResponse } from 'next/server';
+import bcrypt from 'bcryptjs';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError, ApiError } from '@/lib/api';
+import { teamUpdate } from '@/lib/schemas';
+import { getSession } from '@/lib/auth';
+
+const safeSelect = {
+  id: true, email: true, name: true, role: true, department: true,
+  status: true, avatar: true, createdAt: true, updatedAt: true,
+};
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const body = await request.json();
+    const session = await getSession();
+    if (session?.role !== 'admin') throw new ApiError(403, 'Bu işlem için yönetici yetkisi gerekli');
+
+    const body = await parseBody(request, teamUpdate);
     const params = await context.params;
-    
-    const updatedUser = await prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id: params.id },
       data: {
         name: body.name,
@@ -14,23 +25,27 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         role: body.role,
         department: body.department,
         status: body.status,
-      }
+        password: body.password ? await bcrypt.hash(body.password, 12) : undefined,
+      },
+      select: safeSelect,
     });
-
-    return NextResponse.json(updatedUser);
+    return NextResponse.json(updated);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to update user' }, { status: 500 });
+    return handleApiError(error, 'Ekip üyesi güncellenemedi');
   }
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
+    const session = await getSession();
+    if (session?.role !== 'admin') throw new ApiError(403, 'Bu işlem için yönetici yetkisi gerekli');
+
     const params = await context.params;
-    await prisma.user.delete({
-      where: { id: params.id }
-    });
+    if (session.sub === params.id) throw new ApiError(400, 'Kendi hesabınızı silemezsiniz');
+
+    await prisma.user.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 });
+    return handleApiError(error, 'Ekip üyesi silinemedi');
   }
 }

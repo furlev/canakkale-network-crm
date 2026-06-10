@@ -1,31 +1,35 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError, getPagination, listResponse } from '@/lib/api';
+import { leadCreate } from '@/lib/schemas';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const leads = await prisma.lead.findMany({
-      orderBy: { createdAt: 'desc' }
-    });
-    return NextResponse.json(leads);
+    const pagination = getPagination(request);
+    const [items, total] = await Promise.all([
+      prisma.lead.findMany({ orderBy: { createdAt: 'desc' }, ...(pagination ?? {}) }),
+      pagination ? prisma.lead.count() : Promise.resolve(undefined),
+    ]);
+    return listResponse(items, total);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch leads' }, { status: 500 });
+    return handleApiError(error, 'Lead listesi alınamadı');
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const newLead = await prisma.lead.create({
+    const body = await parseBody(request, leadCreate);
+    const created = await prisma.lead.create({
       data: {
         name: body.name,
-        company: body.company,
-        value: body.value || 0,
+        company: body.company || null,
+        value: body.value ?? 0,
         status: body.status || 'new',
         priority: body.priority || 'normal',
-      }
+      },
     });
-    return NextResponse.json(newLead, { status: 201 });
+    return NextResponse.json(created, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to create lead' }, { status: 500 });
+    return handleApiError(error, 'Lead oluşturulamadı');
   }
 }

@@ -10,13 +10,32 @@ type News = {
   views: number;
   publishDate?: string;
   createdAt: string;
+  wpId?: number | null;
+  url?: string | null;
 };
 
 export default function NewsPage() {
   const [news, setNews] = useState<News[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
   const [newArticle, setNewArticle] = useState({ title: '', category: 'Gündem', author: 'Editör', status: 'draft' });
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMsg('');
+    try {
+      const res = await fetch('/api/wordpress/sync', { method: 'POST' });
+      const data = await res.json();
+      setSyncMsg(res.ok ? `✅ ${data.message}` : `❌ ${data.error || 'Senkronizasyon başarısız'}`);
+      if (res.ok) fetchNews();
+    } catch {
+      setSyncMsg('❌ Sunucuya ulaşılamadı');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   useEffect(() => {
     fetchNews();
@@ -88,9 +107,18 @@ export default function NewsPage() {
           <p className="page-subtitle">Sitedeki haber içeriklerinin yönetimi</p>
         </div>
         <div className="page-header-actions">
+          <button className="btn btn-ghost" disabled={syncing} onClick={handleSync}>
+            🔄 {syncing ? 'Senkronize ediliyor...' : "WordPress'ten Çek"}
+          </button>
           <button className="btn btn-primary" onClick={() => setIsAdding(true)}>+ Yeni Haber</button>
         </div>
       </div>
+
+      {syncMsg && (
+        <div style={{ padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--border-radius)', background: syncMsg.startsWith('✅') ? 'rgba(0,184,148,0.12)' : 'rgba(255,118,117,0.12)', color: syncMsg.startsWith('✅') ? 'var(--success)' : 'var(--error)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>
+          {syncMsg}
+        </div>
+      )}
 
       <div className="stats-grid" style={{marginBottom: 'var(--space-6)'}}>
         <div className="stat-card">
@@ -128,7 +156,13 @@ export default function NewsPage() {
             <tbody>
               {news.map((item) => (
                 <tr key={item.id}>
-                  <td style={{fontWeight:500, maxWidth:300, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{item.title}</td>
+                  <td style={{fontWeight:500, maxWidth:300, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                    {item.url ? (
+                      <a href={item.url} target="_blank" rel="noreferrer" style={{color:'inherit', textDecoration:'none'}} title="Sitede aç ↗">
+                        {item.wpId ? '🔗 ' : ''}{item.title}
+                      </a>
+                    ) : item.title}
+                  </td>
                   <td><span className="badge badge-info">{item.category}</span></td>
                   <td style={{color:'var(--text-muted)'}}>{item.author}</td>
                   <td>{item.views.toLocaleString('tr-TR')}</td>

@@ -1,27 +1,39 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError, getPagination, listResponse } from '@/lib/api';
+import { tipCreate } from '@/lib/schemas';
+import { notify, nextNumber } from '@/lib/notify';
 
-export async function GET() {
+const safeReporter = { select: { id: true, name: true, email: true, role: true, department: true, status: true, avatar: true } };
+
+export async function GET(request: Request) {
   try {
-    const tips = await prisma.tip.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: { reporter: true }
-    });
-    return NextResponse.json(tips);
+    const pagination = getPagination(request);
+    const [items, total] = await Promise.all([
+      prisma.tip.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: { reporter: safeReporter },
+        ...(pagination ?? {}),
+      }),
+      pagination ? prisma.tip.count() : Promise.resolve(undefined),
+    ]);
+    return listResponse(items, total);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch tips' }, { status: 500 });
+    return handleApiError(error, 'İhbarlar alınamadı');
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    
-    // Generate a tip number like TIP-001
-    const count = await prisma.tip.count();
-    const tipNumber = `TIP-${String(count + 1).padStart(3, '0')}`;
+    const body = await parseBody(request, tipCreate);
 
-    const newTip = await prisma.tip.create({
+    const [last, count] = await Promise.all([
+      prisma.tip.findFirst({ orderBy: { createdAt: 'desc' }, select: { tipNumber: true } }),
+      prisma.tip.count(),
+    ]);
+    const tipNumber = nextNumber(last?.tipNumber, 'TIP', 3, count);
+
+    const created = await prisma.tip.create({
       data: {
         tipNumber,
         subject: body.subject,
@@ -30,12 +42,12 @@ export async function POST(request: Request) {
         sourceType: body.sourceType || 'email',
         priority: body.priority || 'normal',
         status: body.status || 'new',
-      }
+      },
     });
 
-    return NextResponse.json(newTip, { status: 201 });
+    await notify('tip', `Yeni ihbar: ${created.subject}`, '/tips');
+    return NextResponse.json(created, { status: 201 });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: 'Failed to create tip' }, { status: 500 });
+    return handleApiError(error, 'İhbar oluşturulamadı');
   }
 }

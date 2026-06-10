@@ -11,6 +11,7 @@ model User {
   id        String   @id @default(uuid())
   email     String   @unique
   name      String
+  password  String?  // bcrypt hash; null = cannot log in yet
   role      String   @default("user") // admin, editor, user
   department String?
   status    String   @default("active")
@@ -21,6 +22,8 @@ model User {
   tips      Tip[]    @relation("TipReporter")
   tasks     Task[]   @relation("TaskAssignee")
   tickets   Ticket[] @relation("TicketAssignee")
+  sentMessages     Message[] @relation("SentMessages")
+  receivedMessages Message[] @relation("ReceivedMessages")
 }
 
 model Tip {
@@ -168,6 +171,8 @@ model News {
   status      String    @default("draft") // draft, published
   views       Int       @default(0)
   publishDate DateTime?
+  wpId        Int?      @unique // WordPress post ID (synced articles)
+  url         String?   // canonical URL on the WordPress site
   
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -304,13 +309,27 @@ model Article {
 }
 
 model Message {
-  id             String   @id @default(uuid())
-  conversationId String   // User id of the other party
-  fromMe         Boolean  @default(true)
-  content        String
-  read           Boolean  @default(false)
+  id          String   @id @default(uuid())
+  content     String
+  read        Boolean  @default(false)
 
-  createdAt      DateTime @default(now())
+  senderId    String
+  sender      User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String
+  recipient   User     @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@index([senderId, recipientId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  type      String   @default("info") // tip, invoice_paid, project_completed, client, task, news, contract, info
+  title     String
+  link      String?  // CRM içi hedef sayfa, ör. /tips
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 
 model Setting {

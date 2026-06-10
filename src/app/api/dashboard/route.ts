@@ -5,11 +5,15 @@ const MONTHS_TR = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Ey
 
 export async function GET() {
   try {
+    const now = new Date();
+    const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+
     const [
-      paidInvoices,
+      revenueAgg,
       activeClients,
       activeProjects,
-      tips,
+      tipGroups,
+      monthlyRows,
       latestNews,
       upcomingTasks,
       recentTips,
@@ -18,42 +22,47 @@ export async function GET() {
       recentProjects,
       recentTasks,
     ] = await Promise.all([
-      prisma.invoice.findMany({ where: { status: 'paid' } }),
+      prisma.invoice.aggregate({ _sum: { amount: true }, where: { status: 'paid' } }),
       prisma.client.count({ where: { status: 'active' } }),
       prisma.project.count({ where: { status: 'active' } }),
-      prisma.tip.findMany(),
+      prisma.tip.groupBy({ by: ['status'], _count: { _all: true } }),
+      prisma.$queryRaw<{ m: Date; total: number }[]>`
+        SELECT date_trunc('month', "createdAt") AS m, SUM(amount)::float AS total
+        FROM "Invoice"
+        WHERE status = 'paid' AND "createdAt" >= ${twelveMonthsAgo}
+        GROUP BY 1
+      `,
       prisma.news.findMany({ where: { status: 'published' }, orderBy: { publishDate: 'desc' }, take: 5 }),
-      prisma.task.findMany({ where: { status: { not: 'done' } }, orderBy: { dueDate: 'asc' }, take: 4, include: { project: true } }),
-      prisma.tip.findMany({ orderBy: { createdAt: 'desc' }, take: 3 }),
-      prisma.invoice.findMany({ orderBy: { updatedAt: 'desc' }, take: 3, include: { client: true } }),
-      prisma.client.findMany({ orderBy: { createdAt: 'desc' }, take: 3 }),
-      prisma.project.findMany({ orderBy: { updatedAt: 'desc' }, take: 3 }),
-      prisma.task.findMany({ where: { status: 'done' }, orderBy: { updatedAt: 'desc' }, take: 3 }),
+      prisma.task.findMany({ where: { status: { not: 'done' } }, orderBy: { dueDate: 'asc' }, take: 4, include: { project: { select: { name: true } } } }),
+      prisma.tip.findMany({ orderBy: { createdAt: 'desc' }, take: 3, select: { subject: true, createdAt: true } }),
+      prisma.invoice.findMany({ orderBy: { updatedAt: 'desc' }, take: 3, select: { invoiceNo: true, amount: true, status: true, updatedAt: true } }),
+      prisma.client.findMany({ orderBy: { createdAt: 'desc' }, take: 3, select: { companyName: true, createdAt: true } }),
+      prisma.project.findMany({ orderBy: { updatedAt: 'desc' }, take: 3, select: { name: true, updatedAt: true } }),
+      prisma.task.findMany({ where: { status: 'done' }, orderBy: { updatedAt: 'desc' }, take: 3, select: { title: true, updatedAt: true } }),
     ]);
 
-    // Revenue grouped into the last 12 months
-    const now = new Date();
+    // Last 12 months series from the grouped rows
+    const byMonthKey = new Map<string, number>();
+    for (const row of monthlyRows) {
+      const d = new Date(row.m);
+      byMonthKey.set(`${d.getFullYear()}-${d.getMonth()}`, row.total);
+    }
     const revenueByMonth: { month: string; value: number }[] = [];
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const total = paidInvoices
-        .filter(inv => {
-          const c = new Date(inv.createdAt);
-          return c.getFullYear() === d.getFullYear() && c.getMonth() === d.getMonth();
-        })
-        .reduce((sum, inv) => sum + inv.amount, 0);
-      revenueByMonth.push({ month: MONTHS_TR[d.getMonth()], value: total });
+      revenueByMonth.push({
+        month: MONTHS_TR[d.getMonth()],
+        value: byMonthKey.get(`${d.getFullYear()}-${d.getMonth()}`) || 0,
+      });
     }
 
-    const totalRevenue = paidInvoices.reduce((sum, inv) => sum + inv.amount, 0);
-
+    const tipCountByStatus = Object.fromEntries(tipGroups.map(g => [g.status, g._count._all]));
     const tipStats = {
-      new: tips.filter(t => t.status === 'new').length,
-      investigating: tips.filter(t => t.status === 'investigating').length,
-      completed: tips.filter(t => ['verified', 'converted', 'rejected'].includes(t.status)).length,
+      new: tipCountByStatus['new'] || 0,
+      investigating: tipCountByStatus['investigating'] || 0,
+      completed: (tipCountByStatus['verified'] || 0) + (tipCountByStatus['converted'] || 0) + (tipCountByStatus['rejected'] || 0),
     };
 
-    // Merge recent records into a single activity feed
     type Activity = { text: string; date: Date; dot: string; emoji: string };
     const activities: Activity[] = [
       ...recentTips.map(t => ({ text: `Yeni ihbar alındı — ${t.subject}`, date: t.createdAt, dot: 'warning', emoji: '🔔' })),
@@ -71,7 +80,7 @@ export async function GET() {
 
     return NextResponse.json({
       stats: {
-        totalRevenue,
+        totalRevenue: revenueAgg._sum.amount || 0,
         activeClients,
         activeProjects,
         newTips: tipStats.new,
@@ -95,6 +104,7 @@ export async function GET() {
       })),
     });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch dashboard data' }, { status: 500 });
+    console.error('[api] dashboard:', error);
+    return NextResponse.json({ error: 'Dashboard verisi alınamadı' }, { status: 500 });
   }
 }

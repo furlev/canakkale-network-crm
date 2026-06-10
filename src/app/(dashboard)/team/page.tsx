@@ -21,7 +21,34 @@ export default function TeamPage() {
   const [team, setTeam] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
-  const [newUser, setNewUser] = useState({ name: '', email: '', role: 'user', department: '', status: 'active' });
+  const [newUser, setNewUser] = useState({ name: '', email: '', role: 'user', department: '', status: 'active', password: '' });
+  const [pwTarget, setPwTarget] = useState<User | null>(null);
+  const [pwValue, setPwValue] = useState('');
+  const [pwMsg, setPwMsg] = useState('');
+
+  const handleSetPassword = async () => {
+    if (!pwTarget || pwValue.length < 8) {
+      setPwMsg('Şifre en az 8 karakter olmalı');
+      return;
+    }
+    try {
+      const res = await fetch(`/api/team/${pwTarget.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pwValue }),
+      });
+      if (res.ok) {
+        setPwTarget(null);
+        setPwValue('');
+        setPwMsg('');
+      } else {
+        const data = await res.json().catch(() => null);
+        setPwMsg(data?.error || 'Şifre atanamadı');
+      }
+    } catch {
+      setPwMsg('Sunucuya ulaşılamadı');
+    }
+  };
 
   useEffect(() => {
     fetchTeam();
@@ -51,7 +78,7 @@ export default function TeamPage() {
         const created = await res.json();
         setTeam([created, ...team]);
         setIsAdding(false);
-        setNewUser({ name: '', email: '', role: 'user', department: '', status: 'active' });
+        setNewUser({ name: '', email: '', role: 'user', department: '', status: 'active', password: '' });
       }
     } catch (error) {
       console.error('Error creating user:', error);
@@ -156,6 +183,7 @@ export default function TeamPage() {
                   </td>
                   <td style={{fontSize:'var(--text-xs)', color:'var(--text-muted)'}}>{new Date(user.createdAt).toLocaleDateString('tr-TR')}</td>
                   <td>
+                    <button className="btn btn-ghost btn-sm" title="Giriş şifresi ata/sıfırla" onClick={() => { setPwTarget(user); setPwValue(''); setPwMsg(''); }}>🔑</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(user.id)}>Sil</button>
                   </td>
                 </tr>
@@ -196,10 +224,38 @@ export default function TeamPage() {
                   <input className="form-input" value={newUser.department} onChange={e=>setNewUser({...newUser, department: e.target.value})} />
                 </div>
               </div>
+              <div className="form-group">
+                <label className="form-label">Giriş Şifresi (opsiyonel, en az 8 karakter)</label>
+                <input type="password" className="form-input" placeholder="Boş bırakılırsa kullanıcı giriş yapamaz" value={newUser.password} onChange={e=>setNewUser({...newUser, password: e.target.value})} />
+              </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setIsAdding(false)}>İptal</button>
               <button className="btn btn-primary" onClick={handleCreateUser}>Kullanıcı Ekle</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {pwTarget && (
+        <>
+          <div className="modal-backdrop" onClick={() => setPwTarget(null)}></div>
+          <div className="modal" style={{maxWidth: 420}}>
+            <div className="modal-header">
+              <h2 className="modal-title">🔑 Şifre Ata — {pwTarget.name}</h2>
+              <button className="modal-close" onClick={() => setPwTarget(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Yeni Giriş Şifresi</label>
+                <input type="password" className="form-input" value={pwValue} onChange={e => setPwValue(e.target.value)} placeholder="En az 8 karakter" autoFocus />
+              </div>
+              {pwMsg && <div style={{color:'var(--error)', fontSize:'var(--text-sm)', marginBottom:'var(--space-3)'}}>{pwMsg}</div>}
+              <p style={{fontSize:'var(--text-xs)', color:'var(--text-muted)'}}>Kullanıcı bu şifreyle <strong>{pwTarget.email}</strong> adresini kullanarak giriş yapabilir.</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setPwTarget(null)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleSetPassword}>Şifreyi Kaydet</button>
             </div>
           </div>
         </>

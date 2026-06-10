@@ -1,38 +1,51 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError, getPagination, listResponse } from '@/lib/api';
+import { ticketCreate } from '@/lib/schemas';
+import { nextNumber } from '@/lib/notify';
 
-export async function GET() {
+const safeAssignee = { select: { id: true, name: true, email: true, role: true, department: true, status: true, avatar: true } };
+
+export async function GET(request: Request) {
   try {
-    const tickets = await prisma.ticket.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: { client: true, assignee: true }
-    });
-    return NextResponse.json(tickets);
+    const pagination = getPagination(request);
+    const [items, total] = await Promise.all([
+      prisma.ticket.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: { client: true, assignee: safeAssignee },
+        ...(pagination ?? {}),
+      }),
+      pagination ? prisma.ticket.count() : Promise.resolve(undefined),
+    ]);
+    return listResponse(items, total);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch tickets' }, { status: 500 });
+    return handleApiError(error, 'Destek talepleri alınamadı');
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    
-    const count = await prisma.ticket.count();
-    const ticketNo = body.ticketNo || `TKT-${String(count + 1).padStart(4, '0')}`;
+    const body = await parseBody(request, ticketCreate);
 
-    const newTicket = await prisma.ticket.create({
+    const [last, count] = await Promise.all([
+      prisma.ticket.findFirst({ orderBy: { createdAt: 'desc' }, select: { ticketNo: true } }),
+      prisma.ticket.count(),
+    ]);
+    const ticketNo = body.ticketNo || nextNumber(last?.ticketNo, 'TKT', 4, count);
+
+    const created = await prisma.ticket.create({
       data: {
         ticketNo,
         subject: body.subject,
-        description: body.description,
+        description: body.description || null,
         status: body.status || 'open',
         priority: body.priority || 'normal',
         clientId: body.clientId || null,
         assigneeId: body.assigneeId || null,
-      }
+      },
     });
-    return NextResponse.json(newTicket, { status: 201 });
+    return NextResponse.json(created, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to create ticket' }, { status: 500 });
+    return handleApiError(error, 'Destek talebi oluşturulamadı');
   }
 }

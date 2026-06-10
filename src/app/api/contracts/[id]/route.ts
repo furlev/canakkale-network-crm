@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError } from '@/lib/api';
+import { contractUpdate } from '@/lib/schemas';
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const body = await request.json();
+    const body = await parseBody(request, contractUpdate);
     const params = await context.params;
-
-    const updatedContract = await prisma.contract.update({
+    const updated = await prisma.contract.update({
       where: { id: params.id },
       data: {
         title: body.title,
@@ -17,23 +18,20 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         endDate: body.endDate !== undefined ? (body.endDate ? new Date(body.endDate) : null) : undefined,
         clientId: body.clientId !== undefined ? (body.clientId || null) : undefined,
       },
-      include: { client: true }
+      include: { client: true },
     });
-
-    return NextResponse.json(updatedContract);
+    return NextResponse.json(updated);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to update contract' }, { status: 500 });
+    return handleApiError(error, 'Sözleşme güncellenemedi');
   }
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const params = await context.params;
-    await prisma.contract.delete({
-      where: { id: params.id }
-    });
+    await prisma.contract.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to delete contract' }, { status: 500 });
+    return handleApiError(error, 'Sözleşme silinemedi');
   }
 }

@@ -13,13 +13,21 @@
     "@types/node": "^25.9.1",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
+    "bcryptjs": "^3.0.3",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.6",
+    "imapflow": "^1.4.0",
+    "jose": "^6.2.3",
+    "mailparser": "^3.9.9",
     "next": "^16.2.6",
     "prisma": "5.10.2",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "zod": "^4.4.3"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/mailparser": "^3.4.6"
+  }
 }

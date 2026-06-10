@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError } from '@/lib/api';
+import { advertiserUpdate } from '@/lib/schemas';
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const body = await request.json();
+    const body = await parseBody(request, advertiserUpdate);
     const params = await context.params;
-    
-    const updatedAdvertiser = await prisma.advertiser.update({
+    const updated = await prisma.advertiser.update({
       where: { id: params.id },
       data: {
         company: body.company,
@@ -16,23 +17,20 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         activeAds: body.activeAds,
         totalSpent: body.totalSpent,
         status: body.status,
-      }
+      },
     });
-
-    return NextResponse.json(updatedAdvertiser);
+    return NextResponse.json(updated);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to update advertiser' }, { status: 500 });
+    return handleApiError(error, 'Reklam veren güncellenemedi');
   }
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const params = await context.params;
-    await prisma.advertiser.delete({
-      where: { id: params.id }
-    });
+    await prisma.advertiser.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to delete advertiser' }, { status: 500 });
+    return handleApiError(error, 'Reklam veren silinemedi');
   }
 }

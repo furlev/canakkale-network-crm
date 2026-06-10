@@ -1,34 +1,67 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError, ApiError } from '@/lib/api';
+import { messageCreate } from '@/lib/schemas';
+import { getSession } from '@/lib/auth';
 
-// GET /api/messages              -> conversation list (team members + last message + unread count)
-// GET /api/messages?conversationId=xxx -> messages of one conversation (marks incoming as read)
+// Gerçek kişiden-kişiye mesajlaşma. "conversationId" = karşı tarafın kullanıcı id'si;
+// "ben" tarafı oturumdan gelir, yanıtlar fromMe alanıyla normalize edilir.
+
+// GET /api/messages                      -> konuşma listesi (diğer kullanıcılar + son mesaj + okunmamış)
+// GET /api/messages?conversationId=xxx   -> o kişiyle mesajlaşma (gelenleri okundu işaretler)
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const conversationId = searchParams.get('conversationId');
+    const session = await getSession();
+    if (!session) throw new ApiError(401, 'Oturum gerekli');
+    const me = session.sub;
 
-    if (conversationId) {
+    const { searchParams } = new URL(request.url);
+    const other = searchParams.get('conversationId');
+
+    if (other) {
       await prisma.message.updateMany({
-        where: { conversationId, fromMe: false, read: false },
-        data: { read: true }
+        where: { senderId: other, recipientId: me, read: false },
+        data: { read: true },
       });
       const messages = await prisma.message.findMany({
-        where: { conversationId },
-        orderBy: { createdAt: 'asc' }
+        where: {
+          OR: [
+            { senderId: me, recipientId: other },
+            { senderId: other, recipientId: me },
+          ],
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 500,
       });
-      return NextResponse.json(messages);
+      return NextResponse.json(messages.map(m => ({
+        id: m.id,
+        conversationId: other,
+        fromMe: m.senderId === me,
+        content: m.content,
+        createdAt: m.createdAt,
+      })));
     }
 
     const [users, messages] = await Promise.all([
-      prisma.user.findMany({ orderBy: { name: 'asc' } }),
-      prisma.message.findMany({ orderBy: { createdAt: 'desc' } })
+      prisma.user.findMany({
+        where: { id: { not: me } },
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true, role: true, department: true, status: true },
+      }),
+      prisma.message.findMany({
+        where: { OR: [{ senderId: me }, { recipientId: me }] },
+        orderBy: { createdAt: 'desc' },
+        take: 1000,
+      }),
     ]);
 
     const conversations = users.map(user => {
-      const userMessages = messages.filter(m => m.conversationId === user.id);
-      const lastMessage = userMessages[0] || null;
-      const unread = userMessages.filter(m => !m.fromMe && !m.read).length;
+      const between = messages.filter(m =>
+        (m.senderId === me && m.recipientId === user.id) ||
+        (m.senderId === user.id && m.recipientId === me)
+      );
+      const lastMessage = between[0] || null;
+      const unread = between.filter(m => m.senderId === user.id && m.recipientId === me && !m.read).length;
       return {
         id: user.id,
         name: user.name,
@@ -50,23 +83,37 @@ export async function GET(request: Request) {
 
     return NextResponse.json(conversations);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 });
+    return handleApiError(error, 'Mesajlar alınamadı');
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const newMessage = await prisma.message.create({
+    const session = await getSession();
+    if (!session) throw new ApiError(401, 'Oturum gerekli');
+
+    const body = await parseBody(request, messageCreate);
+    if (body.conversationId === session.sub) throw new ApiError(400, 'Kendinize mesaj gönderemezsiniz');
+
+    const recipient = await prisma.user.findUnique({ where: { id: body.conversationId }, select: { id: true } });
+    if (!recipient) throw new ApiError(404, 'Alıcı bulunamadı');
+
+    const created = await prisma.message.create({
       data: {
-        conversationId: body.conversationId,
+        senderId: session.sub,
+        recipientId: body.conversationId,
         content: body.content,
-        fromMe: body.fromMe !== undefined ? body.fromMe : true,
-        read: body.fromMe === false ? false : true,
-      }
+        read: false,
+      },
     });
-    return NextResponse.json(newMessage, { status: 201 });
+    return NextResponse.json({
+      id: created.id,
+      conversationId: body.conversationId,
+      fromMe: true,
+      content: created.content,
+      createdAt: created.createdAt,
+    }, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to create message' }, { status: 500 });
+    return handleApiError(error, 'Mesaj gönderilemedi');
   }
 }

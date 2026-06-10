@@ -1,30 +1,34 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError, getPagination, listResponse } from '@/lib/api';
+import { expenseCreate } from '@/lib/schemas';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const expenses = await prisma.expense.findMany({
-      orderBy: { date: 'desc' }
-    });
-    return NextResponse.json(expenses);
+    const pagination = getPagination(request);
+    const [items, total] = await Promise.all([
+      prisma.expense.findMany({ orderBy: { date: 'desc' }, ...(pagination ?? {}) }),
+      pagination ? prisma.expense.count() : Promise.resolve(undefined),
+    ]);
+    return listResponse(items, total);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch expenses' }, { status: 500 });
+    return handleApiError(error, 'Giderler alınamadı');
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const newExpense = await prisma.expense.create({
+    const body = await parseBody(request, expenseCreate);
+    const created = await prisma.expense.create({
       data: {
         category: body.category,
         amount: body.amount,
-        description: body.description,
+        description: body.description || null,
         date: body.date ? new Date(body.date) : new Date(),
-      }
+      },
     });
-    return NextResponse.json(newExpense, { status: 201 });
+    return NextResponse.json(created, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to create expense' }, { status: 500 });
+    return handleApiError(error, 'Gider oluşturulamadı');
   }
 }

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 
 const sections = [
+  { key: 'account', icon: '👤', label: 'Hesap' },
   { key: 'general', icon: '⚙️', label: 'Genel' },
   { key: 'company', icon: '🏢', label: 'Şirket Bilgileri' },
   { key: 'wordpress', icon: '🔗', label: 'WordPress' },
@@ -73,6 +74,79 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [wpBusy, setWpBusy] = useState(false);
+  const [wpStatus, setWpStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
+  const [pwStatus, setPwStatus] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const changePassword = async () => {
+    setPwStatus(null);
+    if (pwForm.newPassword.length < 8) {
+      setPwStatus({ ok: false, text: '❌ Yeni şifre en az 8 karakter olmalı' });
+      return;
+    }
+    if (pwForm.newPassword !== pwForm.confirm) {
+      setPwStatus({ ok: false, text: '❌ Yeni şifreler eşleşmiyor' });
+      return;
+    }
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: pwForm.currentPassword, newPassword: pwForm.newPassword }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPwStatus({ ok: true, text: '✅ Şifreniz güncellendi' });
+        setPwForm({ currentPassword: '', newPassword: '', confirm: '' });
+      } else {
+        setPwStatus({ ok: false, text: `❌ ${data.error || 'Şifre değiştirilemedi'}` });
+      }
+    } catch {
+      setPwStatus({ ok: false, text: '❌ Sunucuya ulaşılamadı' });
+    }
+  };
+
+  const testWordPress = async () => {
+    setWpBusy(true);
+    setWpStatus(null);
+    try {
+      // Kaydedilmemiş alanlarla test etmemek için önce mevcut formu kaydet
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'wordpress', value: settings.wordpress }),
+      });
+      const res = await fetch('/api/wordpress/test', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        const extra = data.stats ? ` — ${data.stats.total_published} yayında, ${data.stats.this_week} bu hafta` : '';
+        setWpStatus({ ok: true, text: `✅ ${data.message}: ${data.site}${extra}` });
+      } else {
+        setWpStatus({ ok: false, text: `❌ ${data.error || 'Bağlantı kurulamadı'}` });
+      }
+    } catch {
+      setWpStatus({ ok: false, text: '❌ Sunucuya ulaşılamadı' });
+    } finally {
+      setWpBusy(false);
+    }
+  };
+
+  const syncWordPress = async () => {
+    setWpBusy(true);
+    setWpStatus(null);
+    try {
+      const res = await fetch('/api/wordpress/sync', { method: 'POST' });
+      const data = await res.json();
+      setWpStatus(res.ok
+        ? { ok: true, text: `✅ ${data.message}` }
+        : { ok: false, text: `❌ ${data.error || 'Senkronizasyon başarısız'}` });
+    } catch {
+      setWpStatus({ ok: false, text: '❌ Sunucuya ulaşılamadı' });
+    } finally {
+      setWpBusy(false);
+    }
+  };
 
   useEffect(() => {
     fetch('/api/settings')
@@ -153,6 +227,32 @@ export default function SettingsPage() {
             <div style={{ padding: 'var(--space-8)', textAlign: 'center' }}>Yükleniyor...</div>
           ) : (
             <>
+              {active === 'account' && (
+                <>
+                  <h3 className="card-title" style={{ marginBottom: 'var(--space-6)' }}>Hesap — Şifre Değiştir</h3>
+                  <div className="form-group">
+                    <label className="form-label">Mevcut Şifre</label>
+                    <input type="password" className="form-input" autoComplete="current-password" value={pwForm.currentPassword} onChange={e => setPwForm({ ...pwForm, currentPassword: e.target.value })} />
+                  </div>
+                  <div className="grid-2">
+                    <div className="form-group">
+                      <label className="form-label">Yeni Şifre</label>
+                      <input type="password" className="form-input" autoComplete="new-password" value={pwForm.newPassword} onChange={e => setPwForm({ ...pwForm, newPassword: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Yeni Şifre (Tekrar)</label>
+                      <input type="password" className="form-input" autoComplete="new-password" value={pwForm.confirm} onChange={e => setPwForm({ ...pwForm, confirm: e.target.value })} />
+                    </div>
+                  </div>
+                  {pwStatus && (
+                    <div style={{ padding: 'var(--space-3)', borderRadius: 'var(--border-radius)', background: pwStatus.ok ? 'rgba(0,184,148,0.12)' : 'rgba(255,118,117,0.12)', color: pwStatus.ok ? 'var(--success)' : 'var(--error)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>
+                      {pwStatus.text}
+                    </div>
+                  )}
+                  <button className="btn btn-primary" onClick={changePassword}>🔑 Şifreyi Güncelle</button>
+                </>
+              )}
+
               {active === 'general' && (
                 <>
                   <h3 className="card-title" style={{ marginBottom: 'var(--space-6)' }}>Genel Ayarlar</h3>
@@ -197,6 +297,15 @@ export default function SettingsPage() {
                   <div className="form-group"><label className="form-label">WordPress URL</label><input className="form-input" value={settings.wordpress.url} onChange={e => set('wordpress', { ...settings.wordpress, url: e.target.value })} /></div>
                   <div className="form-group"><label className="form-label">API Endpoint</label><input className="form-input" value={settings.wordpress.endpoint} onChange={e => set('wordpress', { ...settings.wordpress, endpoint: e.target.value })} /></div>
                   <div className="form-group"><label className="form-label">API Anahtarı</label><input className="form-input" type="password" placeholder="API anahtarınızı girin..." value={settings.wordpress.apiKey} onChange={e => set('wordpress', { ...settings.wordpress, apiKey: e.target.value })} /></div>
+                  <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
+                    <button className="btn btn-ghost" disabled={wpBusy} onClick={testWordPress}>🔄 {wpBusy ? 'Bekleyin...' : 'Bağlantıyı Test Et'}</button>
+                    <button className="btn btn-ghost" disabled={wpBusy} onClick={syncWordPress}>📥 Haberleri Senkronize Et</button>
+                  </div>
+                  {wpStatus && (
+                    <div style={{ padding: 'var(--space-3)', borderRadius: 'var(--border-radius)', background: wpStatus.ok ? 'rgba(0,184,148,0.12)' : 'rgba(255,118,117,0.12)', color: wpStatus.ok ? 'var(--success)' : 'var(--error)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>
+                      {wpStatus.text}
+                    </div>
+                  )}
                   <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-3)' }}>Senkronizasyon Ayarları</h4>
                   <div className="form-group" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span style={{ fontSize: 'var(--text-sm)' }}>Otomatik haber çekme</span>

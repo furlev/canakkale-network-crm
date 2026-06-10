@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError } from '@/lib/api';
+import { noteUpdate } from '@/lib/schemas';
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const body = await request.json();
+    const body = await parseBody(request, noteUpdate);
     const params = await context.params;
-
-    const updatedNote = await prisma.note.update({
+    const updated = await prisma.note.update({
       where: { id: params.id },
       data: {
         title: body.title,
@@ -15,23 +16,20 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         color: body.color,
         shared: body.shared,
         favorite: body.favorite,
-      }
+      },
     });
-
-    return NextResponse.json(updatedNote);
+    return NextResponse.json(updated);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to update note' }, { status: 500 });
+    return handleApiError(error, 'Not güncellenemedi');
   }
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const params = await context.params;
-    await prisma.note.delete({
-      where: { id: params.id }
-    });
+    await prisma.note.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to delete note' }, { status: 500 });
+    return handleApiError(error, 'Not silinemedi');
   }
 }

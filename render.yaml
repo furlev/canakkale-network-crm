@@ -1,0 +1,24 @@
+# Render Blueprint — "New + > Blueprint" ile bu repo seçilince otomatik kurulum yapar.
+# DATABASE_URL ve IMAP_PASSWORD panelden elle girilir (sync: false).
+services:
+  - type: web
+    name: canakkale-network-crm
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install && npx prisma generate && npx prisma migrate deploy && npm run build
+    startCommand: npm start
+    healthCheckPath: /login
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: IMAP_PASSWORD
+        sync: false
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: NODE_VERSION
+        value: "20"

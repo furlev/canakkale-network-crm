@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError, ApiError } from '@/lib/api';
+import { settingPut } from '@/lib/schemas';
+import { getSession } from '@/lib/auth';
 
 // Settings are stored as { key, value } rows where value is a JSON string per section.
 export async function GET() {
@@ -15,16 +18,16 @@ export async function GET() {
     }
     return NextResponse.json(settings);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 });
+    return handleApiError(error, 'Ayarlar alınamadı');
   }
 }
 
 export async function PUT(request: Request) {
   try {
-    const body = await request.json();
-    if (!body.key) {
-      return NextResponse.json({ error: 'key is required' }, { status: 400 });
-    }
+    const session = await getSession();
+    if (session?.role !== 'admin') throw new ApiError(403, 'Ayarları yalnızca yöneticiler değiştirebilir');
+
+    const body = await parseBody(request, settingPut);
     const value = JSON.stringify(body.value ?? {});
     const saved = await prisma.setting.upsert({
       where: { key: body.key },
@@ -33,6 +36,6 @@ export async function PUT(request: Request) {
     });
     return NextResponse.json({ key: saved.key, value: JSON.parse(saved.value) });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 });
+    return handleApiError(error, 'Ayarlar kaydedilemedi');
   }
 }

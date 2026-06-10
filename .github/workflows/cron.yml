@@ -1,0 +1,26 @@
+# Ücretsiz zamanlayıcı: 15 dakikada bir ihbar mailboxını ve WordPress senkronunu tetikler.
+# Kurulum (repo Settings → Secrets and variables → Actions):
+#   - Secret  CRON_SECRET : .env'deki CRON_SECRET ile aynı değer
+#   - Variable CRM_URL    : https://<render-app-adresi> (sondaki / olmadan)
+name: CRM Cron
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: İhbar mailbox kontrolü
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/check-tips" || echo "check-tips atlandı/başarısız"
+
+      - name: WordPress haber senkronu
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/wp-sync" || echo "wp-sync atlandı/başarısız"

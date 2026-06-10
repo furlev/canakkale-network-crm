@@ -1,31 +1,35 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError, getPagination, listResponse } from '@/lib/api';
+import { announcementCreate } from '@/lib/schemas';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const announcements = await prisma.announcement.findMany({
-      orderBy: { createdAt: 'desc' }
-    });
-    return NextResponse.json(announcements);
+    const pagination = getPagination(request);
+    const [items, total] = await Promise.all([
+      prisma.announcement.findMany({ orderBy: { createdAt: 'desc' }, ...(pagination ?? {}) }),
+      pagination ? prisma.announcement.count() : Promise.resolve(undefined),
+    ]);
+    return listResponse(items, total);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch announcements' }, { status: 500 });
+    return handleApiError(error, 'Duyurular alınamadı');
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const newAnnouncement = await prisma.announcement.create({
+    const body = await parseBody(request, announcementCreate);
+    const created = await prisma.announcement.create({
       data: {
         title: body.title,
         content: body.content,
         target: body.target || 'Herkes',
         priority: body.priority || 'normal',
         author: body.author || 'Admin',
-      }
+      },
     });
-    return NextResponse.json(newAnnouncement, { status: 201 });
+    return NextResponse.json(created, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to create announcement' }, { status: 500 });
+    return handleApiError(error, 'Duyuru oluşturulamadı');
   }
 }

@@ -1,38 +1,43 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { parseBody, handleApiError, getPagination, listResponse } from '@/lib/api';
+import { invoiceCreate } from '@/lib/schemas';
+import { nextNumber } from '@/lib/notify';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const invoices = await prisma.invoice.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: { client: true }
-    });
-    return NextResponse.json(invoices);
+    const pagination = getPagination(request);
+    const [items, total] = await Promise.all([
+      prisma.invoice.findMany({ orderBy: { createdAt: 'desc' }, include: { client: true }, ...(pagination ?? {}) }),
+      pagination ? prisma.invoice.count() : Promise.resolve(undefined),
+    ]);
+    return listResponse(items, total);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch invoices' }, { status: 500 });
+    return handleApiError(error, 'Faturalar alınamadı');
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    
-    // Generate Invoice No if not provided
-    const count = await prisma.invoice.count();
-    const invoiceNo = body.invoiceNo || `INV-${String(count + 1).padStart(4, '0')}`;
+    const body = await parseBody(request, invoiceCreate);
 
-    const newInvoice = await prisma.invoice.create({
+    const [last, count] = await Promise.all([
+      prisma.invoice.findFirst({ orderBy: { createdAt: 'desc' }, select: { invoiceNo: true } }),
+      prisma.invoice.count(),
+    ]);
+    const invoiceNo = body.invoiceNo || nextNumber(last?.invoiceNo, 'INV', 4, count);
+
+    const created = await prisma.invoice.create({
       data: {
         invoiceNo,
         amount: body.amount,
         status: body.status || 'unpaid',
         clientId: body.clientId || null,
         dueDate: body.dueDate ? new Date(body.dueDate) : null,
-      }
+      },
     });
-    return NextResponse.json(newInvoice, { status: 201 });
+    return NextResponse.json(created, { status: 201 });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: 'Failed to create invoice' }, { status: 500 });
+    return handleApiError(error, 'Fatura oluşturulamadı');
   }
 }
