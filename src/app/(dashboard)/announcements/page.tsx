@@ -1,16 +1,81 @@
 'use client';
+import { useState, useEffect } from 'react';
 
-const announcements = [
-  {id:1,title:'Sistem Bakımı Duyurusu',content:'26 Mayıs Cumartesi günü saat 02:00-06:00 arası planlı sistem bakımı yapılacaktır. Bu süre zarfında CRM erişimi kısıtlı olabilir.',date:'23.05.2026',target:'Herkes',priority:'high',author:'Sistem Yönetimi'},
-  {id:2,title:'Yeni İhbar Modülü Kullanıma Açıldı',content:'ihbar@canakkale.network adresine gelen ihbarları artık CRM üzerinden takip edebilirsiniz. Detaylı bilgi için Bilgi Tabanı\'nı inceleyin.',date:'20.05.2026',target:'Ekip',priority:'normal',author:'Admin'},
-  {id:3,title:'Mayıs Ayı Performans Değerlendirmesi',content:'Mayıs ayı performans değerlendirme formlarını 31 Mayıs\'a kadar doldurmanız gerekmektedir.',date:'18.05.2026',target:'Ekip',priority:'normal',author:'İK Departmanı'},
-  {id:4,title:'Yeni Reklam Paketleri',content:'Müşterilerimiz için hazırlanan yeni reklam paketleri satışa sunulmuştur. Detaylı fiyat listesi için satış departmanıyla iletişime geçin.',date:'15.05.2026',target:'Müşteri',priority:'low',author:'Satış Departmanı'},
-];
+type Announcement = {
+  id: string;
+  title: string;
+  content: string;
+  target: string;
+  priority: string;
+  author: string;
+  createdAt: string;
+};
 
-const targetColors: Record<string,string> = {Herkes:'badge-primary',Ekip:'badge-accent','Müşteri':'badge-warning'};
-const prioColors: Record<string,string> = {high:'badge-error',normal:'badge-info',low:'badge-success'};
+const targetColors: Record<string, string> = { Herkes: 'badge-primary', Ekip: 'badge-accent', 'Müşteri': 'badge-warning' };
+const prioColors: Record<string, string> = { high: 'badge-error', normal: 'badge-info', low: 'badge-success' };
+
+const emptyForm = { title: '', content: '', target: 'Herkes', priority: 'normal', author: 'Admin' };
 
 export default function AnnouncementsPage() {
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
+
+  useEffect(() => {
+    fetchAnnouncements();
+  }, []);
+
+  const fetchAnnouncements = async () => {
+    try {
+      const res = await fetch('/api/announcements');
+      setAnnouncements(await res.json());
+    } catch (error) {
+      console.error('Error fetching announcements:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openAdd = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setModalOpen(true);
+  };
+
+  const openEdit = (a: Announcement) => {
+    setEditingId(a.id);
+    setForm({ title: a.title, content: a.content, target: a.target, priority: a.priority, author: a.author });
+    setModalOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.title || !form.content) return;
+    try {
+      const res = editingId
+        ? await fetch(`/api/announcements/${editingId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+        : await fetch('/api/announcements', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      if (res.ok) {
+        const saved = await res.json();
+        setAnnouncements(editingId ? announcements.map(a => (a.id === editingId ? saved : a)) : [saved, ...announcements]);
+        setModalOpen(false);
+      }
+    } catch (error) {
+      console.error('Error saving announcement:', error);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Bu duyuruyu silmek istediğinize emin misiniz?')) return;
+    try {
+      const res = await fetch(`/api/announcements/${id}`, { method: 'DELETE' });
+      if (res.ok) setAnnouncements(announcements.filter(a => a.id !== id));
+    } catch (error) {
+      console.error('Error deleting announcement:', error);
+    }
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -19,31 +84,94 @@ export default function AnnouncementsPage() {
           <p className="page-subtitle">Ekip ve müşteri duyuruları</p>
         </div>
         <div className="page-header-actions">
-          <button className="btn btn-primary">+ Yeni Duyuru</button>
+          <button className="btn btn-primary" onClick={openAdd}>+ Yeni Duyuru</button>
         </div>
       </div>
 
-      <div className="stagger-children" style={{display:'flex',flexDirection:'column',gap:'var(--space-4)'}}>
-        {announcements.map(a=>(
-          <div key={a.id} className="card" style={{borderLeft:`3px solid ${a.priority==='high'?'var(--error)':a.priority==='normal'?'var(--info)':'var(--success)'}`}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'start',marginBottom:'var(--space-3)',flexWrap:'wrap',gap:'var(--space-2)'}}>
-              <h3 style={{fontSize:'var(--text-md)',fontWeight:600}}>{a.title}</h3>
-              <div style={{display:'flex',gap:'var(--space-2)'}}>
-                <span className={`badge ${targetColors[a.target]}`}>{a.target}</span>
-                <span className={`badge ${prioColors[a.priority]}`}>{a.priority==='high'?'Önemli':a.priority==='normal'?'Normal':'Düşük'}</span>
+      {loading ? (
+        <div className="card" style={{ padding: 'var(--space-8)', textAlign: 'center' }}>Yükleniyor...</div>
+      ) : announcements.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-state-icon">📣</div>
+          <div className="empty-state-title">Henüz duyuru yok</div>
+          <div className="empty-state-desc">İlk duyurunuzu yayınlayarak başlayın.</div>
+          <button className="btn btn-primary" onClick={openAdd}>+ Yeni Duyuru</button>
+        </div>
+      ) : (
+        <div className="stagger-children" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {announcements.map(a => (
+            <div key={a.id} className="card" style={{ borderLeft: `3px solid ${a.priority === 'high' ? 'var(--error)' : a.priority === 'normal' ? 'var(--info)' : 'var(--success)'}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 'var(--space-3)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                <h3 style={{ fontSize: 'var(--text-md)', fontWeight: 600 }}>{a.title}</h3>
+                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                  <span className={`badge ${targetColors[a.target] || 'badge-primary'}`}>{a.target}</span>
+                  <span className={`badge ${prioColors[a.priority] || 'badge-info'}`}>{a.priority === 'high' ? 'Önemli' : a.priority === 'normal' ? 'Normal' : 'Düşük'}</span>
+                </div>
+              </div>
+              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 'var(--space-4)' }}>{a.content}</p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                  <div className="avatar avatar-sm" style={{ background: 'var(--primary-gradient)', color: 'white' }}>{a.author[0]}</div>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{a.author}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>📅 {new Date(a.createdAt).toLocaleDateString('tr-TR')}</span>
+                  <button className="btn btn-ghost btn-sm" onClick={() => openEdit(a)}>✏️</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(a.id)}>🗑️</button>
+                </div>
               </div>
             </div>
-            <p style={{fontSize:'var(--text-sm)',color:'var(--text-secondary)',lineHeight:1.6,marginBottom:'var(--space-4)'}}>{a.content}</p>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <div style={{display:'flex',alignItems:'center',gap:'var(--space-2)'}}>
-                <div className="avatar avatar-sm" style={{background:'var(--primary-gradient)',color:'white'}}>{a.author[0]}</div>
-                <span style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>{a.author}</span>
+          ))}
+        </div>
+      )}
+
+      {modalOpen && (
+        <>
+          <div className="modal-backdrop" onClick={() => setModalOpen(false)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">{editingId ? 'Duyuruyu Düzenle' : 'Yeni Duyuru'}</h2>
+              <button className="modal-close" onClick={() => setModalOpen(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Başlık *</label>
+                <input className="form-input" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
               </div>
-              <span style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>📅 {a.date}</span>
+              <div className="form-group">
+                <label className="form-label">İçerik *</label>
+                <textarea className="form-textarea" rows={4} value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} />
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Hedef Kitle</label>
+                  <select className="form-select" value={form.target} onChange={e => setForm({ ...form, target: e.target.value })}>
+                    <option value="Herkes">Herkes</option>
+                    <option value="Ekip">Ekip</option>
+                    <option value="Müşteri">Müşteri</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Öncelik</label>
+                  <select className="form-select" value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}>
+                    <option value="low">Düşük</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">Önemli</option>
+                  </select>
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Yayınlayan</label>
+                <input className="form-input" value={form.author} onChange={e => setForm({ ...form, author: e.target.value })} />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setModalOpen(false)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleSave}>Kaydet</button>
             </div>
           </div>
-        ))}
-      </div>
+        </>
+      )}
     </div>
   );
 }

@@ -49,7 +49,7 @@ const navSections: NavSection[] = [
     title: 'HABERLER',
     items: [
       { label: 'Haberler', href: '/news', icon: '📰' },
-      { label: 'Haber İhbarı', href: '/tips', icon: '🔔', badge: '3' },
+      { label: 'Haber İhbarı', href: '/tips', icon: '🔔' },
       { label: 'Reklam Verenler', href: '/advertisers', icon: '📢' },
       { label: 'Aboneler', href: '/subscribers', icon: '👤' },
     ],
@@ -59,6 +59,8 @@ const navSections: NavSection[] = [
     items: [
       { label: 'Mesajlar', href: '/messages', icon: '💬' },
       { label: 'Ekip', href: '/team', icon: '👨‍💼' },
+      { label: 'Destek', href: '/support', icon: '🎫' },
+      { label: 'Dokümanlar', href: '/documents', icon: '📂' },
       { label: 'Bilgi Tabanı', href: '/knowledge-base', icon: '📖' },
       { label: 'Duyurular', href: '/announcements', icon: '📣' },
       { label: 'Notlar', href: '/notes', icon: '📝' },
@@ -87,6 +89,7 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [newTipCount, setNewTipCount] = useState(0);
 
   /* Service-worker registration */
   useEffect(() => {
@@ -101,6 +104,23 @@ export default function DashboardLayout({
         });
     }
   }, []);
+
+  /* Live badge: count of new tips */
+  useEffect(() => {
+    const fetchTipCount = () => {
+      fetch('/api/tips')
+        .then((res) => res.json())
+        .then((tips) => {
+          if (Array.isArray(tips)) {
+            setNewTipCount(tips.filter((t: { status: string }) => t.status === 'new').length);
+          }
+        })
+        .catch(() => {});
+    };
+    fetchTipCount();
+    const interval = setInterval(fetchTipCount, 60000);
+    return () => clearInterval(interval);
+  }, [pathname]);
 
   return (
     <div className="app-layout">
@@ -121,19 +141,25 @@ export default function DashboardLayout({
             <div className="sidebar-section" key={section.title}>
               <div className="sidebar-section-title">{section.title}</div>
 
-              {section.items.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`sidebar-link${isLinkActive(pathname, item.href) ? ' active' : ''}`}
-                >
-                  <span className="sidebar-link-icon">{item.icon}</span>
-                  <span className="sidebar-link-text">{item.label}</span>
-                  {item.badge && (
-                    <span className="sidebar-link-badge">{item.badge}</span>
-                  )}
-                </Link>
-              ))}
+              {section.items.map((item) => {
+                const badge =
+                  item.href === '/tips' && newTipCount > 0
+                    ? String(newTipCount)
+                    : item.badge;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`sidebar-link${isLinkActive(pathname, item.href) ? ' active' : ''}`}
+                  >
+                    <span className="sidebar-link-icon">{item.icon}</span>
+                    <span className="sidebar-link-text">{item.label}</span>
+                    {badge && (
+                      <span className="sidebar-link-badge">{badge}</span>
+                    )}
+                  </Link>
+                );
+              })}
             </div>
           ))}
         </nav>

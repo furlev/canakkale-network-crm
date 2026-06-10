@@ -1,19 +1,110 @@
 'use client';
+import { useState, useEffect } from 'react';
 
-const contracts = [
-  {id:1,title:'Web Geliştirme Sözleşmesi',client:'ABC Medya Ltd.',startDate:'01.01.2026',endDate:'31.12.2026',value:120000,status:'active',progress:45},
-  {id:2,title:'Reklam Yayın Sözleşmesi',client:'Çanakkale Belediyesi',startDate:'01.03.2026',endDate:'01.09.2026',value:85000,status:'active',progress:30},
-  {id:3,title:'İçerik Üretim Anlaşması',client:'Turizm Derneği',startDate:'15.01.2026',endDate:'15.07.2026',value:45000,status:'active',progress:65},
-  {id:4,title:'SEO Danışmanlık Sözleşmesi',client:'Gelibolu Otel',startDate:'01.06.2025',endDate:'01.06.2026',value:36000,status:'expired',progress:100},
-];
-
-const statusMap: Record<string,{label:string;cls:string}> = {
-  active:{label:'Aktif',cls:'badge-success'},
-  expired:{label:'Süresi Dolmuş',cls:'badge-error'},
-  draft:{label:'Taslak',cls:'badge-warning'},
+type Client = { id: string; companyName: string };
+type Contract = {
+  id: string;
+  title: string;
+  value: number;
+  status: string;
+  progress: number;
+  startDate?: string | null;
+  endDate?: string | null;
+  clientId?: string | null;
+  client?: Client | null;
 };
 
+const statusMap: Record<string, { label: string; cls: string }> = {
+  active: { label: 'Aktif', cls: 'badge-success' },
+  expired: { label: 'Süresi Dolmuş', cls: 'badge-error' },
+  draft: { label: 'Taslak', cls: 'badge-warning' },
+};
+
+const emptyForm = { title: '', clientId: '', value: 0, status: 'draft', progress: 0, startDate: '', endDate: '' };
+
 export default function ContractsPage() {
+  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      const [contractsRes, clientsRes] = await Promise.all([fetch('/api/contracts'), fetch('/api/clients')]);
+      setContracts(await contractsRes.json());
+      setClients(await clientsRes.json());
+    } catch (error) {
+      console.error('Error fetching contracts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openAdd = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setModalOpen(true);
+  };
+
+  const openEdit = (c: Contract) => {
+    setEditingId(c.id);
+    setForm({
+      title: c.title,
+      clientId: c.clientId || '',
+      value: c.value,
+      status: c.status,
+      progress: c.progress,
+      startDate: c.startDate ? c.startDate.slice(0, 10) : '',
+      endDate: c.endDate ? c.endDate.slice(0, 10) : '',
+    });
+    setModalOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.title) return;
+    const payload = {
+      ...form,
+      value: Number(form.value) || 0,
+      progress: Number(form.progress) || 0,
+      clientId: form.clientId || null,
+      startDate: form.startDate || null,
+      endDate: form.endDate || null,
+    };
+    try {
+      const res = editingId
+        ? await fetch(`/api/contracts/${editingId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        : await fetch('/api/contracts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (res.ok) {
+        const saved = await res.json();
+        setContracts(editingId ? contracts.map(c => (c.id === editingId ? saved : c)) : [saved, ...contracts]);
+        setModalOpen(false);
+      }
+    } catch (error) {
+      console.error('Error saving contract:', error);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Bu sözleşmeyi silmek istediğinize emin misiniz?')) return;
+    try {
+      const res = await fetch(`/api/contracts/${id}`, { method: 'DELETE' });
+      if (res.ok) setContracts(contracts.filter(c => c.id !== id));
+    } catch (error) {
+      console.error('Error deleting contract:', error);
+    }
+  };
+
+  const activeCount = contracts.filter(c => c.status === 'active').length;
+  const expiredCount = contracts.filter(c => c.status === 'expired').length;
+  const totalValue = contracts.reduce((s, c) => s + c.value, 0);
+  const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString('tr-TR') : '-');
+
   return (
     <div>
       <div className="page-header">
@@ -22,45 +113,115 @@ export default function ContractsPage() {
           <p className="page-subtitle">Sözleşme yönetimi</p>
         </div>
         <div className="page-header-actions">
-          <button className="btn btn-primary">+ Yeni Sözleşme</button>
+          <button className="btn btn-primary" onClick={openAdd}>+ Yeni Sözleşme</button>
         </div>
       </div>
 
-      <div className="stats-grid" style={{gridTemplateColumns:'repeat(3,1fr)'}}>
-        {[{l:'Aktif Sözleşme',v:'3',c:'success',i:'📋'},{l:'Toplam Değer',v:'₺286,000',c:'primary',i:'💰'},{l:'Süresi Dolan',v:'1',c:'error',i:'⚠️'}].map((s,i)=>(
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
+        {[
+          { l: 'Aktif Sözleşme', v: loading ? '-' : String(activeCount), c: 'success', i: '📋' },
+          { l: 'Toplam Değer', v: loading ? '-' : `₺${totalValue.toLocaleString('tr-TR')}`, c: 'primary', i: '💰' },
+          { l: 'Süresi Dolan', v: loading ? '-' : String(expiredCount), c: 'error', i: '⚠️' },
+        ].map((s, i) => (
           <div key={i} className={`stat-card ${s.c}`}>
             <div className="stat-card-top"><div className="stat-card-icon">{s.i}</div></div>
-            <div className="stat-card-value" style={{fontSize:'var(--text-2xl)'}}>{s.v}</div>
+            <div className="stat-card-value" style={{ fontSize: 'var(--text-2xl)' }}>{s.v}</div>
             <div className="stat-card-label">{s.l}</div>
           </div>
         ))}
       </div>
 
-      <div className="grid-2">
-        {contracts.map(c=>(
-          <div key={c.id} className="card">
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:'var(--space-4)'}}>
-              <h3 style={{fontSize:'var(--text-md)',fontWeight:600}}>{c.title}</h3>
-              <span className={`badge ${statusMap[c.status].cls}`}>{statusMap[c.status].label}</span>
+      {loading ? (
+        <div className="card" style={{ padding: 'var(--space-8)', textAlign: 'center' }}>Yükleniyor...</div>
+      ) : contracts.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-state-icon">📝</div>
+          <div className="empty-state-title">Henüz sözleşme yok</div>
+          <div className="empty-state-desc">İlk sözleşmenizi ekleyerek başlayın.</div>
+          <button className="btn btn-primary" onClick={openAdd}>+ Yeni Sözleşme</button>
+        </div>
+      ) : (
+        <div className="grid-2">
+          {contracts.map(c => (
+            <div key={c.id} className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
+                <h3 style={{ fontSize: 'var(--text-md)', fontWeight: 600 }}>{c.title}</h3>
+                <span className={`badge ${(statusMap[c.status] || statusMap.draft).cls}`}>{(statusMap[c.status] || statusMap.draft).label}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
+                <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Müşteri</span><div style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>{c.client?.companyName || '-'}</div></div>
+                <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Değer</span><div style={{ fontSize: 'var(--text-sm)', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--primary-light)' }}>₺{c.value.toLocaleString('tr-TR')}</div></div>
+                <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Başlangıç</span><div style={{ fontSize: 'var(--text-sm)' }}>{fmtDate(c.startDate)}</div></div>
+                <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Bitiş</span><div style={{ fontSize: 'var(--text-sm)' }}>{fmtDate(c.endDate)}</div></div>
+              </div>
+              <div style={{ marginBottom: 'var(--space-2)', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>İlerleme</span>
+                <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{c.progress}%</span>
+              </div>
+              <div className="progress-bar"><div className={`progress-bar-fill ${c.status === 'expired' ? 'warning' : 'primary'}`} style={{ width: `${c.progress}%` }} /></div>
+              <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)' }}>
+                <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={() => openEdit(c)}>✏️ Düzenle</button>
+                <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={() => handleDelete(c.id)}>🗑️ Sil</button>
+              </div>
             </div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'var(--space-3)',marginBottom:'var(--space-4)'}}>
-              <div><span style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>Müşteri</span><div style={{fontSize:'var(--text-sm)',fontWeight:500}}>{c.client}</div></div>
-              <div><span style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>Değer</span><div style={{fontSize:'var(--text-sm)',fontWeight:700,fontFamily:'var(--font-mono)',color:'var(--primary-light)'}}>₺{c.value.toLocaleString()}</div></div>
-              <div><span style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>Başlangıç</span><div style={{fontSize:'var(--text-sm)'}}>{c.startDate}</div></div>
-              <div><span style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>Bitiş</span><div style={{fontSize:'var(--text-sm)'}}>{c.endDate}</div></div>
+          ))}
+        </div>
+      )}
+
+      {modalOpen && (
+        <>
+          <div className="modal-backdrop" onClick={() => setModalOpen(false)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">{editingId ? 'Sözleşmeyi Düzenle' : 'Yeni Sözleşme'}</h2>
+              <button className="modal-close" onClick={() => setModalOpen(false)}>✕</button>
             </div>
-            <div style={{marginBottom:'var(--space-2)',display:'flex',justifyContent:'space-between'}}>
-              <span style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>İlerleme</span>
-              <span style={{fontSize:'var(--text-xs)',fontFamily:'var(--font-mono)',color:'var(--text-secondary)'}}>{c.progress}%</span>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Başlık *</label>
+                <input className="form-input" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Müşteri</label>
+                  <select className="form-select" value={form.clientId} onChange={e => setForm({ ...form, clientId: e.target.value })}>
+                    <option value="">Seçiniz...</option>
+                    {clients.map(cl => <option key={cl.id} value={cl.id}>{cl.companyName}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Değer (₺)</label>
+                  <input className="form-input" type="number" value={form.value} onChange={e => setForm({ ...form, value: Number(e.target.value) })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Başlangıç</label>
+                  <input className="form-input" type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Bitiş</label>
+                  <input className="form-input" type="date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Durum</label>
+                  <select className="form-select" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
+                    <option value="draft">Taslak</option>
+                    <option value="active">Aktif</option>
+                    <option value="expired">Süresi Dolmuş</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">İlerleme (%)</label>
+                  <input className="form-input" type="number" min={0} max={100} value={form.progress} onChange={e => setForm({ ...form, progress: Number(e.target.value) })} />
+                </div>
+              </div>
             </div>
-            <div className="progress-bar"><div className={`progress-bar-fill ${c.status==='expired'?'warning':'primary'}`} style={{width:`${c.progress}%`}} /></div>
-            <div style={{display:'flex',gap:'var(--space-2)',marginTop:'var(--space-4)'}}>
-              <button className="btn btn-ghost btn-sm" style={{flex:1}}>Görüntüle</button>
-              <button className="btn btn-ghost btn-sm" style={{flex:1}}>Düzenle</button>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setModalOpen(false)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleSave}>Kaydet</button>
             </div>
           </div>
-        ))}
-      </div>
+        </>
+      )}
     </div>
   );
 }

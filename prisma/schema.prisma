@@ -67,6 +67,8 @@ model Client {
   invoices     Invoice[]
   estimates    Estimate[]
   tickets      Ticket[]
+  contracts    Contract[]
+  proposals    Proposal[]
   
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -233,4 +235,86 @@ model Document {
   
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+}
+
+model Contract {
+  id          String    @id @default(uuid())
+  title       String
+  value       Float     @default(0)
+  status      String    @default("draft") // draft, active, expired
+  progress    Int       @default(0) // 0-100
+  startDate   DateTime?
+  endDate     DateTime?
+
+  clientId    String?
+  client      Client?   @relation(fields: [clientId], references: [id])
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Proposal {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  value       Float     @default(0)
+  status      String    @default("draft") // draft, sent, approved, rejected
+
+  clientId    String?
+  client      Client?   @relation(fields: [clientId], references: [id])
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Announcement {
+  id        String   @id @default(uuid())
+  title     String
+  content   String
+  target    String   @default("Herkes") // Herkes, Ekip, Musteri
+  priority  String   @default("normal") // low, normal, high
+  author    String   @default("Admin")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Note {
+  id        String   @id @default(uuid())
+  title     String
+  content   String
+  category  String   @default("Genel")
+  color     String   @default("#6c5ce7")
+  shared    Boolean  @default(false)
+  favorite  Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Article {
+  id        String   @id @default(uuid())
+  title     String
+  content   String?
+  category  String   @default("Genel")
+  views     Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String   // User id of the other party
+  fromMe         Boolean  @default(true)
+  content        String
+  read           Boolean  @default(false)
+
+  createdAt      DateTime @default(now())
+}
+
+model Setting {
+  key       String   @id
+  value     String   // JSON string
+  updatedAt DateTime @updatedAt
 }
