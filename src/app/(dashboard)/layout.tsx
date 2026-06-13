@@ -52,7 +52,9 @@ const navSections: NavSection[] = [
       { label: 'Haberler', href: '/news', icon: '📰' },
       { label: 'Haber İhbarı', href: '/tips', icon: '🔔' },
       { label: 'Reklam Verenler', href: '/advertisers', icon: '📢' },
+      { label: 'Reklam Kampanyaları', href: '/campaigns', icon: '🎬' },
       { label: 'Aboneler', href: '/subscribers', icon: '👤' },
+      { label: 'Bülten', href: '/newsletters', icon: '📧' },
     ],
   },
   {

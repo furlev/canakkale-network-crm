@@ -46,6 +46,73 @@ export default function TipsPage() {
   const [newTip, setNewTip] = useState({ subject: '', content: '', source: '', priority: 'normal', sourceType: 'phone' });
   const [checkingMail, setCheckingMail] = useState(false);
   const [actionMsg, setActionMsg] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<null | { summary: string; priority: string; category: string; newsworthy: boolean; reasoning: string }>(null);
+  const [aiDraft, setAiDraft] = useState<null | { title: string; body: string }>(null);
+
+  const runAiAnalysis = async (tip: Tip) => {
+    setAiBusy(true);
+    setActionMsg('');
+    setAiAnalysis(null);
+    try {
+      const res = await fetch('/api/ai/analyze-tip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipId: tip.id }),
+      });
+      const data = await res.json();
+      if (res.ok) setAiAnalysis(data);
+      else setActionMsg(`❌ ${data.error || 'AI analizi başarısız'}`);
+    } catch {
+      setActionMsg('❌ Sunucuya ulaşılamadı');
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const generateDraft = async (tip: Tip) => {
+    setAiBusy(true);
+    setActionMsg('');
+    setAiDraft(null);
+    try {
+      const res = await fetch('/api/ai/draft-article', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipId: tip.id }),
+      });
+      const data = await res.json();
+      if (res.ok) setAiDraft(data);
+      else setActionMsg(`❌ ${data.error || 'Taslak oluşturulamadı'}`);
+    } catch {
+      setActionMsg('❌ Sunucuya ulaşılamadı');
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const applyAiPriority = async () => {
+    if (!aiAnalysis || !selected) return;
+    try {
+      const res = await fetch(`/api/tips/${selected.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priority: aiAnalysis.priority }),
+      });
+      if (res.ok) {
+        setTips(tips.map(t => t.id === selected.id ? { ...t, priority: aiAnalysis.priority } : t));
+        setSelected({ ...selected, priority: aiAnalysis.priority });
+        setActionMsg('✅ Öncelik AI önerisine göre güncellendi');
+      }
+    } catch {
+      setActionMsg('❌ Güncellenemedi');
+    }
+  };
+
+  const openTip = (tip: Tip) => {
+    setSelected(tip);
+    setAiAnalysis(null);
+    setAiDraft(null);
+  };
 
   const handleCheckMail = async () => {
     setCheckingMail(true);
@@ -200,7 +267,7 @@ export default function TipsPage() {
                 </div>
                 <div className="kanban-column-body">
                   {items.map(tip => (
-                    <div key={tip.id} className="kanban-card" onClick={()=>setSelected(tip)} style={{cursor:'pointer'}}>
+                    <div key={tip.id} className="kanban-card" onClick={()=>openTip(tip)} style={{cursor:'pointer'}}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'start',marginBottom:'var(--space-2)'}}>
                         <span className={`badge ${priorityMap[tip.priority]?.cls || 'badge-primary'}`}>{priorityMap[tip.priority]?.label || tip.priority}</span>
                         <span style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>{tip.tipNumber}</span>
@@ -245,7 +312,7 @@ export default function TipsPage() {
             </thead>
             <tbody>
               {tips.map(tip=>(
-                <tr key={tip.id} onClick={()=>setSelected(tip)} style={{cursor:'pointer'}}>
+                <tr key={tip.id} onClick={()=>openTip(tip)} style={{cursor:'pointer'}}>
                   <td><span className="font-mono" style={{color:'var(--primary-light)'}}>{tip.tipNumber}</span></td>
                   <td style={{maxWidth:280,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{tip.subject}</td>
                   <td><span style={{fontSize:'var(--text-xs)'}}>{tip.source}</span></td>
@@ -253,7 +320,7 @@ export default function TipsPage() {
                   <td>{tip.reporter?.name || <span style={{color:'var(--text-muted)'}}>—</span>}</td>
                   <td><span className={`badge ${statusLabels[tip.status]?.cls}`}>{statusLabels[tip.status]?.label}</span></td>
                   <td style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>{new Date(tip.createdAt).toLocaleDateString('tr-TR')}</td>
-                  <td><button className="btn btn-ghost btn-sm" onClick={(e)=>{e.stopPropagation();setSelected(tip)}}>Detay</button></td>
+                  <td><button className="btn btn-ghost btn-sm" onClick={(e)=>{e.stopPropagation();openTip(tip)}}>Detay</button></td>
                 </tr>
               ))}
             </tbody>
@@ -272,6 +339,36 @@ export default function TipsPage() {
                 <div style={{fontSize:'var(--text-xs)',color:'var(--text-muted)',marginTop:4}}>{selected.tipNumber} • {new Date(selected.createdAt).toLocaleString('tr-TR')}</div>
               </div>
               <button className="modal-close" onClick={()=>setSelected(null)}>✕</button>
+            </div>
+            <div style={{padding:'0 var(--space-5)',marginTop:'var(--space-3)'}}>
+              <div style={{display:'flex',gap:'var(--space-2)',flexWrap:'wrap'}}>
+                <button className="btn btn-accent btn-sm" disabled={aiBusy} onClick={()=>runAiAnalysis(selected)}>🤖 {aiBusy ? 'Çalışıyor...' : 'AI Analiz'}</button>
+                <button className="btn btn-ghost btn-sm" disabled={aiBusy} onClick={()=>generateDraft(selected)}>✨ Haber Taslağı Üret</button>
+              </div>
+              {aiAnalysis && (
+                <div style={{marginTop:'var(--space-3)',padding:'var(--space-3) var(--space-4)',background:'var(--surface-2)',borderRadius:'var(--border-radius)',border:'1px solid var(--border-subtle)'}}>
+                  <div style={{display:'flex',gap:'var(--space-2)',flexWrap:'wrap',marginBottom:'var(--space-2)'}}>
+                    <span className={`badge ${priorityMap[aiAnalysis.priority]?.cls || 'badge-primary'}`}>Önerilen öncelik: {priorityMap[aiAnalysis.priority]?.label || aiAnalysis.priority}</span>
+                    <span className="badge badge-info">Kategori: {aiAnalysis.category}</span>
+                    <span className={`badge ${aiAnalysis.newsworthy ? 'badge-success' : 'badge-error'}`}>{aiAnalysis.newsworthy ? '📰 Haber değeri var' : 'Haber değeri düşük'}</span>
+                  </div>
+                  <div style={{fontSize:'var(--text-sm)',marginBottom:'var(--space-2)'}}><strong>Özet:</strong> {aiAnalysis.summary}</div>
+                  <div style={{fontSize:'var(--text-xs)',color:'var(--text-muted)',marginBottom:'var(--space-2)'}}>{aiAnalysis.reasoning}</div>
+                  {aiAnalysis.priority !== selected.priority && (
+                    <button className="btn btn-ghost btn-sm" onClick={applyAiPriority}>Bu önceliği uygula</button>
+                  )}
+                  <div style={{fontSize:10,color:'var(--text-muted)',marginTop:'var(--space-2)'}}>🤖 Claude Sonnet · öneridir, editör onayı gerekir</div>
+                </div>
+              )}
+              {aiDraft && (
+                <div style={{marginTop:'var(--space-3)',padding:'var(--space-3) var(--space-4)',background:'var(--surface-2)',borderRadius:'var(--border-radius)',border:'1px solid var(--border-subtle)'}}>
+                  <div style={{fontWeight:700,marginBottom:'var(--space-2)'}}>{aiDraft.title}</div>
+                  <div style={{fontSize:'var(--text-sm)',lineHeight:1.6,whiteSpace:'pre-line',maxHeight:220,overflowY:'auto'}}>{aiDraft.body}</div>
+                  <button className="btn btn-ghost btn-sm" style={{marginTop:'var(--space-2)'}} onClick={()=>{navigator.clipboard?.writeText(`${aiDraft.title}\n\n${aiDraft.body}`); setActionMsg('✅ Taslak panoya kopyalandı');}}>📋 Kopyala</button>
+                  <div style={{fontSize:10,color:'var(--text-muted)',marginTop:'var(--space-2)'}}>🤖 Claude Sonnet · yayından önce doğrulayın</div>
+                </div>
+              )}
+              {actionMsg && <div style={{marginTop:'var(--space-3)',fontSize:'var(--text-sm)',color:actionMsg.startsWith('✅')?'var(--success)':'var(--error)'}}>{actionMsg}</div>}
             </div>
             <div className="modal-body">
               <div style={{display:'flex',gap:'var(--space-3)',marginBottom:'var(--space-4)',flexWrap:'wrap'}}>

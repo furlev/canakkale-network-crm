@@ -233,7 +233,7 @@ export const messageCreate = z.object({
 
 /* ── Setting ── */
 export const settingPut = z.object({
-  key: z.enum(['general', 'company', 'wordpress', 'email', 'notifications']),
+  key: z.enum(['general', 'company', 'wordpress', 'email', 'notifications', 'ai']),
   value: z.unknown(),
 });
 

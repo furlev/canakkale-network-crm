@@ -24,3 +24,9 @@ jobs:
           curl -fsS -X POST \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "${{ vars.CRM_URL }}/api/cron/wp-sync" || echo "wp-sync atlandı/başarısız"
+
+      - name: Kampanya bitiş kontrolü
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/campaign-expiry" || echo "campaign-expiry atlandı/başarısız"

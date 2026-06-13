@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { parseBody, handleApiError, ApiError } from '@/lib/api';
 import { settingPut } from '@/lib/schemas';
 import { getSession } from '@/lib/auth';
+import { clearAiKeyCache } from '@/lib/ai';
 
 // Settings are stored as { key, value } rows where value is a JSON string per section.
 export async function GET() {
@@ -34,6 +35,7 @@ export async function PUT(request: Request) {
       update: { value },
       create: { key: body.key, value },
     });
+    if (body.key === 'ai') clearAiKeyCache();
     return NextResponse.json({ key: saved.key, value: JSON.parse(saved.value) });
   } catch (error) {
     return handleApiError(error, 'Ayarlar kaydedilemedi');
