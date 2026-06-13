@@ -1,0 +1,47 @@
+# DigitalOcean App Platform — Çanakkale Network CRM
+# Konsoldan "Create App → GitHub" ile de kurulabilir; bu dosya yapılandırmayı
+# sürüm kontrolünde tutar. Secret değerler konsoldan (encrypted) girilir.
+name: canakkale-network-crm
+region: fra
+services:
+  - name: web
+    github:
+      repo: furlev/canakkale-network-crm
+      branch: main
+      deploy_on_push: true
+    build_command: npx prisma migrate deploy && npm run build
+    run_command: npm start
+    environment_slug: node-js
+    instance_size_slug: basic-xs
+    instance_count: 1
+    http_port: 3000
+    health_check:
+      http_path: /login
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: AUTH_SECRET
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: CRON_SECRET
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: WEBHOOK_SECRET
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: GOOGLE_VERTEX_PROJECT
+        scope: RUN_AND_BUILD_TIME
+        value: condia-claude
+      - key: GOOGLE_CLOUD_LOCATION
+        scope: RUN_AND_BUILD_TIME
+        value: global
+      - key: GOOGLE_VERTEX_CREDENTIALS_JSON
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: IMAP_PASSWORD
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: SMTP_PASSWORD
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET

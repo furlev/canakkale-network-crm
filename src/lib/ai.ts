@@ -44,7 +44,22 @@ export function clearAiKeyCache() {
 
 async function getClient(): Promise<GoogleGenAI> {
   if (VERTEX_PROJECT) {
-    return new GoogleGenAI({ vertexai: true, project: VERTEX_PROJECT, location: VERTEX_LOCATION });
+    const opts: ConstructorParameters<typeof GoogleGenAI>[0] = {
+      vertexai: true,
+      project: VERTEX_PROJECT,
+      location: VERTEX_LOCATION,
+    };
+    // App Platform / dosyasız ortam: servis hesabı JSON'u env'den (GOOGLE_VERTEX_CREDENTIALS_JSON).
+    // Tanımlı değilse google-auth-library varsayılan ADC'yi (GOOGLE_APPLICATION_CREDENTIALS dosyası) kullanır.
+    const credJson = process.env.GOOGLE_VERTEX_CREDENTIALS_JSON;
+    if (credJson) {
+      try {
+        opts.googleAuthOptions = { credentials: JSON.parse(credJson) };
+      } catch {
+        console.error('[ai] GOOGLE_VERTEX_CREDENTIALS_JSON çözümlenemedi');
+      }
+    }
+    return new GoogleGenAI(opts);
   }
   const key = await resolveKey();
   if (!key) throw new AiNotConfiguredError();
