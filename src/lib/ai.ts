@@ -7,13 +7,13 @@ import prisma from '@/lib/prisma';
  * yardımcılar AiNotConfiguredError fırlatır — çağıran kibarca 400 döndürür.
  */
 
-export const AI_MODEL = 'gemini-2.5-flash';
+export const AI_MODEL = 'gemini-3.5-flash';
 
 /** Vertex AI modu: GCP projesi + bölge env'de tanımlıysa, ADC (servis hesabı)
  *  ile Cloud faturalı (kredi geçerli) Vertex kullanılır. Aksi halde GEMINI_API_KEY
  *  ya da Ayarlar'daki anahtarla AI Studio (Developer API) kullanılır. */
 const VERTEX_PROJECT = process.env.GOOGLE_VERTEX_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || '';
-const VERTEX_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || 'us-central1';
+const VERTEX_LOCATION = process.env.GOOGLE_CLOUD_LOCATION || 'global';
 
 export class AiNotConfiguredError extends Error {
   constructor() {

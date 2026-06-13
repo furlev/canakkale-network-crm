@@ -390,14 +390,14 @@ export default function SettingsPage() {
                   <div style={{ padding: 'var(--space-4)', background: 'var(--surface-2)', borderRadius: 'var(--border-radius)', marginBottom: 'var(--space-4)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
                       <span style={{ fontSize: 'var(--text-lg)' }}>🧠</span>
-                      <span style={{ fontWeight: 600 }}>Google Gemini 2.5 Flash</span>
+                      <span style={{ fontWeight: 600 }}>Google Gemini 3.5 Flash</span>
                       <span className="badge badge-success">Aktif</span>
                     </div>
                     <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', lineHeight: 1.5 }}>API anahtarını girince ihbar analizi, otomatik önceliklendirme ve haber taslağı üretimi aktifleşir. Anahtar <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ color: 'var(--primary-light)' }}>aistudio.google.com</a> üzerinden alınır.</p>
                   </div>
                   <div className="form-group"><label className="form-label">AI Provider</label>
                     <select className="form-select" disabled>
-                      <option>Google Gemini (2.5 Flash)</option>
+                      <option>Google Gemini (3.5 Flash)</option>
                     </select>
                   </div>
                   <div className="form-group">
