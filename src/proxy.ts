@@ -7,6 +7,7 @@ const PUBLIC_PREFIXES = [
   '/api/auth/login',
   '/api/webhooks/',
   '/api/cron/',
+  '/api/ai/analyze-article', // WordPress eklentisi Bearer secret ile çağırır; rota kendini korur
 ];
 
 function isPublic(pathname: string): boolean {

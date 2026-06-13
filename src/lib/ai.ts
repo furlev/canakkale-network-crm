@@ -114,6 +114,42 @@ export async function draftArticleFromTip(subject: string, content: string, sour
   return JSON.parse(res.text ?? '{}') as ArticleDraft;
 }
 
+/* ── Haber/makale analizi: SEO + özet + etiket + sosyal medya ── */
+export type ArticleAnalysis = {
+  summary: string;
+  metaDescription: string;
+  seoTitle: string;
+  category: string;
+  tags: string[];
+  socialPost: string;
+};
+
+export async function analyzeArticle(title: string, content: string): Promise<ArticleAnalysis> {
+  const ai = await getClient();
+  const res = await ai.models.generateContent({
+    model: AI_MODEL,
+    contents: `Aşağıdaki haberi analiz et.\n\nBaşlık: ${title}\n\nİçerik:\n${content}`,
+    config: {
+      systemInstruction: 'Sen Çanakkale Network haber sitesinin SEO ve içerik editörüsün. Haberleri analiz edip yayın ve arama motoru için meta verileri üretirsin. Tüm çıktılar Türkçe, nesnel ve abartısız olmalı.',
+      thinkingConfig: { thinkingBudget: 0 },
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          summary: { type: Type.STRING, description: '2-3 cümlelik haber özeti' },
+          metaDescription: { type: Type.STRING, description: 'Arama motoru için ~155 karakter meta açıklama' },
+          seoTitle: { type: Type.STRING, description: 'SEO uyumlu, ~60 karakter başlık' },
+          category: { type: Type.STRING, description: 'Önerilen kategori (Gündem, Asayiş, Spor, Sağlık, Ekonomi, Eğitim, Kültür-Sanat vb.)' },
+          tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: '5-8 anahtar etiket' },
+          socialPost: { type: Type.STRING, description: 'Sosyal medya için kısa, dikkat çekici paylaşım metni (1-2 emoji ile)' },
+        },
+        required: ['summary', 'metaDescription', 'seoTitle', 'category', 'tags', 'socialPost'],
+      },
+    },
+  });
+  return JSON.parse(res.text ?? '{}') as ArticleAnalysis;
+}
+
 /* ── Serbest metin özeti (bülten, rapor yorumu vb.) ── */
 export async function summarizeText(prompt: string, system?: string): Promise<string> {
   const ai = await getClient();

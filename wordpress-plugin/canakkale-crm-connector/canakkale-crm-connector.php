@@ -22,6 +22,8 @@ class CN_CRM_Connector {
     private static $instance = null;
     private $api_key_option = 'cn_crm_api_key';
     private $webhook_url_option = 'cn_crm_webhook_url';
+    private $crm_url_option = 'cn_crm_base_url';
+    private $ai_secret_option = 'cn_crm_ai_secret';
     
     public static function get_instance() {
         if (null === self::$instance) {
@@ -36,6 +38,10 @@ class CN_CRM_Connector {
         add_action('admin_init', array($this, 'register_settings'));
         add_action('publish_post', array($this, 'on_post_published'), 10, 2);
         add_action('transition_post_status', array($this, 'on_post_status_change'), 10, 3);
+
+        // AI: haber editörüne analiz kutusu + sunucu-tarafı proxy
+        add_action('add_meta_boxes', array($this, 'add_ai_meta_box'));
+        add_action('wp_ajax_cn_crm_ai_analyze', array($this, 'ajax_ai_analyze'));
         
         // CORS headers for CRM subdomain
         add_action('rest_api_init', function() {
@@ -613,6 +619,123 @@ class CN_CRM_Connector {
     public function register_settings() {
         register_setting('cn_crm_settings', $this->api_key_option);
         register_setting('cn_crm_settings', $this->webhook_url_option);
+        register_setting('cn_crm_settings', $this->crm_url_option);
+        register_setting('cn_crm_settings', $this->ai_secret_option);
+    }
+
+    /**
+     * Haber editörüne AI analiz kutusu ekle
+     */
+    public function add_ai_meta_box() {
+        add_meta_box('cn_crm_ai', '🤖 CRM AI Analiz', array($this, 'render_ai_meta_box'), 'post', 'side', 'high');
+    }
+
+    public function render_ai_meta_box($post) {
+        $crm_url = get_option($this->crm_url_option);
+        if (empty($crm_url)) {
+            echo '<p>Önce <a href="' . esc_url(admin_url('options-general.php?page=cn-crm-connector')) . '">CRM Connector ayarlarından</a> CRM adresini ve AI secret değerini girin.</p>';
+            return;
+        }
+        $nonce = wp_create_nonce('cn_crm_ai_' . $post->ID);
+        ?>
+        <p style="color:#666;font-size:12px;">Başlık ve içerikten AI ile özet, SEO başlık, meta açıklama, etiket ve sosyal medya metni üretir.</p>
+        <button type="button" class="button button-primary" id="cn-ai-btn" data-post="<?php echo (int) $post->ID; ?>" data-nonce="<?php echo esc_attr($nonce); ?>" style="width:100%;">✨ AI ile Analiz Et</button>
+        <div id="cn-ai-result" style="margin-top:12px;font-size:13px;"></div>
+        <script>
+        (function(){
+            var btn = document.getElementById('cn-ai-btn');
+            if (!btn) return;
+            btn.addEventListener('click', function(){
+                var box = document.getElementById('cn-ai-result');
+                box.innerHTML = '⏳ Analiz ediliyor...';
+                btn.disabled = true;
+                var data = new FormData();
+                data.append('action', 'cn_crm_ai_analyze');
+                data.append('post_id', btn.dataset.post);
+                data.append('_nonce', btn.dataset.nonce);
+                // Editördeki güncel başlık/içeriği de gönder (kaydetmeden çalışsın)
+                var titleEl = document.getElementById('title');
+                if (titleEl) data.append('title', titleEl.value);
+                if (window.tinymce && window.tinymce.get('content') && !window.tinymce.get('content').isHidden()) {
+                    data.append('content', window.tinymce.get('content').getContent({format:'text'}));
+                } else {
+                    var ce = document.getElementById('content');
+                    if (ce) data.append('content', ce.value);
+                }
+                fetch(ajaxurl, { method:'POST', body:data, credentials:'same-origin' })
+                    .then(function(r){ return r.json(); })
+                    .then(function(res){
+                        btn.disabled = false;
+                        if (!res.success) { box.innerHTML = '<span style="color:#c00;">❌ ' + (res.data && res.data.message ? res.data.message : 'Hata') + '</span>'; return; }
+                        var d = res.data;
+                        var esc = function(s){ var e=document.createElement('div'); e.textContent=s||''; return e.innerHTML; };
+                        box.innerHTML =
+                          '<p><strong>SEO Başlık:</strong><br>' + esc(d.seoTitle) + '</p>' +
+                          '<p><strong>Meta Açıklama:</strong><br>' + esc(d.metaDescription) + '</p>' +
+                          '<p><strong>Özet:</strong><br>' + esc(d.summary) + '</p>' +
+                          '<p><strong>Önerilen Kategori:</strong> ' + esc(d.category) + '</p>' +
+                          '<p><strong>Etiketler:</strong> ' + (d.tags||[]).map(esc).join(', ') + '</p>' +
+                          '<p><strong>Sosyal Medya:</strong><br>' + esc(d.socialPost) + '</p>';
+                        var tagBtn = document.createElement('button');
+                        tagBtn.type='button'; tagBtn.className='button'; tagBtn.style.width='100%'; tagBtn.textContent='🏷️ Etiketleri Ekle';
+                        tagBtn.onclick = function(){
+                            var input = document.querySelector('#new-tag-post_tag, textarea.the-tags');
+                            if (input) { input.value = (input.value ? input.value + ', ' : '') + (d.tags||[]).join(', '); }
+                            var add = document.querySelector('.tagadd'); if (add) add.click();
+                            tagBtn.textContent = '✓ Etiketler eklendi';
+                        };
+                        box.appendChild(tagBtn);
+                        var note = document.createElement('p'); note.style='font-size:11px;color:#999;margin-top:8px;'; note.textContent='🤖 Gemini önerisi — yayından önce kontrol edin'; box.appendChild(note);
+                    })
+                    .catch(function(){ btn.disabled = false; box.innerHTML = '<span style="color:#c00;">❌ Sunucuya ulaşılamadı</span>'; });
+            });
+        })();
+        </script>
+        <?php
+    }
+
+    /**
+     * Editörden gelen başlık/içeriği CRM AI ucuna sunucu-tarafı iletir (secret tarayıcıya sızmaz)
+     */
+    public function ajax_ai_analyze() {
+        $post_id = isset($_POST['post_id']) ? absint($_POST['post_id']) : 0;
+        if (!$post_id || !current_user_can('edit_post', $post_id)) {
+            wp_send_json_error(array('message' => 'Yetkisiz'));
+        }
+        if (!isset($_POST['_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['_nonce'])), 'cn_crm_ai_' . $post_id)) {
+            wp_send_json_error(array('message' => 'Geçersiz istek'));
+        }
+
+        $crm_url = rtrim(get_option($this->crm_url_option), '/');
+        $secret  = get_option($this->ai_secret_option);
+        if (empty($crm_url) || empty($secret)) {
+            wp_send_json_error(array('message' => 'CRM adresi/AI secret ayarlanmamış'));
+        }
+
+        $title   = isset($_POST['title']) ? sanitize_text_field(wp_unslash($_POST['title'])) : get_the_title($post_id);
+        $content = isset($_POST['content']) ? wp_strip_all_tags(wp_unslash($_POST['content'])) : wp_strip_all_tags(get_post_field('post_content', $post_id));
+        if (strlen(trim($content)) < 20) {
+            wp_send_json_error(array('message' => 'İçerik çok kısa'));
+        }
+
+        $resp = wp_remote_post($crm_url . '/api/ai/analyze-article', array(
+            'timeout' => 45,
+            'headers' => array(
+                'Content-Type'  => 'application/json',
+                'Authorization' => 'Bearer ' . $secret,
+            ),
+            'body' => wp_json_encode(array('title' => $title, 'content' => mb_substr($content, 0, 8000))),
+        ));
+
+        if (is_wp_error($resp)) {
+            wp_send_json_error(array('message' => 'CRM\'e ulaşılamadı: ' . $resp->get_error_message()));
+        }
+        $code = wp_remote_retrieve_response_code($resp);
+        $data = json_decode(wp_remote_retrieve_body($resp), true);
+        if ($code !== 200 || !is_array($data)) {
+            wp_send_json_error(array('message' => isset($data['error']) ? $data['error'] : ('CRM hata: HTTP ' . $code)));
+        }
+        wp_send_json_success($data);
     }
     
     /**
@@ -621,6 +744,8 @@ class CN_CRM_Connector {
     public function render_settings_page() {
         $api_key = get_option($this->api_key_option);
         $webhook_url = get_option($this->webhook_url_option);
+        $crm_url = get_option($this->crm_url_option);
+        $ai_secret = get_option($this->ai_secret_option);
         ?>
         <div class="wrap">
             <h1>🔗 CRM Connector Ayarları</h1>
@@ -653,8 +778,27 @@ class CN_CRM_Connector {
                             <p class="description">Yeni haber yayınlandığında CRM'e bildirim göndermek için webhook URL'si.</p>
                         </td>
                     </tr>
+                    <tr>
+                        <th scope="row">CRM Adresi (AI için)</th>
+                        <td>
+                            <input type="url" name="<?php echo $this->crm_url_option; ?>"
+                                   value="<?php echo esc_attr($crm_url); ?>"
+                                   class="regular-text"
+                                   placeholder="https://crm.canakkale.network" />
+                            <p class="description">Haber editöründeki AI analiz kutusunun çağıracağı CRM kök adresi (sondaki / olmadan).</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">AI Secret</th>
+                        <td>
+                            <input type="password" name="<?php echo $this->ai_secret_option; ?>"
+                                   value="<?php echo esc_attr($ai_secret); ?>"
+                                   class="regular-text" />
+                            <p class="description">CRM sunucusundaki <code>WEBHOOK_SECRET</code> değeriyle aynı olmalı (AI analiz ucunu yetkilendirir).</p>
+                        </td>
+                    </tr>
                 </table>
-                
+
                 <?php submit_button('Ayarları Kaydet'); ?>
             </form>
             
