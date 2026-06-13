@@ -38,3 +38,6 @@ next-env.d.ts
 
 # local Claude Code tooling
 .claude/
+
+# GCP Vertex service-account key (never commit)
+gcp-vertex-key.json

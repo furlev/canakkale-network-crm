@@ -386,31 +386,31 @@ export default function SettingsPage() {
                     </div>
                   </div>
                   <hr style={{ border: 'none', borderTop: '1px solid var(--border-subtle)', margin: 'var(--space-6) 0' }} />
-                  <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-4)', color: 'var(--primary-light)' }}>🤖 AI Entegrasyonu (Claude)</h4>
+                  <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-4)', color: 'var(--primary-light)' }}>🤖 AI Entegrasyonu (Gemini)</h4>
                   <div style={{ padding: 'var(--space-4)', background: 'var(--surface-2)', borderRadius: 'var(--border-radius)', marginBottom: 'var(--space-4)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
                       <span style={{ fontSize: 'var(--text-lg)' }}>🧠</span>
-                      <span style={{ fontWeight: 600 }}>Claude Sonnet 4.6</span>
+                      <span style={{ fontWeight: 600 }}>Google Gemini 2.5 Flash</span>
                       <span className="badge badge-success">Aktif</span>
                     </div>
-                    <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', lineHeight: 1.5 }}>API anahtarını girince ihbar analizi, otomatik önceliklendirme ve haber taslağı üretimi aktifleşir. Anahtar <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" style={{ color: 'var(--primary-light)' }}>console.anthropic.com</a> üzerinden alınır.</p>
+                    <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', lineHeight: 1.5 }}>API anahtarını girince ihbar analizi, otomatik önceliklendirme ve haber taslağı üretimi aktifleşir. Anahtar <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ color: 'var(--primary-light)' }}>aistudio.google.com</a> üzerinden alınır.</p>
                   </div>
                   <div className="form-group"><label className="form-label">AI Provider</label>
                     <select className="form-select" disabled>
-                      <option>Anthropic Claude (Sonnet 4.6)</option>
+                      <option>Google Gemini (2.5 Flash)</option>
                     </select>
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Claude API Anahtarı</label>
+                    <label className="form-label">Gemini API Anahtarı</label>
                     <input
                       className="form-input"
                       type="password"
-                      placeholder="sk-ant-..."
+                      placeholder="AIzaSy..."
                       value={settings.ai.apiKey}
                       onChange={e => set('ai', { ...settings.ai, apiKey: e.target.value })}
                       style={{ fontFamily: 'var(--font-mono)' }}
                     />
-                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-2)' }}>Sunucu ortamında <code>ANTHROPIC_API_KEY</code> tanımlıysa o öncelikli kullanılır; bu alanı boş bırakabilirsiniz.</p>
+                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-2)' }}>Sunucu ortamında <code>GEMINI_API_KEY</code> tanımlıysa o öncelikli kullanılır; bu alanı boş bırakabilirsiniz.</p>
                   </div>
                   <SaveBtn section="ai" />
                 </>
