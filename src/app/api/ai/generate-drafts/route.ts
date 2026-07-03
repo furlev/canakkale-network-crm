@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { handleApiError, ApiError } from '@/lib/api';
 import { getSession } from '@/lib/auth';
 import { isLeaderOrAdmin } from '@/lib/permissions';
+import { safeEqual } from '@/lib/secure';
 import { ingestAllSources, recentUnusedItems } from '@/lib/newsfeed';
 import {
   discoverTopics, factCheckTopic, writeArticleFromTopic, generateArticleImage, analyzeArticle, aiEnabled,
@@ -13,7 +14,7 @@ export const maxDuration = 300; // boru hattı uzun sürebilir
 /** Hem oturumlu (lider/yönetici) hem cron (Bearer CRON_SECRET) çağırabilir. */
 async function authorize(request: Request): Promise<boolean> {
   const auth = request.headers.get('authorization');
-  if (process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`) return true;
+  if (process.env.CRON_SECRET && safeEqual(auth, `Bearer ${process.env.CRON_SECRET}`)) return true;
   const session = await getSession();
   return isLeaderOrAdmin(session);
 }
@@ -35,14 +36,21 @@ export async function POST(request: Request) {
     if (items.length === 0) {
       return NextResponse.json({ ok: true, message: 'İşlenecek yeni haber yok', ingest, created: [] });
     }
-    // 3) konu bul + puanla
-    const topics = await discoverTopics(items.map((i) => ({ title: i.title, link: i.link })), maxDrafts + 2);
+    // 3) konu bul + puanla (tek AI çağrısı — hata olursa tüm istek 500 olmasın, ingest korunsun)
+    let topics: Awaited<ReturnType<typeof discoverTopics>> = [];
+    try {
+      topics = await discoverTopics(items.map((i) => ({ title: i.title, link: i.link })), maxDrafts + 2);
+    } catch (e) {
+      return NextResponse.json({ ok: true, ingest, topicsFound: 0, created: [], skipped: [{ topic: '(konu bulma)', reason: e instanceof Error ? e.message : 'hata' }] });
+    }
 
     const created: { id: string; title: string; confidence: number }[] = [];
     const skipped: { topic: string; reason: string }[] = [];
+    const processedLinks = new Set<string>(); // yalnızca gerçekten işlenen konuların kaynak linkleri
 
     for (const t of topics) {
       if (created.length >= maxDrafts) break;
+      for (const l of t.sourceLinks || []) processedLinks.add(l); // bu konu işlendi (drafted ya da skip)
       try {
         // 4) doğruluk kontrolü (grounding)
         const fc = await factCheckTopic(t.topic, t.headline);
@@ -80,11 +88,15 @@ export async function POST(request: Request) {
       }
     }
 
-    // 9) değerlendirilen öğeleri işaretle (tekrar işlenmesin)
-    await prisma.feedItem.updateMany({
-      where: { id: { in: items.map((i) => i.id) } },
-      data: { usedInDraft: true },
-    });
+    // 9) YALNIZCA işlenen konulara ait öğeleri işaretle. Diğerleri usedInDraft=false kalır ve
+    //    tekrar değerlendirilebilir (recentUnusedItems 3-günlük pencerede doğal olarak eskitir) → veri kaybı yok.
+    const usedIds = items.filter((i) => processedLinks.has(i.link)).map((i) => i.id);
+    if (usedIds.length > 0) {
+      await prisma.feedItem.updateMany({
+        where: { id: { in: usedIds } },
+        data: { usedInDraft: true },
+      });
+    }
 
     return NextResponse.json({ ok: true, ingest, topicsFound: topics.length, created, skipped });
   } catch (error) {

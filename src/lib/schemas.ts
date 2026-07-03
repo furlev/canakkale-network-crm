@@ -283,7 +283,8 @@ export const aiDraftUpdate = z.object({
   metaDescription: z.string().optional(),
   socialPost: z.string().optional(),
   imageUrl: z.string().optional(),
-  status: z.enum(['pending', 'approved', 'rejected', 'published']).optional(),
+  // 'published' KASITLI olarak yok: yayın yalnızca .../publish route'undan yapılır (WP'ye gönderip wpId set eder).
+  status: z.enum(['pending', 'approved', 'rejected']).optional(),
 });
 
 /* ── Auth ── */

@@ -9,7 +9,21 @@ import prisma from '@/lib/prisma';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
-export type ParsedItem = { title: string; link: string; pubDate: Date | null; summary: string | null };
+export type ParsedItem = { title: string; link: string; pubDate: Date | null; summary: string | null; guid: string | null };
+
+/** URL'i tekilleştirme için normalize eder: tracking parametrelerini + hash'i atar, sondaki / kaldırır. */
+export function normalizeLink(url: string): string {
+  try {
+    const u = new URL(url);
+    for (const k of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid', 'oc', 'ved', 'ref', 'ref_src']) {
+      u.searchParams.delete(k);
+    }
+    u.hash = '';
+    return u.toString().replace(/\/$/, '');
+  } catch {
+    return url.trim();
+  }
+}
 
 /** CDATA/HTML etiketlerini temizler. */
 function clean(s: string | undefined | null): string {
@@ -45,7 +59,9 @@ export function parseFeed(xml: string): ParsedItem[] {
       if (!isNaN(d.getTime())) pubDate = d;
     }
     const summary = clean(tag(block, 'description') || tag(block, 'summary') || tag(block, 'content')).slice(0, 600) || null;
-    if (title && link) items.push({ title, link, pubDate, summary });
+    // Kararlı tekilleştirme kimliği: RSS <guid> / Atom <id> (varsa)
+    const guid = clean(tag(block, 'guid') || tag(block, 'id')) || null;
+    if (title && link) items.push({ title, link, pubDate, summary, guid });
   }
   return items;
 }
@@ -79,7 +95,8 @@ export async function ingestAllSources(): Promise<{ fetched: number; created: nu
       const items = await fetchFeed(src.feedUrl, src.needsUA);
       fetched += items.length;
       for (const it of items) {
-        const guidHash = hashOf(it.link || it.title);
+        // Öncelik: kararlı <guid> → normalize link → başlık (tracking'li URL'ler mükerrer üretmesin)
+        const guidHash = hashOf(it.guid || normalizeLink(it.link) || it.title);
         try {
           await prisma.feedItem.create({
             data: {

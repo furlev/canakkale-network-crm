@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { parseBody, handleApiError } from '@/lib/api';
 import { analyzeArticle, AiNotConfiguredError } from '@/lib/ai';
 import { getSession } from '@/lib/auth';
+import { isLeaderOrAdmin } from '@/lib/permissions';
+import { safeEqual } from '@/lib/secure';
 
 const schema = z.object({
   title: z.string().min(1),
@@ -18,9 +20,10 @@ export async function POST(request: Request) {
   try {
     const session = await getSession();
     const bearer = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
-    const secretOk = !!process.env.WEBHOOK_SECRET && bearer === process.env.WEBHOOK_SECRET;
-    if (!session && !secretOk) {
-      return NextResponse.json({ error: 'Yetkisiz' }, { status: 401 });
+    const secretOk = safeEqual(bearer, process.env.WEBHOOK_SECRET); // WP eklentisi (server-to-server)
+    // Oturum yolu: yalnızca ekip lideri/yönetici (ücretli AI'ı C kullanıcısı tetiklemesin)
+    if (!secretOk && !isLeaderOrAdmin(session)) {
+      return NextResponse.json({ error: 'Yetkisiz' }, { status: 403 });
     }
 
     const body = await parseBody(request, schema);

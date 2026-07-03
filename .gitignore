@@ -41,3 +41,8 @@ next-env.d.ts
 
 # GCP Vertex service-account key (never commit)
 gcp-vertex-key.json
+
+# DigitalOcean deploy helpers (contain secrets — never commit, delete after use)
+do-env-bulk.env
+do-vertex-credentials.json
+do-env-all.txt

@@ -402,7 +402,7 @@ export default function SettingsPage() {
                       <span style={{ fontWeight: 600 }}>Google Gemini 3.5 Flash</span>
                       <span className="badge badge-success">Aktif</span>
                     </div>
-                    <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', lineHeight: 1.5 }}>API anahtarını girince ihbar analizi, otomatik önceliklendirme ve haber taslağı üretimi aktifleşir. Anahtar <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ color: 'var(--primary-light)' }}>aistudio.google.com</a> üzerinden alınır.</p>
+                    <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', lineHeight: 1.5 }}>İhbar analizi, otomatik önceliklendirme, haber yazımı ve görsel üretimi bu modelle çalışır. Sunucuda <strong>Vertex AI</strong> (<code>GOOGLE_VERTEX_PROJECT</code>) tanımlıysa Google Cloud kredisi kullanılır — aşağıdaki API anahtarına gerek kalmaz. Aksi halde <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ color: 'var(--primary-light)' }}>aistudio.google.com</a> anahtarı (AI Studio) yedek olarak kullanılır.</p>
                   </div>
                   <div className="form-group"><label className="form-label">AI Provider</label>
                     <select className="form-select" disabled>
@@ -419,7 +419,7 @@ export default function SettingsPage() {
                       onChange={e => set('ai', { ...settings.ai, apiKey: e.target.value })}
                       style={{ fontFamily: 'var(--font-mono)' }}
                     />
-                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-2)' }}>Sunucu ortamında <code>GEMINI_API_KEY</code> tanımlıysa o öncelikli kullanılır; bu alanı boş bırakabilirsiniz.</p>
+                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-2)' }}>Öncelik sırası: sunucu <code>GOOGLE_VERTEX_PROJECT</code> (Vertex/Cloud kredisi) → <code>GEMINI_API_KEY</code> → bu alan. Vertex aktifken bu alan kullanılmaz, boş bırakabilirsiniz.</p>
                   </div>
                   <SaveBtn section="ai" />
                 </>

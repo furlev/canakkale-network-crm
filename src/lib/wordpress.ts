@@ -45,7 +45,7 @@ export async function getWpConfig(): Promise<WpConfig> {
 }
 
 /** Call the cn-crm-connector plugin REST API. */
-export async function wpFetch<T = unknown>(config: WpConfig, path: string, init?: RequestInit): Promise<T> {
+export async function wpFetch<T = unknown>(config: WpConfig, path: string, init?: RequestInit, timeoutMs = 15000): Promise<T> {
   const url = `${config.url}${config.endpoint}${path}`;
   let res: Response;
   try {
@@ -56,7 +56,7 @@ export async function wpFetch<T = unknown>(config: WpConfig, path: string, init?
         'X-CRM-API-Key': config.apiKey,
         ...(init?.headers || {}),
       },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeoutMs),
       cache: 'no-store',
     });
   } catch (error) {

@@ -3,11 +3,14 @@ import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { parseBody, handleApiError, ApiError } from '@/lib/api';
 import { draftArticleFromTip, AiNotConfiguredError } from '@/lib/ai';
+import { getSession } from '@/lib/auth';
+import { isLeaderOrAdmin } from '@/lib/permissions';
 
 const schema = z.object({ tipId: z.string().min(1) });
 
 export async function POST(request: Request) {
   try {
+    if (!isLeaderOrAdmin(await getSession())) throw new ApiError(403, 'Bu işlem için ekip lideri/yönetici yetkisi gerekli');
     const body = await parseBody(request, schema);
     const tip = await prisma.tip.findUnique({ where: { id: body.tipId } });
     if (!tip) throw new ApiError(404, 'İhbar bulunamadı');

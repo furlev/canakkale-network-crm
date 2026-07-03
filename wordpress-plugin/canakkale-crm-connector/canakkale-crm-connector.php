@@ -3,7 +3,7 @@
  * Plugin Name: Çanakkale Network CRM Connector
  * Plugin URI: https://canakkale.network
  * Description: canakkale.network haber sitesi için CRM entegrasyon eklentisi. CRM sisteminin WordPress REST API üzerinden haberlere, kategorilere ve kullanıcılara erişimini sağlar.
- * Version: 1.0.0
+ * Version: 1.1.1
  * Author: Çanakkale Network
  * Author URI: https://canakkale.network
  * License: GPL v2 or later
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CN_CRM_VERSION', '1.0.0');
+define('CN_CRM_VERSION', '1.1.1');
 define('CN_CRM_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 class CN_CRM_Connector {
@@ -77,12 +77,16 @@ class CN_CRM_Connector {
     private function verify_api_key($request) {
         $api_key = $request->get_header('X-CRM-API-Key');
         $stored_key = get_option($this->api_key_option);
-        
+
+        // GÜVENLİK: anahtar ayarlanmadan HİÇBİR istek kabul edilmez (fail-closed).
+        // Aksi halde anahtarsız bir kurulumda tüm yazma/okuma uçları herkese açık kalırdı.
         if (empty($stored_key)) {
-            return true; // If no key set, allow access (development mode)
+            return false;
         }
-        
-        return $api_key === $stored_key;
+        if (empty($api_key) || !is_string($api_key)) {
+            return false;
+        }
+        return hash_equals((string) $stored_key, (string) $api_key); // sabit-zamanlı
     }
     
     /**
@@ -251,11 +255,16 @@ class CN_CRM_Connector {
      */
     public function create_post($request) {
         $body = $request->get_json_params();
-        
+
+        // Zorunlu alan doğrulaması (aksi halde PHP notice + boş başlıklı yayın)
+        if (!is_array($body) || empty($body['title'])) {
+            return new WP_Error('missing_title', 'Başlık (title) gerekli', array('status' => 400));
+        }
+
         $post_data = array(
             'post_title' => sanitize_text_field($body['title']),
-            'post_content' => wp_kses_post($body['content']),
-            'post_status' => isset($body['status']) ? $body['status'] : 'draft',
+            'post_content' => isset($body['content']) ? wp_kses_post($body['content']) : '',
+            'post_status' => isset($body['status']) ? sanitize_key($body['status']) : 'draft',
             'post_author' => isset($body['author_id']) ? absint($body['author_id']) : get_current_user_id(),
             'post_category' => isset($body['categories']) ? array_map('absint', $body['categories']) : array(),
         );
@@ -270,19 +279,129 @@ class CN_CRM_Connector {
             return $post_id;
         }
         
-        // Add tags
+        // Add tags (wp_set_post_tags isim kabul eder, yoksa oluşturur)
         if (isset($body['tags']) && is_array($body['tags'])) {
             wp_set_post_tags($post_id, $body['tags']);
         }
-        
+
+        // Öne çıkan "temsili" görsel: base64 data URI -> medya kütüphanesine sideload
+        if (!empty($body['featured_image_base64'])) {
+            $att_id = $this->sideload_base64_image(
+                $body['featured_image_base64'],
+                $post_id,
+                isset($body['title']) ? $body['title'] : ''
+            );
+            if (!is_wp_error($att_id) && $att_id) {
+                set_post_thumbnail($post_id, $att_id);
+            }
+        }
+
+        // SEO meta (Yoast + Rank Math + AIOSEO — hangisi aktifse o okur)
+        $this->apply_seo_meta($post_id, $body);
+
         // Add CRM meta
         update_post_meta($post_id, '_cn_crm_source', 'crm');
         if (isset($body['tip_id'])) {
             update_post_meta($post_id, '_cn_crm_tip_id', sanitize_text_field($body['tip_id']));
         }
-        
+        // Temsili görsel işareti (şablon/altyazı için)
+        if (!empty($body['featured_image_base64'])) {
+            update_post_meta($post_id, '_cn_crm_ai_image', '1');
+        }
+
         $post = get_post($post_id);
         return new WP_REST_Response($this->format_post($post), 201);
+    }
+
+    /**
+     * SEO eklentisine (Yoast/Rank Math/AIOSEO) başlık + meta açıklama yaz.
+     */
+    private function apply_seo_meta($post_id, $body) {
+        if (!empty($body['seo_title'])) {
+            $st = sanitize_text_field($body['seo_title']);
+            update_post_meta($post_id, '_yoast_wpseo_title', $st);
+            update_post_meta($post_id, 'rank_math_title', $st);
+            update_post_meta($post_id, '_aioseo_title', $st);
+        }
+        if (!empty($body['meta_description'])) {
+            $md = sanitize_text_field($body['meta_description']);
+            update_post_meta($post_id, '_yoast_wpseo_metadesc', $md);
+            update_post_meta($post_id, 'rank_math_description', $md);
+            update_post_meta($post_id, '_aioseo_description', $md);
+        }
+    }
+
+    /**
+     * base64 (data URI ya da düz) görseli medya kütüphanesine yükler, attachment ID döner.
+     */
+    private function sideload_base64_image($data_uri, $post_id, $title = '') {
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/media.php';
+
+        $alt = $title ?: 'Temsili görsel';
+
+        // 1) Düz http(s) URL ise WP'nin güvenli sideload'unu kullan (indirir + doğrular)
+        if (is_string($data_uri) && preg_match('#^https?://#i', $data_uri)) {
+            $att_id = media_sideload_image($data_uri, $post_id, $alt, 'id');
+            if (!is_wp_error($att_id) && $att_id) {
+                update_post_meta($att_id, '_wp_attachment_image_alt', $alt);
+                update_post_meta($att_id, '_cn_crm_ai_image', '1');
+            }
+            return $att_id;
+        }
+
+        // 2) data URI / düz base64 → çöz
+        $b64 = $data_uri;
+        if (preg_match('#^data:[^;,]+;base64,(.*)$#s', (string) $data_uri, $m)) {
+            $b64 = $m[1];
+        }
+        $bytes = base64_decode($b64, true);
+        if ($bytes === false || strlen($bytes) < 100) {
+            return new WP_Error('bad_image', 'Görsel çözümlenemedi');
+        }
+
+        // 3) GÜVENLİK: türü GERÇEK içerikten doğrula (istemci MIME'sine GÜVENME);
+        //    yalnızca güvenli raster türlere izin ver → SVG (XSS) ve diğerleri reddedilir.
+        $info = @getimagesizefromstring($bytes);
+        if ($info === false || empty($info['mime'])) {
+            return new WP_Error('bad_image', 'Geçerli bir görsel değil');
+        }
+        $allowed = array(
+            'image/png'  => 'png',
+            'image/jpeg' => 'jpg',
+            'image/webp' => 'webp',
+            'image/gif'  => 'gif',
+        );
+        $mime = $info['mime'];
+        if (!isset($allowed[$mime])) {
+            return new WP_Error('bad_image_type', 'Desteklenmeyen görsel türü: ' . $mime);
+        }
+        $ext = $allowed[$mime];
+
+        $slug = sanitize_title($title ?: ('crm-haber-' . $post_id));
+        $filename = substr($slug ?: 'crm-haber', 0, 60) . '-' . $post_id . '.' . $ext;
+
+        $upload = wp_upload_bits($filename, null, $bytes);
+        if (!empty($upload['error'])) {
+            return new WP_Error('upload_error', $upload['error']);
+        }
+
+        $attachment = array(
+            'post_mime_type' => $mime,
+            'post_title' => $title ?: ('CRM Haber Görseli ' . $post_id),
+            'post_content' => '',
+            'post_status' => 'inherit',
+        );
+        $att_id = wp_insert_attachment($attachment, $upload['file'], $post_id);
+        if (is_wp_error($att_id)) {
+            return $att_id;
+        }
+        $meta = wp_generate_attachment_metadata($att_id, $upload['file']);
+        wp_update_attachment_metadata($att_id, $meta);
+        update_post_meta($att_id, '_wp_attachment_image_alt', $alt);
+        update_post_meta($att_id, '_cn_crm_ai_image', '1');
+        return $att_id;
     }
     
     /**
@@ -762,7 +881,7 @@ class CN_CRM_Connector {
                                    value="<?php echo esc_attr($api_key); ?>" 
                                    class="regular-text" 
                                    placeholder="CRM API anahtarınızı girin" />
-                            <p class="description">CRM Ayarlar → API bölümünden alabilirsiniz. Boş bırakırsanız tüm istekler kabul edilir (geliştirme modu).</p>
+                            <p class="description"><strong>Zorunlu.</strong> CRM Ayarlar → WordPress bölümündeki API anahtarıyla AYNI olmalı. Boş bırakılırsa güvenlik için tüm CRM istekleri reddedilir (yayın/senkron çalışmaz).</p>
                             <button type="button" class="button" onclick="document.querySelector('input[name=<?php echo $this->api_key_option; ?>]').value = '<?php echo wp_generate_password(32, false); ?>'">
                                 Yeni Anahtar Oluştur
                             </button>

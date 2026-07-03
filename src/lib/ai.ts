@@ -56,7 +56,8 @@ async function getClient(): Promise<GoogleGenAI> {
       try {
         opts.googleAuthOptions = { credentials: JSON.parse(credJson) };
       } catch {
-        console.error('[ai] GOOGLE_VERTEX_CREDENTIALS_JSON çözümlenemedi');
+        // Fail-fast: bozuk credential sessizce ADC'ye düşüp prod'da runtime hatasına yol açmasın
+        throw new Error('[ai] GOOGLE_VERTEX_CREDENTIALS_JSON geçersiz JSON — Vertex kimliği yüklenemedi');
       }
     }
     return new GoogleGenAI(opts);
@@ -64,6 +65,25 @@ async function getClient(): Promise<GoogleGenAI> {
   const key = await resolveKey();
   if (!key) throw new AiNotConfiguredError();
   return new GoogleGenAI({ apiKey: key });
+}
+
+/** Model JSON çıktısını güvenle ayrıştırır: boş/SAFETY-bloklu/MAX_TOKENS-kesik yanıtta
+ *  ham JSON.parse yerine anlamlı hata fırlatır (çağıran kibarca yakalar). */
+type AiTextResult = { text?: string; candidates?: Array<{ finishReason?: string }> };
+function parseAiJson<T>(res: AiTextResult, kind: 'object' | 'array' = 'object'): T {
+  const text = (res.text ?? '').trim();
+  const fr = res.candidates?.[0]?.finishReason;
+  if (!text) throw new Error(`AI boş yanıt döndürdü${fr ? ` (finishReason: ${fr})` : ''}`);
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // Bazı yanıtlar ```json ... ``` sarabilir veya baş/son metin ekleyebilir → gövdeyi çıkar
+    const m = text.match(kind === 'array' ? /\[[\s\S]*\]/ : /\{[\s\S]*\}/);
+    if (m) {
+      try { return JSON.parse(m[0]) as T; } catch { /* aşağıda hata fırlatılır */ }
+    }
+    throw new Error(`AI geçersiz JSON döndürdü${fr === 'MAX_TOKENS' ? ' (yanıt token limitinde kesildi)' : fr ? ` (finishReason: ${fr})` : ''}`);
+  }
 }
 
 export async function aiEnabled(): Promise<boolean> {
@@ -102,7 +122,7 @@ export async function analyzeTip(subject: string, content: string): Promise<TipA
       },
     },
   });
-  return JSON.parse(res.text ?? '{}') as TipAnalysis;
+  return parseAiJson<TipAnalysis>(res);
 }
 
 /* ── İhbardan haber taslağı üret ── */
@@ -126,7 +146,7 @@ export async function draftArticleFromTip(subject: string, content: string, sour
       },
     },
   });
-  return JSON.parse(res.text ?? '{}') as ArticleDraft;
+  return parseAiJson<ArticleDraft>(res);
 }
 
 /* ── Haber/makale analizi: SEO + özet + etiket + sosyal medya ── */
@@ -162,7 +182,7 @@ export async function analyzeArticle(title: string, content: string): Promise<Ar
       },
     },
   });
-  return JSON.parse(res.text ?? '{}') as ArticleAnalysis;
+  return parseAiJson<ArticleAnalysis>(res);
 }
 
 /* ── Serbest metin özeti (bülten, rapor yorumu vb.) ── */
@@ -215,7 +235,7 @@ export async function discoverTopics(
       },
     },
   });
-  const arr = JSON.parse(res.text ?? '[]') as DiscoveredTopic[];
+  const arr = parseAiJson<DiscoveredTopic[]>(res, 'array');
   return arr.sort((a, b) => b.newsworthiness - a.newsworthiness).slice(0, maxTopics);
 }
 
@@ -244,8 +264,10 @@ export async function factCheckTopic(topic: string, headline: string): Promise<F
   let parsed: { confidence?: number; verifiedSummary?: string; caveats?: string } = {};
   const jm = text.match(/\{[\s\S]*\}/);
   if (jm) { try { parsed = JSON.parse(jm[0]); } catch { /* metin JSON değil */ } }
+  // Ayrıştırma başarısız/eksikse güven=0 (0.5 DEĞİL) → doğrulanmamış konu yazıma geçmesin; 0-1'e clamp
+  const rawConf = typeof parsed.confidence === 'number' && !Number.isNaN(parsed.confidence) ? parsed.confidence : 0;
   return {
-    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
+    confidence: Math.min(1, Math.max(0, rawConf)),
     verifiedSummary: parsed.verifiedSummary || text.slice(0, 500),
     caveats: parsed.caveats || '',
     groundingLinks: links,
@@ -271,7 +293,11 @@ export async function writeArticleFromTopic(headline: string, verifiedSummary: s
       },
     },
   });
-  return JSON.parse(res.text ?? '{}') as ArticleDraft;
+  const draft = parseAiJson<ArticleDraft>(res);
+  if (!draft.body || !draft.body.trim() || !draft.title || !draft.title.trim()) {
+    throw new Error('AI boş başlık/gövde üretti (yayına uygun değil)');
+  }
+  return draft;
 }
 
 /** Habere uygun "temsili" başlık görseli üret (Imagen) → base64 data URI. */

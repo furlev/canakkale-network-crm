@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { handleApiError } from '@/lib/api';
+import { handleApiError, ApiError } from '@/lib/api';
 import { summarizeText, AiNotConfiguredError } from '@/lib/ai';
+import { getSession } from '@/lib/auth';
+import { isLeaderOrAdmin } from '@/lib/permissions';
 
 // Son yayınlanan haberlerden AI ile bülten giriş paragrafı üretir.
 export async function POST() {
   try {
+    if (!isLeaderOrAdmin(await getSession())) throw new ApiError(403, 'Bu işlem için ekip lideri/yönetici yetkisi gerekli');
     const news = await prisma.news.findMany({
       where: { status: 'published' },
       orderBy: { publishDate: 'desc' },

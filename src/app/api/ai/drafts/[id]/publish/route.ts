@@ -6,7 +6,7 @@ import { isLeaderOrAdmin } from '@/lib/permissions';
 import { getWpConfig, wpFetch } from '@/lib/wordpress';
 
 type WpCategory = { id: number; name: string; slug: string };
-type WpCreatedPost = { id: number };
+type WpCreatedPost = { id: number; thumbnail: string | null };
 
 /** Taslak etiketlerini (JSON string dizi) güvenle çözer. */
 function parseTags(raw: string | null): string[] {
@@ -29,6 +29,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const draft = await prisma.aiDraft.findUnique({ where: { id } });
     if (!draft) throw new ApiError(404, 'Taslak bulunamadı');
 
+    // Idempotency + onay akışı: zaten yayınlanmışı tekrar yayınlama, reddedilmişi/boşu engelle
+    if (draft.status === 'published' && draft.wpId) {
+      throw new ApiError(409, 'Bu taslak zaten yayınlanmış (WP #' + draft.wpId + ')');
+    }
+    if (draft.status === 'rejected') {
+      throw new ApiError(409, 'Reddedilmiş taslak yayınlanamaz');
+    }
+    if (!draft.body || !draft.body.trim()) {
+      throw new ApiError(400, 'Taslak gövdesi boş — yayınlanamaz');
+    }
+
     // WP yapılandırılmamışsa getWpConfig dostça 400 fırlatır — handleApiError yakalar
     const config = await getWpConfig();
 
@@ -50,8 +61,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         excerpt: draft.metaDescription || undefined,
         tags: parseTags(draft.tags),
         ...(categories ? { categories } : {}),
+        // Öne çıkan "temsili" görsel — connector base64'ü sideload eder
+        ...(draft.imageUrl ? { featured_image_base64: draft.imageUrl } : {}),
+        // SEO (Yoast/Rank Math/AIOSEO)
+        ...(draft.seoTitle ? { seo_title: draft.seoTitle } : {}),
+        ...(draft.metaDescription ? { meta_description: draft.metaDescription } : {}),
       }),
-    });
+    }, 45000); // görsel sideload + attachment metadata için daha uzun timeout
+
+    // Kısmi başarı görünürlüğü: görsel gönderildi ama WP'ye eklenmediyse editörü uyar
+    const warnings: string[] = [];
+    if (draft.imageUrl && !created.thumbnail) {
+      warnings.push('Görsel WordPress\'e yüklenemedi (boyut/tür sınırı olabilir); haber görselsiz yayınlandı.');
+    }
 
     const updated = await prisma.aiDraft.update({
       where: { id: draft.id },
@@ -63,7 +85,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       },
     });
 
-    return NextResponse.json({ ok: true, wpId: created.id, draft: updated });
+    return NextResponse.json({ ok: true, wpId: created.id, imageAttached: !!created.thumbnail, warnings, draft: updated });
   } catch (error) {
     return handleApiError(error, 'Taslak yayınlanamadı');
   }

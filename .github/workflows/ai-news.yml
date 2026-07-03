@@ -1,0 +1,43 @@
+# AI haber üretimi: günde 3 kez taslak üretir (onay kuyruğuna düşer, otomatik YAYINLAMAZ).
+# Saatler UTC — Türkiye (UTC+3) ile: 08:00, 13:00, 19:00.
+# Kurulum (repo Settings → Secrets and variables → Actions):
+#   - Secret  CRON_SECRET : .env'deki CRON_SECRET ile aynı değer
+#   - Variable CRM_URL    : https://panel.canakkale.network (sondaki / olmadan)
+# Not: Üretim için prod'da Vertex env'i (GOOGLE_VERTEX_PROJECT + GOOGLE_VERTEX_CREDENTIALS_JSON) ayarlı olmalı.
+name: AI Haber Üretimi
+
+on:
+  schedule:
+    - cron: '0 5,10,16 * * *'
+  workflow_dispatch:
+    inputs:
+      count:
+        description: 'Üretilecek taslak sayısı (1-6)'
+        required: false
+        default: '3'
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: AI taslak üret
+        run: |
+          COUNT="${{ github.event.inputs.count || '3' }}"
+          echo "AI haber taslağı üretiliyor (count=$COUNT)..."
+          HTTP=$(curl -sS -w '%{http_code}' -o /tmp/resp.json \
+            --max-time 300 \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/ai/generate-drafts?count=$COUNT")
+          echo "HTTP $HTTP"
+          cat /tmp/resp.json | head -c 2000 || true
+          echo ""
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::AI taslak üretimi başarısız (HTTP $HTTP)"
+            exit 1
+          fi
+          CREATED=$(jq '.created | length' /tmp/resp.json 2>/dev/null || echo "?")
+          echo "Üretilen taslak sayısı: $CREATED"
+          if [ "$CREATED" = "0" ]; then
+            echo "::warning::Bu çalıştırmada hiç taslak üretilmedi (düşük güven / kaynak yok / AI hatası olabilir)"
+          fi
