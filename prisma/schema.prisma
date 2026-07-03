@@ -424,3 +424,61 @@ model PaymentRequest {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
+
+// ══════════ WORDPRESS AI HABER MOTORU ══════════
+
+// Haber kaynağı (RSS / Google News). Panelden yönetilir.
+model NewsSource {
+  id            String    @id @default(uuid())
+  name          String
+  feedUrl       String
+  type          String    @default("rss") // rss | google_news
+  enabled       Boolean   @default(true)
+  needsUA       Boolean   @default(false) // WAF: tarayıcı User-Agent gerekir
+  lastFetchedAt DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+
+  items         FeedItem[]
+}
+
+// Kaynaklardan çekilen ham haber öğesi (dedup + konu bulma için).
+model FeedItem {
+  id          String      @id @default(uuid())
+  sourceId    String?
+  source      NewsSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  sourceName  String?     // kaynak silinse de isim kalsın
+  title       String
+  link        String
+  guidHash    String      @unique // dedup: link/başlık hash
+  summary     String?
+  pubDate     DateTime?
+  fetchedAt   DateTime    @default(now())
+  usedInDraft Boolean     @default(false)
+
+  @@index([fetchedAt])
+}
+
+// AI üretilen haber taslağı — onay kuyruğunun kalbi (taslak→onay→yayın).
+model AiDraft {
+  id              String    @id @default(uuid())
+  topic           String
+  title           String?
+  body            String?   // Postgres'te text
+  category        String?
+  tags            String?   // JSON dizi (string)
+  seoTitle        String?
+  metaDescription String?
+  socialPost      String?
+  imageUrl        String?   // Imagen görseli (data URI / URL), "temsili" etiketli
+  sources         String?   // JSON: atıf verilen linkler
+  confidence      Float?    // fact-check güven skoru 0-1
+  status          String    @default("pending") // pending | approved | rejected | published
+  reviewerId      String?   // onaylayan CRM kullanıcısı (id)
+  reviewerName    String?
+  wpId            Int?      // yayınlanınca WP post id
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+}
