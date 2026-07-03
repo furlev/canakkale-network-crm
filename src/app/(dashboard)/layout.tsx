@@ -53,6 +53,7 @@ const navSections: NavSection[] = [
     items: [
       { label: 'Haberler', href: '/news', icon: '📰' },
       { label: 'Haber İhbarı', href: '/tips', icon: '🔔' },
+      { label: 'AI Haber Kuyruğu', href: '/ai-news', icon: '🤖' },
       { label: 'Reklam Verenler', href: '/advertisers', icon: '📢' },
       { label: 'Reklam Kampanyaları', href: '/campaigns', icon: '🎬' },
       { label: 'Aboneler', href: '/subscribers', icon: '👤' },

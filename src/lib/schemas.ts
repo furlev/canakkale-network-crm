@@ -273,6 +273,19 @@ export const settingPut = z.object({
   value: z.unknown(),
 });
 
+/* ── AiDraft (AI haber taslağı onay kuyruğu) ── */
+export const aiDraftUpdate = z.object({
+  title: z.string().optional(),
+  body: z.string().optional(),
+  category: z.string().optional(),
+  tags: z.string().optional(),
+  seoTitle: z.string().optional(),
+  metaDescription: z.string().optional(),
+  socialPost: z.string().optional(),
+  imageUrl: z.string().optional(),
+  status: z.enum(['pending', 'approved', 'rejected', 'published']).optional(),
+});
+
 /* ── Auth ── */
 export const loginSchema = z.object({
   email: z.string().email(),
