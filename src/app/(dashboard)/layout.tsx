@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { canAccessPath } from '@/lib/permissions';
 
 /* ── Navigation data ─────────────────────────────────── */
 interface NavItem {
@@ -44,6 +45,7 @@ const navSections: NavSection[] = [
       { label: 'Giderler', href: '/expenses', icon: '💰' },
       { label: 'Sözleşmeler', href: '/contracts', icon: '📝' },
       { label: 'Teklifnameler', href: '/proposals', icon: '📑' },
+      { label: 'Ödemeler & Maaş', href: '/payments', icon: '💳' },
     ],
   },
   {
@@ -62,6 +64,7 @@ const navSections: NavSection[] = [
     items: [
       { label: 'Mesajlar', href: '/messages', icon: '💬' },
       { label: 'Ekip', href: '/team', icon: '👨‍💼' },
+      { label: 'Editör Verimlilik', href: '/editor-performance', icon: '📊' },
       { label: 'Destek', href: '/support', icon: '🎫' },
       { label: 'Dokümanlar', href: '/documents', icon: '📂' },
       { label: 'Bilgi Tabanı', href: '/knowledge-base', icon: '📖' },
@@ -76,6 +79,16 @@ const navSections: NavSection[] = [
       { label: 'Ayarlar', href: '/settings', icon: '⚙️' },
     ],
   },
+];
+
+/* Topbar "Hızlı Ekle" (＋) menüsü — ilgili sayfaya götürür */
+const quickLinks: NavItem[] = [
+  { label: 'Yeni Görev', href: '/tasks', icon: '✅' },
+  { label: 'Yeni Kişi', href: '/contacts', icon: '👥' },
+  { label: 'Yeni İhbar', href: '/tips', icon: '🔔' },
+  { label: 'Yeni Not', href: '/notes', icon: '📝' },
+  { label: 'Yeni Etkinlik', href: '/calendar', icon: '📅' },
+  { label: 'Yeni Fatura', href: '/invoices', icon: '📄' },
 ];
 
 /* ── Helper: decide if link is "active" ──────────────── */
@@ -101,6 +114,7 @@ export default function DashboardLayout({
   const [notifications, setNotifications] = useState<NotifItem[]>([]);
   const [notifUnread, setNotifUnread] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
 
   /* Global search */
   type SearchResult = { type: string; icon: string; title: string; subtitle?: string; link: string };
@@ -236,11 +250,14 @@ export default function DashboardLayout({
 
         {/* Navigation */}
         <nav className="sidebar-nav">
-          {navSections.map((section) => (
+          {navSections.map((section) => {
+            const items = section.items.filter((it) => !user || canAccessPath({ role: user.role }, it.href));
+            if (items.length === 0) return null;
+            return (
             <div className="sidebar-section" key={section.title}>
               <div className="sidebar-section-title">{section.title}</div>
 
-              {section.items.map((item) => {
+              {items.map((item) => {
                 const badge =
                   item.href === '/tips' && newTipCount > 0
                     ? String(newTipCount)
@@ -262,7 +279,8 @@ export default function DashboardLayout({
                 );
               })}
             </div>
-          ))}
+            );
+          })}
         </nav>
 
         {/* Collapse toggle */}
@@ -329,9 +347,33 @@ export default function DashboardLayout({
 
           <div className="topbar-right">
             {/* Quick add */}
-            <button className="topbar-btn" title="Hızlı Ekle">
-              ＋
-            </button>
+            <div style={{ position: 'relative' }}>
+              <button className="topbar-btn" title="Hızlı Ekle" onClick={() => setQuickOpen((v) => !v)}>
+                ＋
+              </button>
+              {quickOpen && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setQuickOpen(false)} />
+                  <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 220, background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: 'var(--border-radius-lg)', boxShadow: '0 16px 48px rgba(0,0,0,0.5)', zIndex: 1000, padding: 'var(--space-2)' }}>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', padding: 'var(--space-2) var(--space-3)', fontWeight: 600 }}>HIZLI EKLE</div>
+                    {quickLinks
+                      .filter((q) => !user || canAccessPath({ role: user.role }, q.href))
+                      .map((q) => (
+                        <div
+                          key={q.href}
+                          onClick={() => { setQuickOpen(false); router.push(q.href); }}
+                          style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', padding: 'var(--space-2) var(--space-3)', borderRadius: 'var(--border-radius)', cursor: 'pointer' }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'var(--surface-3)'; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                        >
+                          <span>{q.icon}</span>
+                          <span style={{ fontSize: 'var(--text-sm)' }}>{q.label}</span>
+                        </div>
+                      ))}
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* Notifications */}
             <div style={{ position: 'relative' }}>

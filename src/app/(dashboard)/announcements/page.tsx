@@ -30,9 +30,15 @@ export default function AnnouncementsPage() {
   const fetchAnnouncements = async () => {
     try {
       const res = await fetch('/api/announcements');
-      setAnnouncements(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setAnnouncements(Array.isArray(data) ? data : []);
+      } else {
+        setAnnouncements([]);
+      }
     } catch (error) {
       console.error('Error fetching announcements:', error);
+      setAnnouncements([]);
     } finally {
       setLoading(false);
     }

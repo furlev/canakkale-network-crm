@@ -48,9 +48,15 @@ export default function KnowledgeBasePage() {
   const fetchArticles = async () => {
     try {
       const res = await fetch('/api/articles');
-      setArticles(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setArticles(Array.isArray(data) ? data : []);
+      } else {
+        setArticles([]);
+      }
     } catch (error) {
       console.error('Error fetching articles:', error);
+      setArticles([]);
     } finally {
       setLoading(false);
     }

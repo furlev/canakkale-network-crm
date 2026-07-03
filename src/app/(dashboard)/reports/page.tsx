@@ -65,14 +65,22 @@ function BarChart({ data, color }: { data: { label: string; value: number }[]; c
 export default function ReportsPage() {
   const [tab, setTab] = useState('overview');
   const [data, setData] = useState<ReportData | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const tabs = [{ k: 'overview', l: 'Genel Bakış' }, { k: 'revenue', l: 'Gelir' }, { k: 'client', l: 'Müşteri' }, { k: 'project', l: 'Proje' }, { k: 'tips', l: 'İhbar' }];
 
   useEffect(() => {
     fetch('/api/reports')
-      .then(res => res.json())
-      .then(d => { setData(d); setLoading(false); })
-      .catch(err => { console.error('Error fetching reports:', err); setLoading(false); });
+      .then(async res => {
+        const d = await res.json().catch(() => null);
+        if (!res.ok || !d || typeof d !== 'object' || !d.summary || !d.projectStatus) {
+          setErr('Rapor verileri yüklenemedi. Lütfen daha sonra tekrar deneyin.');
+        } else {
+          setData(d);
+        }
+        setLoading(false);
+      })
+      .catch(err => { console.error('Error fetching reports:', err); setErr('Rapor verileri yüklenemedi. Lütfen daha sonra tekrar deneyin.'); setLoading(false); });
   }, []);
 
   const handleExport = () => {
@@ -85,6 +93,20 @@ export default function ReportsPage() {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  if (err) {
+    return (
+      <div>
+        <div className="page-header">
+          <div className="page-header-left">
+            <h1 className="page-title">📈 Raporlar</h1>
+            <p className="page-subtitle">Detaylı analizler ve raporlar</p>
+          </div>
+        </div>
+        <div className="card" style={{ padding: 'var(--space-8)', textAlign: 'center', color: 'var(--text-muted)' }}>{err}</div>
+      </div>
+    );
+  }
 
   if (loading || !data) {
     return (

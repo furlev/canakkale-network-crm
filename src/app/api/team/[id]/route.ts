@@ -7,7 +7,10 @@ import { getSession } from '@/lib/auth';
 
 const safeSelect = {
   id: true, email: true, name: true, role: true, department: true,
+  title: true, managerId: true,
   status: true, avatar: true, createdAt: true, updatedAt: true,
+  manager: { select: { id: true, name: true } },
+  _count: { select: { teamMembers: true, warnsReceived: true } },
 };
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -24,6 +27,8 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         email: body.email,
         role: body.role,
         department: body.department,
+        title: body.title,
+        managerId: body.managerId,
         status: body.status,
         password: body.password ? await bcrypt.hash(body.password, 12) : undefined,
       },

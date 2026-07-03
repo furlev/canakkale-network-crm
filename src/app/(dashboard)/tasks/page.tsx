@@ -11,6 +11,11 @@ type Task = {
   createdAt: string;
 };
 
+type TeamMember = {
+  id: string;
+  name: string;
+};
+
 const columns = [
   {key:'todo',title:'Yapılacaklar',color:'var(--border-strong)'},
   {key:'in_progress',title:'Devam Edenler',color:'var(--info)'},
@@ -30,10 +35,12 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
-  const [newTask, setNewTask] = useState({ title: '', description: '', status: 'todo', priority: 'normal', dueDate: '' });
+  const [team, setTeam] = useState<TeamMember[]>([]);
+  const [newTask, setNewTask] = useState({ title: '', description: '', status: 'todo', priority: 'normal', dueDate: '', assigneeId: '' });
 
   useEffect(() => {
     fetchTasks();
+    fetchTeam();
   }, []);
 
   const fetchTasks = async () => {
@@ -45,6 +52,16 @@ export default function TasksPage() {
       console.error('Error fetching tasks:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTeam = async () => {
+    try {
+      const res = await fetch('/api/team');
+      const data = await res.json();
+      setTeam(data);
+    } catch (error) {
+      console.error('Error fetching team:', error);
     }
   };
 
@@ -60,11 +77,17 @@ export default function TasksPage() {
         const created = await res.json();
         setTasks([created, ...tasks]);
         setIsAdding(false);
-        setNewTask({ title: '', description: '', status: 'todo', priority: 'normal', dueDate: '' });
+        setNewTask({ title: '', description: '', status: 'todo', priority: 'normal', dueDate: '', assigneeId: '' });
       }
     } catch (error) {
       console.error('Error creating task:', error);
     }
+  };
+
+  const prevStatusMap: Record<string, string> = {
+    review: 'in_progress',
+    in_progress: 'todo',
+    done: 'review',
   };
 
   const updateTaskStatus = async (id: string, newStatus: string) => {
@@ -142,7 +165,7 @@ export default function TasksPage() {
                       )}
                       
                       <div style={{display:'flex', gap:'4px', marginTop:'var(--space-3)', borderTop:'1px solid var(--border)', paddingTop:'var(--space-2)'}}>
-                        {col.key !== 'todo' && <button className="btn btn-ghost btn-sm" style={{flex:1, fontSize:'10px'}} onClick={() => updateTaskStatus(task.id, 'todo')}>Geri</button>}
+                        {col.key !== 'todo' && <button className="btn btn-ghost btn-sm" style={{flex:1, fontSize:'10px'}} onClick={() => updateTaskStatus(task.id, prevStatusMap[col.key] || 'todo')}>Geri</button>}
                         {col.key === 'todo' && <button className="btn btn-ghost btn-sm" style={{flex:1, fontSize:'10px'}} onClick={() => updateTaskStatus(task.id, 'in_progress')}>Başla</button>}
                         {col.key === 'in_progress' && <button className="btn btn-ghost btn-sm" style={{flex:1, fontSize:'10px'}} onClick={() => updateTaskStatus(task.id, 'review')}>İncelemeye Al</button>}
                         {col.key === 'review' && <button className="btn btn-ghost btn-sm" style={{flex:1, fontSize:'10px'}} onClick={() => updateTaskStatus(task.id, 'done')}>Tamamla</button>}
@@ -218,6 +241,15 @@ export default function TasksPage() {
                   <label className="form-label">Son Teslim</label>
                   <input type="date" className="form-input" value={newTask.dueDate} onChange={e=>setNewTask({...newTask, dueDate: e.target.value})} />
                 </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Atanan Kişi</label>
+                <select className="form-select" value={newTask.assigneeId} onChange={e=>setNewTask({...newTask, assigneeId: e.target.value})}>
+                  <option value="">Atanmadı</option>
+                  {team.map(member => (
+                    <option key={member.id} value={member.id}>{member.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
             <div className="modal-footer">

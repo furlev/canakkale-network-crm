@@ -22,7 +22,7 @@ export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
-  const [newDoc, setNewDoc] = useState({ name: '', type: 'pdf', size: 1024 });
+  const [newDoc, setNewDoc] = useState({ name: '', type: 'pdf', size: 1024, url: '' });
 
   useEffect(() => {
     fetchDocuments();
@@ -52,7 +52,7 @@ export default function DocumentsPage() {
         const created = await res.json();
         setDocuments([created, ...documents]);
         setIsUploading(false);
-        setNewDoc({ name: '', type: 'pdf', size: 1024 });
+        setNewDoc({ name: '', type: 'pdf', size: 1024, url: '' });
       }
     } catch (error) {
       console.error('Error uploading document:', error);
@@ -130,7 +130,7 @@ export default function DocumentsPage() {
                   <td style={{color:'var(--text-muted)'}}>{new Date(doc.createdAt).toLocaleDateString('tr-TR')}</td>
                   <td>
                     <div style={{display:'flex', gap:'var(--space-2)'}}>
-                      <button className="btn btn-ghost btn-sm" onClick={() => alert('İndirme simülasyonu çalıştı.')}>İndir</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => doc.url ? window.open(doc.url, '_blank') : alert('Bu dosya için indirme bağlantısı bulunmuyor.')}>İndir</button>
                       <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(doc.id)}>Sil</button>
                     </div>
                   </td>
@@ -169,6 +169,10 @@ export default function DocumentsPage() {
                   <label className="form-label">Temsili Boyut (KB)</label>
                   <input type="number" className="form-input" value={newDoc.size} onChange={e=>setNewDoc({...newDoc, size: Number(e.target.value)})} />
                 </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Dosya URL (opsiyonel)</label>
+                <input className="form-input" value={newDoc.url} onChange={e=>setNewDoc({...newDoc, url: e.target.value})} placeholder="https://..." />
               </div>
               <div className="form-group" style={{marginTop:'var(--space-4)'}}>
                 <div style={{border:'2px dashed var(--border)', padding:'var(--space-8)', textAlign:'center', borderRadius:'var(--border-radius)', color:'var(--text-muted)'}}>

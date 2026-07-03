@@ -144,10 +144,46 @@ export const teamCreate = z.object({
   email: z.string().email(),
   role: z.enum(['admin', 'editor', 'user']).optional(),
   department: z.string().optional().nullable(),
+  title: z.string().optional().nullable(),       // pozisyon: Ekip Lideri, Muhasebe, Editör...
+  managerId: z.string().optional().nullable(),   // bağlı olduğu ekip lideri (B)
   status: z.enum(['active', 'inactive']).optional(),
   password: z.string().min(8).optional().or(z.literal('')), // boş = şifre atama
 });
 export const teamUpdate = teamCreate.partial();
+
+/* ── Warn (kullanıcı uyarısı) ── */
+export const warnCreate = z.object({
+  userId: z.string().min(1),
+  reason: z.string().min(1),
+  severity: z.enum(['low', 'normal', 'high']).optional(),
+});
+
+/* ── Budget (ortak harcama) + Payment (ödeme talebi / maaş) ── */
+export const budgetCreate = z.object({
+  title: z.string().min(1),
+  description: z.string().optional().nullable(),
+  dueDate: dateString.optional(),
+  distributions: z.array(z.object({
+    userId: z.string().min(1),
+    amount: z.coerce.number().min(0),
+  })).min(1),
+});
+
+export const paymentCreate = z.object({
+  kind: z.enum(['collection', 'salary']).optional(),
+  userId: z.string().min(1),
+  title: z.string().min(1),
+  amount: z.coerce.number().min(0),
+  note: z.string().optional().nullable(),
+  dueDate: dateString.optional(),
+});
+export const paymentUpdate = z.object({
+  status: z.enum(['pending', 'paid', 'cancelled']).optional(),
+  title: z.string().min(1).optional(),
+  amount: z.coerce.number().min(0).optional(),
+  note: z.string().optional().nullable(),
+  dueDate: dateString.optional(),
+});
 
 /* ── Document ── */
 export const documentCreate = z.object({

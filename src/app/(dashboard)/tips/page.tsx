@@ -39,6 +39,7 @@ const statusLabels: Record<string,{label:string;cls:string}> = {
 
 export default function TipsPage() {
   const [view, setView] = useState<'kanban'|'list'>('kanban');
+  const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Tip|null>(null);
   const [tips, setTips] = useState<Tip[]>([]);
   const [loading, setLoading] = useState(true);
@@ -205,6 +206,19 @@ export default function TipsPage() {
     }
   };
 
+  const handleDeleteTip = async (id: string) => {
+    if (!confirm('Bu ihbarı silmek istediğinize emin misiniz?')) return;
+    try {
+      const res = await fetch(`/api/tips/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setTips(tips.filter(t => t.id !== id));
+        if (selected?.id === id) setSelected(null);
+      }
+    } catch (error) {
+      console.error('Error deleting tip:', error);
+    }
+  };
+
   const stats = [
     {label:'Yeni',value:tips.filter(t=>t.status==='new').length,color:'var(--primary)',icon:'🆕'},
     {label:'İnceleniyor',value:tips.filter(t=>t.status==='investigating').length,color:'var(--info)',icon:'🔍'},
@@ -301,7 +315,7 @@ export default function TipsPage() {
           <div className="data-table-header">
             <div className="data-table-search">
               <span className="topbar-search-icon">🔍</span>
-              <input placeholder="İhbar ara..." />
+              <input placeholder="İhbar ara..." value={search} onChange={e=>setSearch(e.target.value)} />
             </div>
           </div>
           <table className="data-table">
@@ -311,7 +325,11 @@ export default function TipsPage() {
               </tr>
             </thead>
             <tbody>
-              {tips.map(tip=>(
+              {tips.filter(tip=>{
+                const q = search.trim().toLowerCase();
+                if (!q) return true;
+                return [tip.subject, tip.content, tip.source].some(f => f?.toLowerCase().includes(q));
+              }).map(tip=>(
                 <tr key={tip.id} onClick={()=>openTip(tip)} style={{cursor:'pointer'}}>
                   <td><span className="font-mono" style={{color:'var(--primary-light)'}}>{tip.tipNumber}</span></td>
                   <td style={{maxWidth:280,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{tip.subject}</td>
@@ -320,7 +338,10 @@ export default function TipsPage() {
                   <td>{tip.reporter?.name || <span style={{color:'var(--text-muted)'}}>—</span>}</td>
                   <td><span className={`badge ${statusLabels[tip.status]?.cls}`}>{statusLabels[tip.status]?.label}</span></td>
                   <td style={{fontSize:'var(--text-xs)',color:'var(--text-muted)'}}>{new Date(tip.createdAt).toLocaleDateString('tr-TR')}</td>
-                  <td><button className="btn btn-ghost btn-sm" onClick={(e)=>{e.stopPropagation();openTip(tip)}}>Detay</button></td>
+                  <td>
+                    <button className="btn btn-ghost btn-sm" onClick={(e)=>{e.stopPropagation();openTip(tip)}}>Detay</button>
+                    <button className="btn btn-ghost btn-sm" onClick={(e)=>{e.stopPropagation();handleDeleteTip(tip.id)}}>Sil</button>
+                  </td>
                 </tr>
               ))}
             </tbody>

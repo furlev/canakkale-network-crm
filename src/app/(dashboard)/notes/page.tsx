@@ -39,9 +39,15 @@ export default function NotesPage() {
   const fetchNotes = async () => {
     try {
       const res = await fetch('/api/notes');
-      setNotes(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setNotes(Array.isArray(data) ? data : []);
+      } else {
+        setNotes([]);
+      }
     } catch (error) {
       console.error('Error fetching notes:', error);
+      setNotes([]);
     } finally {
       setLoading(false);
     }

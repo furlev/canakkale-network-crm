@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySession, SESSION_COOKIE } from '@/lib/auth';
+import { canAccessPath } from '@/lib/permissions';
 
 /** Paths reachable without a session. Webhook/cron routes authenticate themselves via secrets. */
 const PUBLIC_PREFIXES = [
@@ -34,6 +35,11 @@ export default async function proxy(request: NextRequest) {
     const loginUrl = new URL('/login', request.url);
     if (pathname !== '/') loginUrl.searchParams.set('from', pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // Rol bazlı sayfa erişimi (A/B/C). API rotaları kendi içinde yetki kontrolü yapar.
+  if (!pathname.startsWith('/api/') && !canAccessPath(session, pathname)) {
+    return NextResponse.redirect(new URL('/', request.url));
   }
 
   return NextResponse.next();

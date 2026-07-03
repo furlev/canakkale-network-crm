@@ -17,6 +17,10 @@ export default function ContactsPage() {
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [newContact, setNewContact] = useState({ firstName: '', lastName: '', email: '', phone: '', company: '', status: 'active' });
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editContact, setEditContact] = useState({ firstName: '', lastName: '', email: '', phone: '', company: '', status: 'active' });
 
   useEffect(() => {
     fetchContacts();
@@ -66,6 +70,71 @@ export default function ContactsPage() {
     }
   };
 
+  const handleStartEdit = (contact: Contact) => {
+    setEditingId(contact.id);
+    setEditContact({
+      firstName: contact.firstName,
+      lastName: contact.lastName || '',
+      email: contact.email,
+      phone: contact.phone || '',
+      company: contact.company || '',
+      status: contact.status,
+    });
+  };
+
+  const handleUpdateContact = async () => {
+    if (!editingId) return;
+    if (!editContact.firstName || !editContact.email) return;
+    try {
+      const res = await fetch(`/api/contacts/${editingId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editContact),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setContacts(contacts.map(c => c.id === editingId ? updated : c));
+        setEditingId(null);
+      }
+    } catch (error) {
+      console.error('Error updating contact:', error);
+    }
+  };
+
+  const cycleStatusFilter = () => {
+    setStatusFilter(statusFilter === 'all' ? 'active' : statusFilter === 'active' ? 'inactive' : 'all');
+  };
+
+  const handleExport = () => {
+    const headers = ['Ad', 'Soyad', 'E-Posta', 'Telefon', 'Şirket', 'Durum', 'Kayıt Tarihi'];
+    const escapeCsv = (value: string) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = filteredContacts.map(c => [
+      c.firstName, c.lastName || '', c.email, c.phone || '', c.company || '',
+      c.status === 'active' ? 'Aktif' : 'Pasif',
+      new Date(c.createdAt).toLocaleDateString('tr-TR'),
+    ].map(escapeCsv).join(','));
+    const csv = '﻿' + [headers.map(escapeCsv).join(','), ...rows].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'kisiler.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const filteredContacts = contacts.filter((contact) => {
+    if (statusFilter !== 'all' && contact.status !== statusFilter) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    const haystack = `${contact.firstName} ${contact.lastName || ''} ${contact.email} ${contact.company || ''}`.toLowerCase();
+    return haystack.includes(q);
+  });
+
+  const statusFilterLabel = statusFilter === 'all' ? 'Tümü' : statusFilter === 'active' ? 'Aktif' : 'Pasif';
+
   return (
     <div>
       <div className="page-header">
@@ -82,19 +151,19 @@ export default function ContactsPage() {
         <div className="data-table-header">
           <div className="data-table-search">
             <span className="topbar-search-icon">🔍</span>
-            <input placeholder="İsim veya e-posta ara..." />
+            <input placeholder="İsim veya e-posta ara..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <div style={{display:'flex', gap:'var(--space-2)'}}>
-            <button className="btn btn-ghost">Dışa Aktar</button>
-            <button className="btn btn-ghost">Filtrele</button>
+            <button className="btn btn-ghost" onClick={handleExport}>Dışa Aktar</button>
+            <button className="btn btn-ghost" onClick={cycleStatusFilter}>Filtrele: {statusFilterLabel}</button>
           </div>
         </div>
         
         {loading ? (
           <div style={{padding:'var(--space-8)', textAlign:'center'}}>Yükleniyor...</div>
-        ) : contacts.length === 0 ? (
+        ) : filteredContacts.length === 0 ? (
           <div style={{padding:'var(--space-8)', textAlign:'center', color:'var(--text-muted)'}}>
-            Henüz hiç kişi eklenmemiş.
+            {contacts.length === 0 ? 'Henüz hiç kişi eklenmemiş.' : 'Filtreye uygun kişi bulunamadı.'}
           </div>
         ) : (
           <table className="data-table">
@@ -110,7 +179,7 @@ export default function ContactsPage() {
               </tr>
             </thead>
             <tbody>
-              {contacts.map((contact) => (
+              {filteredContacts.map((contact) => (
                 <tr key={contact.id}>
                   <td>
                     <div style={{display:'flex', alignItems:'center', gap:'var(--space-3)'}}>
@@ -132,6 +201,7 @@ export default function ContactsPage() {
                     {new Date(contact.createdAt).toLocaleDateString('tr-TR')}
                   </td>
                   <td>
+                    <button className="btn btn-ghost btn-sm" onClick={() => handleStartEdit(contact)}>Düzenle</button>
                     <button className="btn btn-ghost btn-sm" onClick={(e) => handleDelete(contact.id, e)}>Sil</button>
                   </td>
                 </tr>
@@ -178,6 +248,57 @@ export default function ContactsPage() {
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setIsAdding(false)}>İptal</button>
               <button className="btn btn-primary" onClick={handleCreateContact}>Kaydet</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {editingId && (
+        <>
+          <div className="modal-backdrop" onClick={() => setEditingId(null)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Kişiyi Düzenle</h2>
+              <button className="modal-close" onClick={() => setEditingId(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Ad *</label>
+                  <input className="form-input" value={editContact.firstName} onChange={e=>setEditContact({...editContact, firstName: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Soyad</label>
+                  <input className="form-input" value={editContact.lastName} onChange={e=>setEditContact({...editContact, lastName: e.target.value})} />
+                </div>
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">E-Posta *</label>
+                  <input type="email" className="form-input" value={editContact.email} onChange={e=>setEditContact({...editContact, email: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Telefon</label>
+                  <input className="form-input" value={editContact.phone} onChange={e=>setEditContact({...editContact, phone: e.target.value})} />
+                </div>
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Şirket</label>
+                  <input className="form-input" value={editContact.company} onChange={e=>setEditContact({...editContact, company: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Durum</label>
+                  <select className="form-select" value={editContact.status} onChange={e=>setEditContact({...editContact, status: e.target.value})}>
+                    <option value="active">Aktif</option>
+                    <option value="inactive">Pasif</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setEditingId(null)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleUpdateContact}>Kaydet</button>
             </div>
           </div>
         </>

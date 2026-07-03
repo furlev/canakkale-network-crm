@@ -12,18 +12,26 @@ model User {
   email     String   @unique
   name      String
   password  String?  // bcrypt hash; null = cannot log in yet
-  role      String   @default("user") // admin, editor, user
+  role      String   @default("user") // admin=A (root), editor=B (lider/muhasebe), user=C (üye)
   department String?
   status    String   @default("active")
   avatar    String?
+  title      String?  // B/C pozisyonu: Ekip Lideri, Muhasebe, Editör, Muhabir...
+  managerId  String?  // bağlı olduğu ekip lideri (B kullanıcısı)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
+  manager     User?   @relation("TeamManager", fields: [managerId], references: [id], onDelete: SetNull)
+  teamMembers User[]  @relation("TeamManager")
+
   tips      Tip[]    @relation("TipReporter")
   tasks     Task[]   @relation("TaskAssignee")
   tickets   Ticket[] @relation("TicketAssignee")
   sentMessages     Message[] @relation("SentMessages")
   receivedMessages Message[] @relation("ReceivedMessages")
+  warnsReceived    Warn[]    @relation("WarnTarget")
+  warnsIssued      Warn[]    @relation("WarnIssuer")
+  payments         PaymentRequest[] @relation("PaymentUser")
 }
 
 model Tip {
@@ -369,4 +377,50 @@ model AdCampaign {
 
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+}
+
+// ── RBAC: kullanıcı uyarıları (warn sistemi) ──
+model Warn {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation("WarnTarget", fields: [userId], references: [id], onDelete: Cascade)
+  reason     String
+  severity   String   @default("normal") // low, normal, high
+  issuedById String?
+  issuedBy   User?    @relation("WarnIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+}
+
+// ── Ortak harcama bütçesi (yönetici çıkarır, kullanıcılara paylaştırılır) ──
+model Budget {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  totalAmount Float    @default(0)
+  createdBy   String?  // oluşturan yöneticinin adı
+  status      String   @default("open") // open, closed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requests    PaymentRequest[]
+}
+
+// ── Ödeme talebi / maaş kaydı — kişinin paneline düşer, 'ödedim' ile kapanır ──
+model PaymentRequest {
+  id          String    @id @default(uuid())
+  kind        String    @default("collection") // collection (ortak harcama tahsilatı) | salary (maaş)
+  title       String
+  amount      Float
+  status      String    @default("pending") // pending, paid, cancelled
+  note        String?
+  dueDate     DateTime?
+  paidAt      DateTime?
+
+  userId      String
+  user        User      @relation("PaymentUser", fields: [userId], references: [id], onDelete: Cascade)
+  budgetId    String?
+  budget      Budget?   @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
