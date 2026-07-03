@@ -20,6 +20,10 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [newEvent, setNewEvent] = useState({ title: '', date: '', type: 'meeting', description: '' });
+  const [viewDate, setViewDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
 
   useEffect(() => {
     fetchEvents();
@@ -68,14 +72,53 @@ export default function CalendarPage() {
     }
   };
 
-  // Group events by day for a simple calendar view
+  // Yerel tarihi YYYY-MM-DD anahtarına çevir (UTC kaymasını önlemek için)
+  const toKey = (d: Date): string => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  // Etkinlikleri güne göre grupla (ay ızgarasında hücrelere yerleştirmek için)
   const eventsByDay: Record<string, Event[]> = {};
   events.forEach(event => {
-    const d = new Date(event.date);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = toKey(new Date(event.date));
     if (!eventsByDay[dateStr]) eventsByDay[dateStr] = [];
     eventsByDay[dateStr].push(event);
   });
+
+  // Bir güne tıklayınca ekleme modalını o tarihle (12:00) aç
+  const handleDayClick = (dayDate: Date) => {
+    const dateWithTime = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate(), 12, 0);
+    const localDatetime = `${toKey(dateWithTime)}T12:00`;
+    setNewEvent({ title: '', date: localDatetime, type: 'meeting', description: '' });
+    setIsAdding(true);
+  };
+
+  // Ay navigasyonu
+  const goToPrevMonth = () => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1));
+  const goToNextMonth = () => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1));
+  const goToToday = () => {
+    const now = new Date();
+    setViewDate(new Date(now.getFullYear(), now.getMonth(), 1));
+  };
+
+  // Ay ızgarası: Pazartesi başlangıçlı 6 satır x 7 sütun
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const firstOfMonth = new Date(year, month, 1);
+  // JS: 0=Paz..6=Cmt. Pzt başlangıç için ofset (Pzt=0..Paz=6)
+  const startOffset = (firstOfMonth.getDay() + 6) % 7;
+  const gridStart = new Date(year, month, 1 - startOffset);
+  const gridDays: Date[] = [];
+  for (let i = 0; i < 42; i++) {
+    gridDays.push(new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i));
+  }
+
+  const todayKey = toKey(new Date());
+  const weekdayLabels = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+  const monthLabel = viewDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
 
   return (
     <div>
@@ -91,40 +134,76 @@ export default function CalendarPage() {
 
       {loading ? (
         <div style={{textAlign:'center', padding:'var(--space-8)'}}>Yükleniyor...</div>
-      ) : events.length === 0 ? (
-        <div style={{textAlign:'center', padding:'var(--space-8)', color:'var(--text-muted)'}}>Yaklaşan etkinlik yok.</div>
       ) : (
-        <div className="grid-2">
-          {Object.entries(eventsByDay).map(([dateStr, dayEvents]) => (
-            <div key={dateStr} className="card" style={{borderLeft: '4px solid var(--border)'}}>
-              <h3 style={{fontSize:'var(--text-lg)', marginBottom:'var(--space-4)', display:'flex', alignItems:'center', gap:'8px'}}>
-                <span>🗓️</span> {new Date(dateStr).toLocaleDateString('tr-TR', {weekday:'long', month:'long', day:'numeric'})}
-              </h3>
-              
-              <div style={{display:'flex', flexDirection:'column', gap:'var(--space-3)'}}>
-                {dayEvents.map(event => (
-                  <div key={event.id} style={{
-                    padding:'var(--space-3)', 
-                    background:'var(--surface-2)', 
-                    borderRadius:'var(--border-radius)',
-                    borderLeft: `3px solid ${eventTypes[event.type]?.color || 'var(--primary)'}`,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                  }}>
-                    <div>
-                      <div style={{fontWeight:500, marginBottom:'4px'}}>{event.title}</div>
-                      {event.description && <div style={{fontSize:'var(--text-xs)', color:'var(--text-muted)'}}>{event.description}</div>}
-                      <div style={{fontSize:'var(--text-xs)', marginTop:'8px', display:'inline-block', padding:'2px 6px', background:'var(--surface)', borderRadius:'4px'}}>
-                        {new Date(event.date).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'})}
-                      </div>
-                    </div>
-                    <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(event.id)}>Sil</button>
-                  </div>
-                ))}
-              </div>
+        <div className="card">
+          <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'var(--space-4)', gap:'var(--space-2)', flexWrap:'wrap'}}>
+            <h2 style={{fontSize:'var(--text-lg)', textTransform:'capitalize', margin:0}}>{monthLabel}</h2>
+            <div style={{display:'flex', gap:'var(--space-2)'}}>
+              <button className="btn btn-ghost btn-sm" onClick={goToPrevMonth} aria-label="Önceki ay">‹</button>
+              <button className="btn btn-ghost btn-sm" onClick={goToToday}>Bugün</button>
+              <button className="btn btn-ghost btn-sm" onClick={goToNextMonth} aria-label="Sonraki ay">›</button>
             </div>
-          ))}
+          </div>
+
+          <div style={{display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:'6px'}}>
+            {weekdayLabels.map(w => (
+              <div key={w} style={{textAlign:'center', fontSize:'var(--text-xs)', fontWeight:600, color:'var(--text-muted)', padding:'var(--space-2) 0'}}>{w}</div>
+            ))}
+            {gridDays.map(dayDate => {
+              const key = toKey(dayDate);
+              const inMonth = dayDate.getMonth() === month;
+              const isToday = key === todayKey;
+              const dayEvents = eventsByDay[key] || [];
+              return (
+                <div
+                  key={key}
+                  onClick={() => handleDayClick(dayDate)}
+                  style={{
+                    minHeight:'96px',
+                    padding:'6px',
+                    borderRadius:'var(--border-radius)',
+                    border: isToday ? '2px solid var(--primary)' : '1px solid var(--border)',
+                    background: inMonth ? 'var(--surface-2)' : 'var(--surface)',
+                    opacity: inMonth ? 1 : 0.5,
+                    cursor:'pointer',
+                    display:'flex',
+                    flexDirection:'column',
+                    gap:'4px',
+                  }}
+                >
+                  <div style={{
+                    fontSize:'var(--text-xs)',
+                    fontWeight: isToday ? 700 : 500,
+                    color: isToday ? 'var(--primary)' : 'var(--text-muted)',
+                    textAlign:'right',
+                  }}>{dayDate.getDate()}</div>
+
+                  <div style={{display:'flex', flexDirection:'column', gap:'3px', overflow:'hidden'}}>
+                    {dayEvents.map(event => (
+                      <div
+                        key={event.id}
+                        title={`${event.title}${event.description ? ' — ' + event.description : ''}`}
+                        onClick={(e) => { e.stopPropagation(); handleDelete(event.id); }}
+                        style={{
+                          fontSize:'var(--text-xs)',
+                          padding:'2px 6px',
+                          borderRadius:'4px',
+                          background: eventTypes[event.type]?.color || 'var(--primary)',
+                          color:'#fff',
+                          whiteSpace:'nowrap',
+                          overflow:'hidden',
+                          textOverflow:'ellipsis',
+                          cursor:'pointer',
+                        }}
+                      >
+                        {new Date(event.date).toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'})} {event.title}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

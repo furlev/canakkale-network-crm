@@ -67,6 +67,24 @@ export default function NotificationsPage() {
     }
   };
 
+  const markOneRead = async (id: string) => {
+    const target = items.find(n => n.id === id);
+    if (!target || target.read) return;
+    setItems(items.map(n => (n.id === id ? { ...n, read: true } : n)));
+    setUnread(u => Math.max(0, u - 1));
+    try {
+      const res = await fetch(`/api/notifications/${id}`, { method: 'PUT' });
+      if (!res.ok) {
+        setItems(prev => prev.map(n => (n.id === id ? { ...n, read: false } : n)));
+        setUnread(u => u + 1);
+      }
+    } catch (error) {
+      console.error('Error marking read:', error);
+      setItems(prev => prev.map(n => (n.id === id ? { ...n, read: false } : n)));
+      setUnread(u => u + 1);
+    }
+  };
+
   const visible = filter === 'unread' ? items.filter(n => !n.read) : items;
 
   return (
@@ -99,7 +117,7 @@ export default function NotificationsPage() {
           {visible.map((n, i) => {
             const meta = typeMeta[n.type] || typeMeta.info;
             const inner = (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', padding: 'var(--space-4)', borderBottom: i < visible.length - 1 ? '1px solid var(--border-subtle)' : 'none', background: n.read ? 'transparent' : 'rgba(108,92,231,0.06)', cursor: n.link ? 'pointer' : 'default', transition: 'background var(--transition-fast)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', padding: 'var(--space-4)', borderBottom: i < visible.length - 1 ? '1px solid var(--border-subtle)' : 'none', background: n.read ? 'transparent' : 'rgba(108,92,231,0.06)', cursor: n.link || !n.read ? 'pointer' : 'default', transition: 'background var(--transition-fast)' }}>
                 <div style={{ width: 40, height: 40, borderRadius: 'var(--border-radius)', background: `color-mix(in srgb, ${meta.color} 15%, transparent)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', flexShrink: 0 }}>{meta.icon}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 'var(--text-sm)', fontWeight: n.read ? 400 : 600 }}>{n.title}</div>
@@ -112,8 +130,8 @@ export default function NotificationsPage() {
               </div>
             );
             return n.link
-              ? <Link key={n.id} href={n.link} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>{inner}</Link>
-              : <div key={n.id}>{inner}</div>;
+              ? <Link key={n.id} href={n.link} onClick={() => markOneRead(n.id)} style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>{inner}</Link>
+              : <div key={n.id} onClick={() => markOneRead(n.id)}>{inner}</div>;
           })}
         </div>
       )}

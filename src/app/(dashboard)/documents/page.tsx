@@ -18,11 +18,49 @@ const fileIcons: Record<string, string> = {
   other: '📁',
 };
 
+const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
+
+const detectDocType = (file: File): string => {
+  const mime = file.type;
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  if (mime.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return 'image';
+  if (mime === 'application/pdf' || ext === 'pdf') return 'pdf';
+  if (mime.includes('word') || ['doc', 'docx'].includes(ext)) return 'word';
+  if (mime.includes('sheet') || mime.includes('excel') || ['xls', 'xlsx', 'csv'].includes(ext)) return 'excel';
+  return 'other';
+};
+
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [newDoc, setNewDoc] = useState({ name: '', type: 'pdf', size: 1024, url: '' });
+  const [uploadError, setUploadError] = useState('');
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > MAX_FILE_SIZE) {
+      setUploadError(`Dosya çok büyük (${(file.size / (1024 * 1024)).toFixed(2)} MB). En fazla 2 MB yükleyebilirsiniz.`);
+      e.target.value = '';
+      return;
+    }
+    setUploadError('');
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      setNewDoc({
+        name: file.name,
+        type: detectDocType(file),
+        size: file.size,
+        url: result,
+      });
+    };
+    reader.onerror = () => {
+      setUploadError('Dosya okunurken bir hata oluştu.');
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     fetchDocuments();
@@ -53,6 +91,7 @@ export default function DocumentsPage() {
         setDocuments([created, ...documents]);
         setIsUploading(false);
         setNewDoc({ name: '', type: 'pdf', size: 1024, url: '' });
+        setUploadError('');
       }
     } catch (error) {
       console.error('Error uploading document:', error);
@@ -175,9 +214,14 @@ export default function DocumentsPage() {
                 <input className="form-input" value={newDoc.url} onChange={e=>setNewDoc({...newDoc, url: e.target.value})} placeholder="https://..." />
               </div>
               <div className="form-group" style={{marginTop:'var(--space-4)'}}>
-                <div style={{border:'2px dashed var(--border)', padding:'var(--space-8)', textAlign:'center', borderRadius:'var(--border-radius)', color:'var(--text-muted)'}}>
-                  Sürükle bırak özelliği simüle edilmektedir. Burası gerçek bir dosya yükleme alanı (AWS S3 vb.) ile entegre edilebilir.
+                <label className="form-label">Dosya Seç (en fazla 2 MB)</label>
+                <input type="file" className="form-input" onChange={handleFileSelect} />
+                <div style={{marginTop:'var(--space-2)', fontSize:'var(--text-sm)', color:'var(--text-muted)'}}>
+                  Seçilen dosya tarayıcıda okunur ve veri olarak saklanır. Ad, boyut ve tür otomatik doldurulur.
                 </div>
+                {uploadError && (
+                  <div style={{marginTop:'var(--space-2)', color:'var(--error)', fontSize:'var(--text-sm)'}}>{uploadError}</div>
+                )}
               </div>
             </div>
             <div className="modal-footer">

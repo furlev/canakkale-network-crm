@@ -40,6 +40,7 @@ export default function KnowledgeBasePage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [viewing, setViewing] = useState<Article | null>(null);
 
   useEffect(() => {
     fetchArticles();
@@ -68,10 +69,29 @@ export default function KnowledgeBasePage() {
     setModalOpen(true);
   };
 
-  const openEdit = (a: Article) => {
+  const openEdit = (a: Article, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setEditingId(a.id);
     setForm({ title: a.title, content: a.content || '', category: a.category });
     setModalOpen(true);
+  };
+
+  const openView = async (a: Article) => {
+    setViewing(a);
+    try {
+      const res = await fetch(`/api/articles/${a.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ views: a.views + 1 }),
+      });
+      if (res.ok) {
+        const updated: Article = await res.json();
+        setArticles(prev => prev.map(x => (x.id === a.id ? updated : x)));
+        setViewing(updated);
+      }
+    } catch (error) {
+      console.error('Error incrementing views:', error);
+    }
   };
 
   const handleSave = async () => {
@@ -165,7 +185,7 @@ export default function KnowledgeBasePage() {
           </div>
         ) : (
           visibleArticles.slice(0, activeCategory || search ? undefined : 10).map((a, i, arr) => (
-            <div key={a.id} onClick={() => openEdit(a)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--space-3) 0', borderBottom: i < arr.length - 1 ? '1px solid var(--border-subtle)' : 'none', cursor: 'pointer' }}>
+            <div key={a.id} onClick={() => openView(a)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--space-3) 0', borderBottom: i < arr.length - 1 ? '1px solid var(--border-subtle)' : 'none', cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                 <span style={{ color: 'var(--text-muted)' }}>{categoryMeta[a.category]?.icon || '📄'}</span>
                 <div>
@@ -175,6 +195,7 @@ export default function KnowledgeBasePage() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{timeAgo(a.createdAt)}</span>
+                <button className="btn btn-ghost btn-sm" onClick={e => openEdit(a, e)}>✏️ Düzenle</button>
                 <button className="btn btn-ghost btn-sm" onClick={e => handleDelete(a.id, e)}>🗑️</button>
               </div>
             </div>
@@ -209,6 +230,32 @@ export default function KnowledgeBasePage() {
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setModalOpen(false)}>İptal</button>
               <button className="btn btn-primary" onClick={handleSave}>Kaydet</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {viewing && (
+        <>
+          <div className="modal-backdrop" onClick={() => setViewing(null)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">{categoryMeta[viewing.category]?.icon || '📄'} {viewing.title}</h2>
+              <button className="modal-close" onClick={() => setViewing(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
+                <span className="badge badge-primary">{viewing.category}</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>👁️ {viewing.views} görüntülenme</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{timeAgo(viewing.createdAt)}</span>
+              </div>
+              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                {viewing.content ? viewing.content : <span style={{ color: 'var(--text-muted)' }}>Bu makalede içerik bulunmuyor.</span>}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setViewing(null)}>Kapat</button>
+              <button className="btn btn-primary" onClick={() => { const a = viewing; setViewing(null); openEdit(a); }}>✏️ Düzenle</button>
             </div>
           </div>
         </>

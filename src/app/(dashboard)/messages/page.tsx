@@ -20,6 +20,15 @@ type Message = {
   createdAt: string;
 };
 
+type TeamUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  department?: string | null;
+  status: string;
+};
+
 const roleLabels: Record<string, string> = { admin: 'Yönetici', editor: 'Editör', user: 'Üye' };
 
 function initials(name: string): string {
@@ -45,6 +54,10 @@ export default function MessagesPage() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [teamUsers, setTeamUsers] = useState<TeamUser[]>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [newSearch, setNewSearch] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,6 +66,15 @@ export default function MessagesPage() {
 
   useEffect(() => {
     if (activeConv) fetchMessages(activeConv);
+  }, [activeConv]);
+
+  // Polling: aktif konuşmanın mesajlarını ve konuşma listesini her 5 sn'de bir yenile.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchConversations();
+      if (activeConv) fetchMessages(activeConv);
+    }, 5000);
+    return () => clearInterval(interval);
   }, [activeConv]);
 
   useEffect(() => {
@@ -104,8 +126,41 @@ export default function MessagesPage() {
     }
   };
 
+  const openNewChat = async () => {
+    setShowNew(true);
+    setNewSearch('');
+    setTeamLoading(true);
+    try {
+      const res = await fetch('/api/team');
+      const data = res.ok ? await res.json() : [];
+      setTeamUsers(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error fetching team:', error);
+      setTeamUsers([]);
+    } finally {
+      setTeamLoading(false);
+    }
+  };
+
+  const startConversation = (userId: string) => {
+    // Konuşma listesinde yoksa (henüz mesaj yok) yer tutucu bir konuşma ekle.
+    setConversations(prev => {
+      if (prev.some(c => c.id === userId)) return prev;
+      const u = teamUsers.find(t => t.id === userId);
+      if (!u) return prev;
+      return [
+        { id: u.id, name: u.name, role: u.role, department: u.department, status: u.status, lastMessage: null, lastMessageAt: null, unread: 0 },
+        ...prev,
+      ];
+    });
+    setActiveConv(userId);
+    setMessages([]);
+    setShowNew(false);
+  };
+
   const activeUser = conversations.find(c => c.id === activeConv);
   const filteredConvs = conversations.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredTeam = teamUsers.filter(u => u.name.toLowerCase().includes(newSearch.toLowerCase()));
 
   return (
     <div>
@@ -114,6 +169,7 @@ export default function MessagesPage() {
           <h1 className="page-title">💬 Mesajlar</h1>
           <p className="page-subtitle">Ekip içi iletişim</p>
         </div>
+        <button className="btn btn-primary" onClick={openNewChat}>+ Yeni Sohbet</button>
       </div>
 
       {loading ? (
@@ -199,6 +255,45 @@ export default function MessagesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showNew && (
+        <>
+          <div className="modal-backdrop" onClick={() => setShowNew(false)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Yeni Sohbet</h2>
+              <button className="modal-close" onClick={() => setShowNew(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="data-table-search" style={{ width: '100%', marginBottom: 'var(--space-4)' }}>
+                <span>🔍</span>
+                <input placeholder="Kişi ara..." value={newSearch} onChange={e => setNewSearch(e.target.value)} />
+              </div>
+              {teamLoading ? (
+                <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)', padding: 'var(--space-4)' }}>Yükleniyor...</div>
+              ) : filteredTeam.length === 0 ? (
+                <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)', padding: 'var(--space-4)' }}>Kullanıcı bulunamadı.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 360, overflowY: 'auto' }}>
+                  {filteredTeam.map(u => (
+                    <div key={u.id} onClick={() => startConversation(u.id)} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3)', cursor: 'pointer', borderRadius: 'var(--border-radius)', transition: 'background var(--transition-fast)' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-3)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      <div className="avatar" style={{ background: 'var(--primary-gradient)', color: 'white' }}>{initials(u.name)}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600 }}>{u.name}</div>
+                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                          {roleLabels[u.role] || u.role}{u.department ? ' · ' + u.department : ''}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
