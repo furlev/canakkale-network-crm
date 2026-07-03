@@ -30,6 +30,8 @@ export default function InvoicesPage() {
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [newInvoice, setNewInvoice] = useState({ clientId: '', amount: 0, status: 'unpaid', dueDate: '' });
+  const [editingInvoice, setEditingInvoice] = useState<{ id: string; clientId: string; amount: number; status: string; dueDate: string } | null>(null);
+  const [editError, setEditError] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -85,6 +87,52 @@ export default function InvoicesPage() {
       }
     } catch (error) {
       console.error('Error updating invoice:', error);
+    }
+  };
+
+  const openEdit = (inv: Invoice, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditError('');
+    setEditingInvoice({
+      id: inv.id,
+      clientId: inv.clientId || '',
+      amount: inv.amount,
+      status: inv.status,
+      dueDate: inv.dueDate ? inv.dueDate.slice(0, 10) : '',
+    });
+  };
+
+  const handleUpdateInvoice = async () => {
+    if (!editingInvoice) return;
+    setEditError('');
+    try {
+      const res = await fetch(`/api/invoices/${editingInvoice.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: editingInvoice.clientId || null,
+          amount: editingInvoice.amount,
+          status: editingInvoice.status,
+          dueDate: editingInvoice.dueDate || null,
+        }),
+      });
+      if (res.ok) {
+        const client = clients.find(c => c.id === editingInvoice.clientId);
+        setInvoices(invoices.map(inv => inv.id === editingInvoice.id ? {
+          ...inv,
+          clientId: editingInvoice.clientId || null,
+          amount: editingInvoice.amount,
+          status: editingInvoice.status,
+          dueDate: editingInvoice.dueDate || undefined,
+          client,
+        } : inv));
+        setEditingInvoice(null);
+      } else {
+        setEditError('Fatura güncellenemedi. Lütfen tekrar deneyin.');
+      }
+    } catch (error) {
+      console.error('Error updating invoice:', error);
+      setEditError('Fatura güncellenemedi. Lütfen tekrar deneyin.');
     }
   };
 
@@ -170,6 +218,7 @@ export default function InvoicesPage() {
                     </select>
                   </td>
                   <td>
+                    <button className="btn btn-ghost btn-sm" onClick={(e) => openEdit(inv, e)}>Düzenle</button>
                     <button className="btn btn-ghost btn-sm" onClick={(e) => handleDelete(inv.id, e)}>Sil</button>
                   </td>
                 </tr>
@@ -218,6 +267,55 @@ export default function InvoicesPage() {
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setIsAdding(false)}>İptal</button>
               <button className="btn btn-primary" onClick={handleCreateInvoice}>Fatura Oluştur</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {editingInvoice && (
+        <>
+          <div className="modal-backdrop" onClick={() => setEditingInvoice(null)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Faturayı Düzenle</h2>
+              <button className="modal-close" onClick={() => setEditingInvoice(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {editError && (
+                <div className="form-group" style={{color:'var(--error)', fontSize:'var(--text-sm)'}}>{editError}</div>
+              )}
+              <div className="form-group">
+                <label className="form-label">Müşteri Seçin</label>
+                <select className="form-select" value={editingInvoice.clientId} onChange={e=>setEditingInvoice({...editingInvoice, clientId: e.target.value})}>
+                  <option value="">-- Müşteri Seçin --</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>{c.companyName}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Tutar (₺) *</label>
+                  <input type="number" className="form-input" value={editingInvoice.amount} onChange={e=>setEditingInvoice({...editingInvoice, amount: Number(e.target.value)})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Son Ödeme Tarihi</label>
+                  <input type="date" className="form-input" value={editingInvoice.dueDate} onChange={e=>setEditingInvoice({...editingInvoice, dueDate: e.target.value})} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Durum</label>
+                <select className="form-select" value={editingInvoice.status} onChange={e=>setEditingInvoice({...editingInvoice, status: e.target.value})}>
+                  <option value="unpaid">Bekliyor</option>
+                  <option value="paid">Ödendi</option>
+                  <option value="overdue">Gecikmiş</option>
+                  <option value="cancelled">İptal</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setEditingInvoice(null)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleUpdateInvoice}>Kaydet</button>
             </div>
           </div>
         </>

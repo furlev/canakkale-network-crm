@@ -18,6 +18,8 @@ export default function NewsPage() {
   const [news, setNews] = useState<News[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [editing, setEditing] = useState<News | null>(null);
+  const [editErr, setEditErr] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
   const [newArticle, setNewArticle] = useState({ title: '', category: 'Gündem', author: 'Editör', status: 'draft' });
@@ -84,6 +86,28 @@ export default function NewsPage() {
       }
     } catch (error) {
       console.error('Error updating news:', error);
+    }
+  };
+
+  const handleUpdateNews = async () => {
+    if (!editing || !editing.title) return;
+    setEditErr('');
+    try {
+      const res = await fetch(`/api/news/${editing.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: editing.title, category: editing.category, author: editing.author, status: editing.status }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setNews(news.map(n => n.id === editing.id ? { ...n, ...updated } : n));
+        setEditing(null);
+      } else {
+        setEditErr('Güncelleme başarısız oldu.');
+      }
+    } catch (error) {
+      console.error('Error updating news:', error);
+      setEditErr('Sunucuya ulaşılamadı.');
     }
   };
 
@@ -181,6 +205,7 @@ export default function NewsPage() {
                     </select>
                   </td>
                   <td>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setEditErr(''); setEditing(item); }}>Düzenle</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(item.id)}>Sil</button>
                   </td>
                 </tr>
@@ -225,6 +250,55 @@ export default function NewsPage() {
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setIsAdding(false)}>İptal</button>
               <button className="btn btn-primary" onClick={handleCreateNews}>Kaydet</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {editing && (
+        <>
+          <div className="modal-backdrop" onClick={() => setEditing(null)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Haberi Düzenle</h2>
+              <button className="modal-close" onClick={() => setEditing(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {editErr && (
+                <div style={{ padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--border-radius)', background: 'rgba(255,118,117,0.12)', color: 'var(--error)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>
+                  {editErr}
+                </div>
+              )}
+              <div className="form-group">
+                <label className="form-label">Başlık *</label>
+                <input className="form-input" value={editing.title} onChange={e=>setEditing({...editing, title: e.target.value})} />
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Kategori</label>
+                  <select className="form-select" value={editing.category} onChange={e=>setEditing({...editing, category: e.target.value})}>
+                    <option value="Gündem">Gündem</option>
+                    <option value="Siyaset">Siyaset</option>
+                    <option value="Spor">Spor</option>
+                    <option value="Ekonomi">Ekonomi</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Yazar</label>
+                  <input className="form-input" value={editing.author} onChange={e=>setEditing({...editing, author: e.target.value})} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Durum</label>
+                <select className="form-select" value={editing.status} onChange={e=>setEditing({...editing, status: e.target.value})}>
+                  <option value="draft">Taslak</option>
+                  <option value="published">Yayında</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setEditing(null)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleUpdateNews}>Kaydet</button>
             </div>
           </div>
         </>

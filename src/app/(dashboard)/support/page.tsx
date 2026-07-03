@@ -17,6 +17,8 @@ type Ticket = {
 
 type Client = { id: string; companyName: string; };
 
+type TeamMember = { id: string; name: string; };
+
 const priorityMap: Record<string,{label:string;cls:string}> = {
   urgent:{label:'Acil',cls:'badge-error'},
   high:{label:'Yüksek',cls:'badge-warning'},
@@ -34,9 +36,13 @@ const statusLabels: Record<string,{label:string;cls:string}> = {
 export default function SupportPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [team, setTeam] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
-  const [newTicket, setNewTicket] = useState({ subject: '', description: '', priority: 'normal', clientId: '', status: 'open' });
+  const [newTicket, setNewTicket] = useState({ subject: '', description: '', priority: 'normal', clientId: '', assigneeId: '', status: 'open' });
+  const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
+  const [editForm, setEditForm] = useState({ subject: '', description: '', priority: 'normal', clientId: '', assigneeId: '' });
+  const [editError, setEditError] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -44,12 +50,14 @@ export default function SupportPage() {
 
   const fetchData = async () => {
     try {
-      const [tktRes, cliRes] = await Promise.all([
+      const [tktRes, cliRes, teamRes] = await Promise.all([
         fetch('/api/tickets'),
-        fetch('/api/clients')
+        fetch('/api/clients'),
+        fetch('/api/team')
       ]);
       setTickets(await tktRes.json());
       setClients(await cliRes.json());
+      setTeam(await teamRes.json());
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -70,7 +78,7 @@ export default function SupportPage() {
         created.client = clients.find(c => c.id === created.clientId);
         setTickets([created, ...tickets]);
         setIsAdding(false);
-        setNewTicket({ subject: '', description: '', priority: 'normal', clientId: '', status: 'open' });
+        setNewTicket({ subject: '', description: '', priority: 'normal', clientId: '', assigneeId: '', status: 'open' });
       }
     } catch (error) {
       console.error('Error creating ticket:', error);
@@ -89,6 +97,42 @@ export default function SupportPage() {
       }
     } catch (error) {
       console.error('Error updating ticket:', error);
+    }
+  };
+
+  const openEdit = (tkt: Ticket) => {
+    setEditingTicket(tkt);
+    setEditForm({
+      subject: tkt.subject,
+      description: tkt.description || '',
+      priority: tkt.priority,
+      clientId: tkt.clientId || '',
+      assigneeId: tkt.assigneeId || '',
+    });
+    setEditError('');
+  };
+
+  const handleUpdateTicket = async () => {
+    if (!editingTicket) return;
+    if (!editForm.subject) return;
+    setEditError('');
+    try {
+      const res = await fetch(`/api/tickets/${editingTicket.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        updated.client = clients.find(c => c.id === updated.clientId);
+        setTickets(tickets.map(t => t.id === editingTicket.id ? { ...t, ...updated } : t));
+        setEditingTicket(null);
+      } else {
+        setEditError('Talep güncellenemedi. Lütfen tekrar deneyin.');
+      }
+    } catch (error) {
+      console.error('Error updating ticket:', error);
+      setEditError('Talep güncellenemedi. Lütfen tekrar deneyin.');
     }
   };
 
@@ -173,6 +217,7 @@ export default function SupportPage() {
                   </td>
                   <td style={{color:'var(--text-muted)', fontSize:'var(--text-xs)'}}>{new Date(tkt.createdAt).toLocaleDateString('tr-TR')}</td>
                   <td>
+                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(tkt)}>Düzenle</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(tkt.id)}>Sil</button>
                   </td>
                 </tr>
@@ -219,10 +264,75 @@ export default function SupportPage() {
                   </select>
                 </div>
               </div>
+              <div className="form-group">
+                <label className="form-label">Atanan Kişi</label>
+                <select className="form-select" value={newTicket.assigneeId} onChange={e=>setNewTicket({...newTicket, assigneeId: e.target.value})}>
+                  <option value="">-- Seçin --</option>
+                  {team.map(m => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setIsAdding(false)}>İptal</button>
               <button className="btn btn-primary" onClick={handleCreateTicket}>Kaydet</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {editingTicket && (
+        <>
+          <div className="modal-backdrop" onClick={() => setEditingTicket(null)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Destek Talebini Düzenle</h2>
+              <button className="modal-close" onClick={() => setEditingTicket(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {editError && <div className="badge badge-error" style={{marginBottom:'var(--space-4)'}}>{editError}</div>}
+              <div className="form-group">
+                <label className="form-label">Konu / Başlık *</label>
+                <input className="form-input" value={editForm.subject} onChange={e=>setEditForm({...editForm, subject: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Açıklama</label>
+                <textarea className="form-textarea" rows={3} value={editForm.description} onChange={e=>setEditForm({...editForm, description: e.target.value})}></textarea>
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Müşteri</label>
+                  <select className="form-select" value={editForm.clientId} onChange={e=>setEditForm({...editForm, clientId: e.target.value})}>
+                    <option value="">-- Seçin --</option>
+                    {clients.map(c => (
+                      <option key={c.id} value={c.id}>{c.companyName}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Öncelik</label>
+                  <select className="form-select" value={editForm.priority} onChange={e=>setEditForm({...editForm, priority: e.target.value})}>
+                    <option value="low">Düşük</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">Yüksek</option>
+                    <option value="urgent">Acil</option>
+                  </select>
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Atanan Kişi</label>
+                <select className="form-select" value={editForm.assigneeId} onChange={e=>setEditForm({...editForm, assigneeId: e.target.value})}>
+                  <option value="">-- Seçin --</option>
+                  {team.map(m => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setEditingTicket(null)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleUpdateTicket}>Kaydet</button>
             </div>
           </div>
         </>

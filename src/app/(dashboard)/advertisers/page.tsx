@@ -18,6 +18,8 @@ export default function AdvertisersPage() {
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [newAdvertiser, setNewAdvertiser] = useState({ company: '', contactName: '', email: '', phone: '', activeAds: 0, totalSpent: 0, status: 'active' });
+  const [editingAdvertiser, setEditingAdvertiser] = useState<Advertiser | null>(null);
+  const [editError, setEditError] = useState('');
 
   useEffect(() => {
     fetchAdvertisers();
@@ -66,6 +68,42 @@ export default function AdvertisersPage() {
       }
     } catch (error) {
       console.error('Error updating advertiser:', error);
+    }
+  };
+
+  const openEdit = (adv: Advertiser) => {
+    setEditError('');
+    setEditingAdvertiser({ ...adv });
+  };
+
+  const handleUpdateAdvertiser = async () => {
+    if (!editingAdvertiser) return;
+    if (!editingAdvertiser.company || !editingAdvertiser.email) return;
+    setEditError('');
+    try {
+      const res = await fetch(`/api/advertisers/${editingAdvertiser.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company: editingAdvertiser.company,
+          contactName: editingAdvertiser.contactName,
+          email: editingAdvertiser.email,
+          phone: editingAdvertiser.phone,
+          activeAds: editingAdvertiser.activeAds,
+          totalSpent: editingAdvertiser.totalSpent,
+          status: editingAdvertiser.status,
+        }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setAdvertisers(advertisers.map(a => a.id === updated.id ? updated : a));
+        setEditingAdvertiser(null);
+      } else {
+        setEditError('Güncelleme başarısız oldu. Lütfen tekrar deneyin.');
+      }
+    } catch (error) {
+      console.error('Error updating advertiser:', error);
+      setEditError('Güncelleme başarısız oldu. Lütfen tekrar deneyin.');
     }
   };
 
@@ -157,6 +195,7 @@ export default function AdvertisersPage() {
                     </select>
                   </td>
                   <td>
+                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(adv)}>Düzenle</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(adv.id)}>Sil</button>
                   </td>
                 </tr>
@@ -207,6 +246,60 @@ export default function AdvertisersPage() {
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setIsAdding(false)}>İptal</button>
               <button className="btn btn-primary" onClick={handleCreateAdvertiser}>Kaydet</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {editingAdvertiser && (
+        <>
+          <div className="modal-backdrop" onClick={() => setEditingAdvertiser(null)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Reklamvereni Düzenle</h2>
+              <button className="modal-close" onClick={() => setEditingAdvertiser(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {editError && <div style={{color:'var(--error)', marginBottom:'var(--space-3)'}}>{editError}</div>}
+              <div className="form-group">
+                <label className="form-label">Firma / Marka Adı *</label>
+                <input className="form-input" value={editingAdvertiser.company} onChange={e=>setEditingAdvertiser({...editingAdvertiser, company: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Yetkili Kişi *</label>
+                <input className="form-input" value={editingAdvertiser.contactName} onChange={e=>setEditingAdvertiser({...editingAdvertiser, contactName: e.target.value})} />
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">E-Posta *</label>
+                  <input type="email" className="form-input" value={editingAdvertiser.email} onChange={e=>setEditingAdvertiser({...editingAdvertiser, email: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Telefon</label>
+                  <input className="form-input" value={editingAdvertiser.phone || ''} onChange={e=>setEditingAdvertiser({...editingAdvertiser, phone: e.target.value})} />
+                </div>
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Aktif Reklam</label>
+                  <input type="number" className="form-input" value={editingAdvertiser.activeAds} onChange={e=>setEditingAdvertiser({...editingAdvertiser, activeAds: Number(e.target.value)})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Toplam Harcama (₺)</label>
+                  <input type="number" className="form-input" value={editingAdvertiser.totalSpent} onChange={e=>setEditingAdvertiser({...editingAdvertiser, totalSpent: Number(e.target.value)})} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Durum</label>
+                <select className="form-select" value={editingAdvertiser.status} onChange={e=>setEditingAdvertiser({...editingAdvertiser, status: e.target.value})}>
+                  <option value="active">Aktif</option>
+                  <option value="inactive">Pasif</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setEditingAdvertiser(null)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleUpdateAdvertiser}>Kaydet</button>
             </div>
           </div>
         </>

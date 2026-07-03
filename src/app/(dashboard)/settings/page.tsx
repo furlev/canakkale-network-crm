@@ -77,6 +77,15 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try { return typeof window !== 'undefined' && localStorage.getItem('crm-theme') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; }
+  });
+  const applyTheme = (t: 'dark' | 'light') => {
+    setTheme(t);
+    if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    else document.documentElement.removeAttribute('data-theme');
+    try { localStorage.setItem('crm-theme', t); } catch { /* */ }
+  };
   const [wpBusy, setWpBusy] = useState(false);
   const [wpStatus, setWpStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
@@ -422,11 +431,11 @@ export default function SettingsPage() {
                   <div className="form-group">
                     <label className="form-label">Tema</label>
                     <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-                      <div style={{ flex: 1, padding: 'var(--space-4)', background: 'var(--surface-3)', borderRadius: 'var(--border-radius)', border: '2px solid var(--primary)', cursor: 'pointer', textAlign: 'center' }}>
+                      <div onClick={() => applyTheme('dark')} style={{ flex: 1, padding: 'var(--space-4)', background: 'var(--surface-3)', borderRadius: 'var(--border-radius)', border: theme === 'dark' ? '2px solid var(--primary)' : '1px solid var(--border-subtle)', cursor: 'pointer', textAlign: 'center' }}>
                         <span style={{ fontSize: 'var(--text-xl)' }}>🌙</span><div style={{ fontSize: 'var(--text-sm)', marginTop: 'var(--space-2)' }}>Koyu Tema</div>
                       </div>
-                      <div style={{ flex: 1, padding: 'var(--space-4)', background: 'var(--surface-1)', borderRadius: 'var(--border-radius)', border: '1px solid var(--border-subtle)', textAlign: 'center', opacity: 0.5 }}>
-                        <span style={{ fontSize: 'var(--text-xl)' }}>☀️</span><div style={{ fontSize: 'var(--text-sm)', marginTop: 'var(--space-2)' }}>Açık Tema (Yakında)</div>
+                      <div onClick={() => applyTheme('light')} style={{ flex: 1, padding: 'var(--space-4)', background: 'var(--surface-1)', borderRadius: 'var(--border-radius)', border: theme === 'light' ? '2px solid var(--primary)' : '1px solid var(--border-subtle)', cursor: 'pointer', textAlign: 'center' }}>
+                        <span style={{ fontSize: 'var(--text-xl)' }}>☀️</span><div style={{ fontSize: 'var(--text-sm)', marginTop: 'var(--space-2)' }}>Açık Tema</div>
                       </div>
                     </div>
                   </div>

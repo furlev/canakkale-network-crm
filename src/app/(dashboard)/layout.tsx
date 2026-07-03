@@ -115,6 +115,7 @@ export default function DashboardLayout({
   const [notifUnread, setNotifUnread] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
   /* Global search */
   type SearchResult = { type: string; icon: string; title: string; subtitle?: string; link: string };
@@ -204,6 +205,25 @@ export default function DashboardLayout({
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     router.push('/login');
     router.refresh();
+  };
+
+  /* Tema (koyu/açık) — tercih localStorage'da, FOUC head script ile birlikte çalışır */
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('crm-theme') === 'light') {
+        setTheme('light');
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    } catch { /* */ }
+  }, []);
+  const toggleTheme = () => {
+    setTheme((prev) => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      if (next === 'light') document.documentElement.setAttribute('data-theme', 'light');
+      else document.documentElement.removeAttribute('data-theme');
+      try { localStorage.setItem('crm-theme', next); } catch { /* */ }
+      return next;
+    });
   };
 
   /* Service-worker registration */
@@ -346,6 +366,11 @@ export default function DashboardLayout({
           </div>
 
           <div className="topbar-right">
+            {/* Theme toggle */}
+            <button className="topbar-btn" title="Tema değiştir" onClick={toggleTheme}>
+              {theme === 'light' ? '🌙' : '☀️'}
+            </button>
+
             {/* Quick add */}
             <div style={{ position: 'relative' }}>
               <button className="topbar-btn" title="Hızlı Ekle" onClick={() => setQuickOpen((v) => !v)}>

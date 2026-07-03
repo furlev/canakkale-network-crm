@@ -12,6 +12,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       data: {
         title: body.title,
         category: body.category,
+        author: body.author,
         status: body.status,
         publishDate: body.status !== undefined
           ? (body.status === 'published' ? new Date() : null)

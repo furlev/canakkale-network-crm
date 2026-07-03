@@ -15,6 +15,9 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [newProject, setNewProject] = useState({ name: '', status: 'active', progress: 0, deadline: '' });
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', status: 'active', progress: 0, deadline: '' });
+  const [editError, setEditError] = useState('');
 
   useEffect(() => {
     fetchProjects();
@@ -63,6 +66,40 @@ export default function ProjectsPage() {
       }
     } catch (error) {
       console.error('Error updating project:', error);
+    }
+  };
+
+  const openEdit = (project: Project) => {
+    setEditingProject(project);
+    setEditForm({
+      name: project.name,
+      status: project.status,
+      progress: project.progress,
+      deadline: project.deadline ? project.deadline.slice(0, 10) : '',
+    });
+    setEditError('');
+  };
+
+  const handleUpdateProject = async () => {
+    if (!editingProject) return;
+    if (!editForm.name) return;
+    setEditError('');
+    try {
+      const res = await fetch(`/api/projects/${editingProject.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setProjects(projects.map(p => p.id === editingProject.id ? { ...p, ...updated } : p));
+        setEditingProject(null);
+      } else {
+        setEditError('Proje güncellenemedi. Lütfen tekrar deneyin.');
+      }
+    } catch (error) {
+      console.error('Error updating project:', error);
+      setEditError('Proje güncellenemedi. Lütfen tekrar deneyin.');
     }
   };
 
@@ -119,7 +156,10 @@ export default function ProjectsPage() {
             <div key={project.id} className="card" style={{position:'relative'}}>
               <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'var(--space-4)'}}>
                 <h3 style={{fontSize:'var(--text-lg)'}}>{project.name}</h3>
-                <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(project.id)}>Sil</button>
+                <div style={{display:'flex', gap:'4px'}}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => openEdit(project)}>Düzenle</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(project.id)}>Sil</button>
+                </div>
               </div>
               
               <div style={{display:'flex', gap:'var(--space-2)', marginBottom:'var(--space-4)'}}>
@@ -181,6 +221,47 @@ export default function ProjectsPage() {
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setIsAdding(false)}>İptal</button>
               <button className="btn btn-primary" onClick={handleCreateProject}>Kaydet</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {editingProject && (
+        <>
+          <div className="modal-backdrop" onClick={() => setEditingProject(null)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Projeyi Düzenle</h2>
+              <button className="modal-close" onClick={() => setEditingProject(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {editError && <div className="badge badge-error" style={{marginBottom:'var(--space-4)'}}>{editError}</div>}
+              <div className="form-group">
+                <label className="form-label">Proje Adı *</label>
+                <input className="form-input" value={editForm.name} onChange={e=>setEditForm({...editForm, name: e.target.value})} />
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Durum</label>
+                  <select className="form-select" value={editForm.status} onChange={e=>setEditForm({...editForm, status: e.target.value})}>
+                    <option value="active">Aktif</option>
+                    <option value="completed">Tamamlandı</option>
+                    <option value="on_hold">Beklemede</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Teslim Tarihi</label>
+                  <input type="date" className="form-input" value={editForm.deadline} onChange={e=>setEditForm({...editForm, deadline: e.target.value})} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">İlerleme (%)</label>
+                <input type="number" min={0} max={100} className="form-input" value={editForm.progress} onChange={e=>setEditForm({...editForm, progress: Math.min(100, Math.max(0, Number(e.target.value) || 0))})} />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setEditingProject(null)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleUpdateProject}>Kaydet</button>
             </div>
           </div>
         </>

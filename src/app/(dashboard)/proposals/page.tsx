@@ -17,6 +17,7 @@ const statusMap: Record<string, { l: string; c: string }> = {
   sent: { l: 'Gönderildi', c: 'badge-info' },
   approved: { l: 'Onaylandı', c: 'badge-success' },
   rejected: { l: 'Reddedildi', c: 'badge-error' },
+  converted: { l: 'Faturalandı', c: 'badge-success' },
   draft: { l: 'Taslak', c: 'badge-warning' },
 };
 
@@ -29,6 +30,7 @@ export default function ProposalsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -99,7 +101,9 @@ export default function ProposalsPage() {
   };
 
   const convertToInvoice = async (p: Proposal) => {
+    if (p.status === 'converted') return;
     if (!confirm(`"${p.title}" teklifnamesi ₺${p.value.toLocaleString('tr-TR')} tutarında faturaya dönüştürülsün mü?`)) return;
+    setErr(null);
     try {
       const res = await fetch('/api/invoices', {
         method: 'POST',
@@ -108,10 +112,23 @@ export default function ProposalsPage() {
       });
       if (res.ok) {
         const invoice = await res.json();
-        alert(`Fatura oluşturuldu: ${invoice.invoiceNo}`);
+        const statusRes = await fetch(`/api/proposals/${p.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'converted' }),
+        });
+        if (statusRes.ok) {
+          setProposals(proposals.map(pr => (pr.id === p.id ? { ...pr, status: 'converted' } : pr)));
+          alert(`Fatura oluşturuldu: ${invoice.invoiceNo}`);
+        } else {
+          setErr('Fatura oluşturuldu ancak teklifname durumu güncellenemedi.');
+        }
+      } else {
+        setErr('Fatura oluşturulamadı. Lütfen tekrar deneyin.');
       }
     } catch (error) {
       console.error('Error converting proposal:', error);
+      setErr('Faturaya dönüştürme sırasında bir hata oluştu.');
     }
   };
 
@@ -126,6 +143,13 @@ export default function ProposalsPage() {
           <button className="btn btn-primary" onClick={openAdd}>+ Yeni Teklifname</button>
         </div>
       </div>
+
+      {err && (
+        <div className="card" style={{ padding: 'var(--space-3)', marginBottom: 'var(--space-4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--error)' }}>
+          <span style={{ fontSize: 'var(--text-sm)' }}>{err}</span>
+          <button className="btn btn-ghost btn-sm" onClick={() => setErr(null)}>✕</button>
+        </div>
+      )}
 
       {loading ? (
         <div className="card" style={{ padding: 'var(--space-8)', textAlign: 'center' }}>Yükleniyor...</div>
@@ -150,11 +174,12 @@ export default function ProposalsPage() {
                 <div><span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Tutar</span><div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--primary-light)' }}>₺{p.value.toLocaleString('tr-TR')}</div></div>
                 <div>
                   <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Durum</span>
-                  <select className="form-select" style={{ padding: '4px', fontSize: 'var(--text-xs)' }} value={p.status} onChange={e => updateStatus(p.id, e.target.value)}>
+                  <select className="form-select" style={{ padding: '4px', fontSize: 'var(--text-xs)' }} value={p.status} onChange={e => updateStatus(p.id, e.target.value)} disabled={p.status === 'converted'}>
                     <option value="draft">Taslak</option>
                     <option value="sent">Gönderildi</option>
                     <option value="approved">Onaylandı</option>
                     <option value="rejected">Reddedildi</option>
+                    {p.status === 'converted' && <option value="converted">Faturalandı</option>}
                   </select>
                 </div>
               </div>
@@ -163,6 +188,9 @@ export default function ProposalsPage() {
                 <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={() => handleDelete(p.id)}>🗑️ Sil</button>
                 {p.status === 'approved' && (
                   <button className="btn btn-accent btn-sm" style={{ flex: 1 }} onClick={() => convertToInvoice(p)}>🔄 Faturaya Dönüştür</button>
+                )}
+                {p.status === 'converted' && (
+                  <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} disabled>✅ Faturalandı</button>
                 )}
               </div>
             </div>

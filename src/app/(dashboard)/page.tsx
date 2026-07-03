@@ -55,10 +55,11 @@ export default function DashboardPage() {
   useEffect(() => {
     setMounted(true);
     fetch('/api/dashboard')
-      .then(res => res.json())
-      .then((d: DashboardData) => {
-        setData(d);
+      .then(res => (res.ok ? res.json() : null))
+      .then((d: DashboardData | null) => {
         setLoading(false);
+        if (!d || !d.stats) return;
+        setData(d);
 
         /* Animated counters */
         const targets = [d.stats.totalRevenue, d.stats.activeClients, d.stats.activeProjects, d.stats.newTips];

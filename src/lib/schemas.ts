@@ -224,7 +224,7 @@ export const proposalCreate = z.object({
   title: z.string().min(1),
   description: z.string().optional().nullable(),
   value: z.coerce.number().min(0).optional(),
-  status: z.enum(['draft', 'sent', 'approved', 'rejected']).optional(),
+  status: z.enum(['draft', 'sent', 'approved', 'rejected', 'converted']).optional(),
   clientId: idString.optional(),
 });
 export const proposalUpdate = proposalCreate.partial();

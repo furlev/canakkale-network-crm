@@ -23,6 +23,8 @@ export default function ExpensesPage() {
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [newExpense, setNewExpense] = useState({ category: 'software', amount: 0, description: '', date: '' });
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [editError, setEditError] = useState('');
 
   useEffect(() => {
     fetchExpenses();
@@ -68,6 +70,41 @@ export default function ExpensesPage() {
       }
     } catch (error) {
       console.error('Error deleting expense:', error);
+    }
+  };
+
+  const openEdit = (expense: Expense) => {
+    setEditError('');
+    setEditingExpense({ ...expense, date: expense.date ? new Date(expense.date).toISOString().slice(0, 10) : '' });
+  };
+
+  const handleUpdateExpense = async () => {
+    if (!editingExpense) return;
+    if (!editingExpense.amount) return;
+    setEditError('');
+    try {
+      const res = await fetch(`/api/expenses/${editingExpense.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: editingExpense.category,
+          amount: editingExpense.amount,
+          description: editingExpense.description,
+          date: editingExpense.date,
+        }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setExpenses(expenses
+          .map(e => e.id === updated.id ? updated : e)
+          .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        setEditingExpense(null);
+      } else {
+        setEditError('Güncelleme başarısız oldu. Lütfen tekrar deneyin.');
+      }
+    } catch (error) {
+      console.error('Error updating expense:', error);
+      setEditError('Güncelleme başarısız oldu. Lütfen tekrar deneyin.');
     }
   };
 
@@ -133,6 +170,7 @@ export default function ExpensesPage() {
                   <td>{expense.description || '-'}</td>
                   <td style={{fontWeight:500, color:'var(--error)'}}>-₺{expense.amount.toLocaleString('tr-TR')}</td>
                   <td>
+                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(expense)}>Düzenle</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(expense.id)}>Sil</button>
                   </td>
                 </tr>
@@ -177,6 +215,47 @@ export default function ExpensesPage() {
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setIsAdding(false)}>İptal</button>
               <button className="btn btn-primary" onClick={handleCreateExpense}>Gider Ekle</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {editingExpense && (
+        <>
+          <div className="modal-backdrop" onClick={() => setEditingExpense(null)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Gider Kalemini Düzenle</h2>
+              <button className="modal-close" onClick={() => setEditingExpense(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {editError && <div style={{color:'var(--error)', marginBottom:'var(--space-3)'}}>{editError}</div>}
+              <div className="form-group">
+                <label className="form-label">Tutar (₺) *</label>
+                <input type="number" className="form-input" value={editingExpense.amount} onChange={e=>setEditingExpense({...editingExpense, amount: Number(e.target.value)})} />
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Kategori</label>
+                  <select className="form-select" value={editingExpense.category} onChange={e=>setEditingExpense({...editingExpense, category: e.target.value})}>
+                    {Object.entries(categoryMap).map(([k, v]) => (
+                      <option key={k} value={k}>{v.icon} {v.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Tarih</label>
+                  <input type="date" className="form-input" value={editingExpense.date} onChange={e=>setEditingExpense({...editingExpense, date: e.target.value})} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Açıklama</label>
+                <textarea className="form-textarea" rows={2} value={editingExpense.description || ''} onChange={e=>setEditingExpense({...editingExpense, description: e.target.value})}></textarea>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setEditingExpense(null)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleUpdateExpense}>Kaydet</button>
             </div>
           </div>
         </>

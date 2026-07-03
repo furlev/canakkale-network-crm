@@ -23,6 +23,8 @@ export default function EstimatesPage() {
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [newEstimate, setNewEstimate] = useState({ clientId: '', amount: 0, status: 'draft', validUntil: '' });
+  const [editingEstimate, setEditingEstimate] = useState<{ id: string; clientId: string; amount: number; status: string; validUntil: string } | null>(null);
+  const [editError, setEditError] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -77,6 +79,52 @@ export default function EstimatesPage() {
       }
     } catch (error) {
       console.error('Error updating estimate:', error);
+    }
+  };
+
+  const openEdit = (est: Estimate, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditError('');
+    setEditingEstimate({
+      id: est.id,
+      clientId: est.clientId || '',
+      amount: est.amount,
+      status: est.status,
+      validUntil: est.validUntil ? est.validUntil.slice(0, 10) : '',
+    });
+  };
+
+  const handleUpdateEstimate = async () => {
+    if (!editingEstimate) return;
+    setEditError('');
+    try {
+      const res = await fetch(`/api/estimates/${editingEstimate.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: editingEstimate.clientId || null,
+          amount: editingEstimate.amount,
+          status: editingEstimate.status,
+          validUntil: editingEstimate.validUntil || null,
+        }),
+      });
+      if (res.ok) {
+        const client = clients.find(c => c.id === editingEstimate.clientId);
+        setEstimates(estimates.map(est => est.id === editingEstimate.id ? {
+          ...est,
+          clientId: editingEstimate.clientId || null,
+          amount: editingEstimate.amount,
+          status: editingEstimate.status,
+          validUntil: editingEstimate.validUntil || undefined,
+          client,
+        } : est));
+        setEditingEstimate(null);
+      } else {
+        setEditError('Teklif güncellenemedi. Lütfen tekrar deneyin.');
+      }
+    } catch (error) {
+      console.error('Error updating estimate:', error);
+      setEditError('Teklif güncellenemedi. Lütfen tekrar deneyin.');
     }
   };
 
@@ -162,6 +210,7 @@ export default function EstimatesPage() {
                     </select>
                   </td>
                   <td>
+                    <button className="btn btn-ghost btn-sm" onClick={(e) => openEdit(est, e)}>Düzenle</button>
                     <button className="btn btn-ghost btn-sm" onClick={(e) => handleDelete(est.id, e)}>Sil</button>
                   </td>
                 </tr>
@@ -210,6 +259,55 @@ export default function EstimatesPage() {
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setIsAdding(false)}>İptal</button>
               <button className="btn btn-primary" onClick={handleCreateEstimate}>Teklif Oluştur</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {editingEstimate && (
+        <>
+          <div className="modal-backdrop" onClick={() => setEditingEstimate(null)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Teklifi Düzenle</h2>
+              <button className="modal-close" onClick={() => setEditingEstimate(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {editError && (
+                <div className="form-group" style={{color:'var(--error)', fontSize:'var(--text-sm)'}}>{editError}</div>
+              )}
+              <div className="form-group">
+                <label className="form-label">Müşteri Seçin</label>
+                <select className="form-select" value={editingEstimate.clientId} onChange={e=>setEditingEstimate({...editingEstimate, clientId: e.target.value})}>
+                  <option value="">-- Müşteri Seçin --</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>{c.companyName}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Tutar (₺) *</label>
+                  <input type="number" className="form-input" value={editingEstimate.amount} onChange={e=>setEditingEstimate({...editingEstimate, amount: Number(e.target.value)})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Geçerlilik Tarihi</label>
+                  <input type="date" className="form-input" value={editingEstimate.validUntil} onChange={e=>setEditingEstimate({...editingEstimate, validUntil: e.target.value})} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Durum</label>
+                <select className="form-select" value={editingEstimate.status} onChange={e=>setEditingEstimate({...editingEstimate, status: e.target.value})}>
+                  <option value="draft">Taslak</option>
+                  <option value="sent">Gönderildi</option>
+                  <option value="accepted">Kabul Edildi</option>
+                  <option value="rejected">Reddedildi</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setEditingEstimate(null)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleUpdateEstimate}>Kaydet</button>
             </div>
           </div>
         </>

@@ -30,6 +30,8 @@ export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
+  const [editing, setEditing] = useState<Lead | null>(null);
+  const [editErr, setEditErr] = useState('');
   const [newLead, setNewLead] = useState({ name: '', company: '', value: 0, status: 'new', priority: 'normal' });
 
   useEffect(() => {
@@ -82,6 +84,28 @@ export default function LeadsPage() {
     }
   };
 
+  const handleUpdateLead = async () => {
+    if (!editing || !editing.name) return;
+    setEditErr('');
+    try {
+      const res = await fetch(`/api/leads/${editing.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editing.name, company: editing.company, value: editing.value, status: editing.status, priority: editing.priority }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setLeads(leads.map(l => l.id === editing.id ? { ...l, ...updated } : l));
+        setEditing(null);
+      } else {
+        setEditErr('Güncelleme başarısız oldu.');
+      }
+    } catch (error) {
+      console.error('Error updating lead:', error);
+      setEditErr('Sunucuya ulaşılamadı.');
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm('Adayı silmek istediğinize emin misiniz?')) return;
     try {
@@ -130,7 +154,10 @@ export default function LeadsPage() {
                     <div key={lead.id} className="kanban-card">
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'start',marginBottom:'var(--space-2)'}}>
                         <span className={`badge ${priorityMap[lead.priority]?.cls || 'badge-primary'}`}>{priorityMap[lead.priority]?.label || lead.priority}</span>
-                        <button className="btn btn-ghost btn-sm" style={{padding:0,color:'var(--text-muted)'}} onClick={() => handleDelete(lead.id)}>🗑️</button>
+                        <div style={{display:'flex',gap:'var(--space-1)'}}>
+                          <button className="btn btn-ghost btn-sm" style={{padding:0,color:'var(--text-muted)'}} onClick={() => { setEditErr(''); setEditing(lead); }}>✏️</button>
+                          <button className="btn btn-ghost btn-sm" style={{padding:0,color:'var(--text-muted)'}} onClick={() => handleDelete(lead.id)}>🗑️</button>
+                        </div>
                       </div>
                       <div className="kanban-card-title">{lead.name}</div>
                       <div className="kanban-card-desc">{lead.company}</div>
@@ -198,6 +225,62 @@ export default function LeadsPage() {
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setIsAdding(false)}>İptal</button>
               <button className="btn btn-primary" onClick={handleCreateLead}>Kaydet</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {editing && (
+        <>
+          <div className="modal-backdrop" onClick={() => setEditing(null)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Müşteri Adayını Düzenle</h2>
+              <button className="modal-close" onClick={() => setEditing(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {editErr && (
+                <div style={{ padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--border-radius)', background: 'rgba(255,118,117,0.12)', color: 'var(--error)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>
+                  {editErr}
+                </div>
+              )}
+              <div className="form-group">
+                <label className="form-label">Aday Adı Soyadı *</label>
+                <input className="form-input" value={editing.name} onChange={e=>setEditing({...editing, name: e.target.value})} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Şirket</label>
+                <input className="form-input" value={editing.company ?? ''} onChange={e=>setEditing({...editing, company: e.target.value})} />
+              </div>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Tahmini Değer (₺)</label>
+                  <input type="number" className="form-input" value={editing.value} onChange={e=>setEditing({...editing, value: Number(e.target.value)})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Öncelik</label>
+                  <select className="form-select" value={editing.priority} onChange={e=>setEditing({...editing, priority: e.target.value})}>
+                    <option value="low">Düşük</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">Yüksek</option>
+                    <option value="urgent">Acil</option>
+                  </select>
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Durum</label>
+                <select className="form-select" value={editing.status} onChange={e=>setEditing({...editing, status: e.target.value})}>
+                  <option value="new">Yeni Aday</option>
+                  <option value="contacted">İletişim Kuruldu</option>
+                  <option value="proposal">Teklif Verildi</option>
+                  <option value="won">Kazanıldı</option>
+                  <option value="lost">Kaybedildi</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setEditing(null)}>İptal</button>
+              <button className="btn btn-primary" onClick={handleUpdateLead}>Kaydet</button>
             </div>
           </div>
         </>
