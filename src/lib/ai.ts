@@ -178,3 +178,115 @@ export async function summarizeText(prompt: string, system?: string): Promise<st
   });
   return (res.text ?? '').trim();
 }
+
+/* ══════════ WORDPRESS AI HABER MOTORU ══════════ */
+
+export const IMAGE_MODEL = process.env.GOOGLE_IMAGE_MODEL || 'imagen-3.0-generate-002';
+
+export type DiscoveredTopic = { topic: string; headline: string; newsworthiness: number; category: string; sourceLinks: string[] };
+
+/** Ham haber öğelerinden aday konular çıkar + haber değeri puanla (grounding gerekmez). */
+export async function discoverTopics(
+  items: { title: string; link: string }[],
+  maxTopics = 5,
+): Promise<DiscoveredTopic[]> {
+  const ai = await getClient();
+  const list = items.slice(0, 120).map((i, n) => `${n + 1}. ${i.title} — ${i.link}`).join('\n');
+  const res = await ai.models.generateContent({
+    model: AI_MODEL,
+    contents: `Aşağıda Çanakkale yerel haber başlıkları var. Benzer olanları kümeleyip en fazla ${maxTopics} AYRI, güncel ve haber değeri yüksek KONU çıkar. Aynı olayın farklı kaynaklardaki tekrarlarını TEK konuda birleştir. Reklam/ilan/spam olanları ele.\n\n${list}`,
+    config: {
+      systemInstruction: 'Sen Çanakkale Network haber ajansının editörüsün. Haber akışından günün en önemli, özgün konularını seçersin. Türkçe.',
+      thinkingConfig: { thinkingBudget: 0 },
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            topic: { type: Type.STRING, description: 'konu kısa etiketi' },
+            headline: { type: Type.STRING, description: 'önerilen haber başlığı' },
+            newsworthiness: { type: Type.NUMBER, description: '0-100 haber değeri' },
+            category: { type: Type.STRING, description: 'Gündem, Asayiş, Spor, Eğitim, Ekonomi, Kültür-Sanat vb.' },
+            sourceLinks: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'konuyu destekleyen kaynak linkleri' },
+          },
+          required: ['topic', 'headline', 'newsworthiness', 'category', 'sourceLinks'],
+        },
+      },
+    },
+  });
+  const arr = JSON.parse(res.text ?? '[]') as DiscoveredTopic[];
+  return arr.sort((a, b) => b.newsworthiness - a.newsworthiness).slice(0, maxTopics);
+}
+
+export type FactCheck = { confidence: number; verifiedSummary: string; caveats: string; groundingLinks: string[] };
+
+/** Konuyu Google Search grounding ile doğrula → güven skoru + doğrulanmış özet. */
+export async function factCheckTopic(topic: string, headline: string): Promise<FactCheck> {
+  const ai = await getClient();
+  const res = await ai.models.generateContent({
+    model: AI_MODEL,
+    contents: `Şu Çanakkale haber konusunu güncel web kaynaklarıyla DOĞRULA:\nKonu: ${topic}\nBaşlık: ${headline}\n\nBirden çok güvenilir kaynağı karşılaştır. SADECE şu JSON'u döndür (başka metin yok):\n{"confidence": 0 ile 1 arası sayı, "verifiedSummary": "doğrulanmış kısa özet", "caveats": "çelişki/şüphe ya da boş"}`,
+    config: {
+      systemInstruction: 'Sen titiz bir haber doğrulama editörüsün. Yalnızca kaynaklarca desteklenen bilgiyi doğrularsın. Türkçe.',
+      tools: [{ googleSearch: {} }],
+    },
+  });
+  const text = res.text ?? '';
+  const links: string[] = [];
+  const chunks = res.candidates?.[0]?.groundingMetadata?.groundingChunks;
+  if (Array.isArray(chunks)) {
+    for (const c of chunks) {
+      const uri = c?.web?.uri;
+      if (typeof uri === 'string') links.push(uri);
+    }
+  }
+  let parsed: { confidence?: number; verifiedSummary?: string; caveats?: string } = {};
+  const jm = text.match(/\{[\s\S]*\}/);
+  if (jm) { try { parsed = JSON.parse(jm[0]); } catch { /* metin JSON değil */ } }
+  return {
+    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
+    verifiedSummary: parsed.verifiedSummary || text.slice(0, 500),
+    caveats: parsed.caveats || '',
+    groundingLinks: links,
+  };
+}
+
+/** Doğrulanmış konudan özgün, nesnel haber metni yaz. */
+export async function writeArticleFromTopic(headline: string, verifiedSummary: string, category: string): Promise<ArticleDraft> {
+  const ai = await getClient();
+  const res = await ai.models.generateContent({
+    model: AI_MODEL,
+    contents: `Aşağıdaki doğrulanmış bilgiden yayına hazır, ÖZGÜN (kopya değil) bir haber metni yaz.\nBaşlık fikri: ${headline}\nKategori: ${category}\nDoğrulanmış bilgi:\n${verifiedSummary}`,
+    config: {
+      systemInstruction: 'Sen Çanakkale Network muhabirisin. Nesnel, doğrulanabilir, abartısız gazetecilik diliyle 3-5 paragraf haber yazarsın. Asılsız iddiaları kesin sunmaz, "iddia edildi/bildirildi" gibi ifadeler kullanırsın. Türkçe.',
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING, description: 'net, abartısız başlık' },
+          body: { type: Type.STRING, description: '3-5 paragraf, <p> etiketli HTML gövde' },
+        },
+        required: ['title', 'body'],
+      },
+    },
+  });
+  return JSON.parse(res.text ?? '{}') as ArticleDraft;
+}
+
+/** Habere uygun "temsili" başlık görseli üret (Imagen) → base64 data URI. */
+export async function generateArticleImage(prompt: string): Promise<string | null> {
+  const ai = await getClient();
+  try {
+    const res = await ai.models.generateImages({
+      model: IMAGE_MODEL,
+      prompt: `Haber başlık görseli, temsili, fotogerçekçi, Çanakkale/Türkiye bağlamı: ${prompt}. Görselde metin ve logo olmasın.`,
+      config: { numberOfImages: 1, aspectRatio: '16:9' },
+    });
+    const bytes = res.generatedImages?.[0]?.image?.imageBytes;
+    return bytes ? `data:image/png;base64,${bytes}` : null;
+  } catch (e) {
+    console.error('[ai] generateArticleImage', e);
+    return null;
+  }
+}
