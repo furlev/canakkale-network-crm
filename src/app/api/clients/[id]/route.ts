@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { parseBody, handleApiError, requireLevel } from '@/lib/api';
+import { parseBody, handleApiError, requireLevel, ApiError } from '@/lib/api';
+import { audit } from '@/lib/audit';
 import { clientUpdate } from '@/lib/schemas';
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -8,6 +9,8 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     await requireLevel('B');
     const body = await parseBody(request, clientUpdate);
     const params = await context.params;
+    const existing = await prisma.client.findUnique({ where: { id: params.id }, select: { deletedAt: true } });
+    if (!existing || existing.deletedAt) throw new ApiError(404, 'Kayıt bulunamadı');
     const updated = await prisma.client.update({
       where: { id: params.id },
       data: {
@@ -27,9 +30,11 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    await requireLevel('B');
+    const session = await requireLevel('B');
     const params = await context.params;
-    await prisma.client.delete({ where: { id: params.id } });
+    // Yumuşak silme: kayıt çöp kutusuna taşınır, /trash sayfasından geri alınabilir
+    const deleted = await prisma.client.update({ where: { id: params.id }, data: { deletedAt: new Date() } });
+    await audit(session, 'deleted', 'client', deleted.id, `Müşteri çöp kutusuna taşındı: ${deleted.companyName}`);
     return NextResponse.json({ success: true });
   } catch (error) {
     return handleApiError(error, 'Müşteri silinemedi');

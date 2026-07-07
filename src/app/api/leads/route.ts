@@ -8,8 +8,8 @@ export async function GET(request: Request) {
     await requireLevel('B');
     const pagination = getPagination(request);
     const [items, total] = await Promise.all([
-      prisma.lead.findMany({ orderBy: { createdAt: 'desc' }, ...(pagination ?? {}) }),
-      pagination ? prisma.lead.count() : Promise.resolve(undefined),
+      prisma.lead.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, ...(pagination ?? {}) }),
+      pagination ? prisma.lead.count({ where: { deletedAt: null } }) : Promise.resolve(undefined),
     ]);
     return listResponse(items, total);
   } catch (error) {

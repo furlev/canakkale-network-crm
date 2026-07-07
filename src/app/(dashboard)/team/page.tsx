@@ -20,6 +20,55 @@ type Warn = {
   issuedBy?: { id: string; name: string } | null;
 };
 
+/* ── Ekran erişimi (efektif durum, istemci tarafı) ─────────────────────────
+ * NOT: Yetkinin kaynak-doğrusu SUNUCUDUR (src/lib/access.ts + proxy gating);
+ * buradaki hesap yalnızca UI göstergesi içindir ve sunucu mantığının birebir
+ * kopyasıdır: kişiye özel kural > rol geneli kural > taban RBAC.
+ * Aynı özgüllükte en yeni kural kazanır (kurallar createdAt DESC sıralı tutulur).
+ */
+type AccessRule = {
+  id: string;
+  path: string;
+  targetRole: string | null;   // 'B' | 'C' | null
+  targetUserId: string | null;
+  allow: boolean;
+  grantedById?: string | null;
+  createdAt: string;
+};
+type ManagedPath = { path: string; label: string };
+
+/** Taban RBAC — C seviyesinin (üye) erişebildiği ekranlar (allowlist). */
+const C_ALLOWED_PATHS = new Set([
+  '/', '/notifications', '/tasks', '/calendar', '/messages', '/notes',
+  '/payments', '/knowledge-base', '/announcements', '/news', '/tips',
+]);
+
+/** Taban RBAC: hiç kural yokken rolün ekranı görüp göremediği. */
+function baseAllowed(role: string, path: string): boolean {
+  if (role === 'admin') return true;                              // A her şeyi görür
+  if (path === '/settings') return false;                         // yalnız A
+  if (path === '/editor-performance') return role === 'editor';   // yalnız A/B
+  if (role === 'editor') return true;                             // B: /settings hariç her şey
+  return C_ALLOWED_PATHS.has(path);                               // C: allowlist
+}
+
+/** Kurallar + taban RBAC → efektif durum. userId verilirse kişiye özel kural da değerlendirilir. */
+function effectiveState(
+  rules: AccessRule[],
+  path: string,
+  opts: { userId?: string; role: string },
+): { allow: boolean; rule: AccessRule | null } {
+  const forPath = rules.filter((r) => r.path === path); // DESC sıralı → find = en yeni kural
+  if (opts.userId) {
+    const userRule = forPath.find((r) => r.targetUserId === opts.userId);
+    if (userRule) return { allow: userRule.allow, rule: userRule };
+  }
+  const lvl = opts.role === 'editor' ? 'B' : 'C';
+  const roleRule = forPath.find((r) => !r.targetUserId && r.targetRole === lvl);
+  if (roleRule) return { allow: roleRule.allow, rule: roleRule };
+  return { allow: baseAllowed(opts.role, path), rule: null };
+}
+
 const levelInfo = (role: string) =>
   role === 'admin'
     ? { l: 'A · Baş Yönetici', c: 'badge-error' }
@@ -51,8 +100,27 @@ export default function TeamPage() {
 
   const [err, setErr] = useState('');
 
+  // ── Ekran erişimi ──
+  const [me, setMe] = useState<{ id: string; role: string } | null>(null);
+  const [managed, setManaged] = useState<ManagedPath[]>([]);
+  const [rules, setRules] = useState<AccessRule[]>([]);
+  const [rulesLoading, setRulesLoading] = useState(false);
+  const [accessTarget, setAccessTarget] = useState<User | null>(null);
+  const [roleAccessOpen, setRoleAccessOpen] = useState(false);
+  const [accessBusy, setAccessBusy] = useState(''); // işlemdeki toggle anahtarı (path:hedef)
+  const [accessErr, setAccessErr] = useState('');
+
   useEffect(() => {
     fetchTeam();
+    // Oturumdaki kullanıcı (buton görünürlüğü için) + yönetilebilir ekran listesi
+    fetch('/api/auth/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.id) setMe({ id: d.id, role: d.role }); })
+      .catch(() => {});
+    fetch('/api/access/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (Array.isArray(d?.managed)) setManaged(d.managed); })
+      .catch(() => {});
   }, []);
 
   const fetchTeam = async () => {
@@ -195,6 +263,76 @@ export default function TeamPage() {
     } catch { /* sessiz */ }
   };
 
+  // ── Ekran erişimi işlemleri ──
+  const fetchRules = async (initial = false) => {
+    if (initial) setRulesLoading(true);
+    try {
+      const res = await fetch('/api/access/rules');
+      const data = res.ok ? await res.json() : [];
+      // effectiveState "en yeni kural kazanır" varsayar → DESC sıralamayı garanti et
+      setRules(Array.isArray(data)
+        ? [...data].sort((a: AccessRule, b: AccessRule) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        : []);
+    } catch {
+      setRules([]);
+    } finally {
+      if (initial) setRulesLoading(false);
+    }
+  };
+
+  /** Satırdaki 🔓 butonu: A herkese; B yalnız kendi alt ekibine (A hedefi anlamsız — A her şeyi görür). */
+  const canManageAccess = (u: User) =>
+    !!me && u.role !== 'admin' &&
+    (me.role === 'admin' || (me.role === 'editor' && u.managerId === me.id));
+
+  const openAccess = (u: User) => {
+    setAccessTarget(u);
+    setAccessErr('');
+    fetchRules(true);
+  };
+
+  const openRoleAccess = () => {
+    setRoleAccessOpen(true);
+    setAccessErr('');
+    fetchRules(true);
+  };
+
+  const toggleAccess = async (path: string, target: { userId?: string; role?: 'B' | 'C' }, allow: boolean) => {
+    setAccessErr('');
+    const key = `${path}:${target.userId || target.role}`;
+    setAccessBusy(key);
+    try {
+      const res = await fetch('/api/access/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, targetUserId: target.userId || undefined, targetRole: target.role || undefined, allow }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => null);
+        setAccessErr(d?.error || 'Erişim kuralı oluşturulamadı');
+      }
+      await fetchRules(); // başarı da hata da olsa güncel durumu çek
+    } catch {
+      setAccessErr('Sunucuya ulaşılamadı');
+    } finally {
+      setAccessBusy('');
+    }
+  };
+
+  const deleteAccessRule = async (id: string) => {
+    setAccessErr('');
+    try {
+      const res = await fetch(`/api/access/rules/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const d = await res.json().catch(() => null);
+        setAccessErr(d?.error || 'Erişim kuralı silinemedi');
+      }
+      await fetchRules();
+    } catch {
+      setAccessErr('Sunucuya ulaşılamadı');
+    }
+  };
+
   const filtered = team.filter((t) =>
     !search || t.name.toLowerCase().includes(search.toLowerCase()) || t.email.toLowerCase().includes(search.toLowerCase()) || (t.title || '').toLowerCase().includes(search.toLowerCase()));
 
@@ -208,6 +346,9 @@ export default function TeamPage() {
           <p className="page-subtitle">A / B / C rol sistemi, ekip yapısı ve personel yönetimi</p>
         </div>
         <div className="page-header-actions">
+          {me?.role === 'admin' && (
+            <button className="btn btn-ghost" title="B ve C rolleri için rol geneli ekran görünürlüğü" onClick={openRoleAccess}>🔓 Rol Erişimi</button>
+          )}
           <button className="btn btn-primary" onClick={() => { setIsAdding(true); setErr(''); }}>+ Yeni Kullanıcı</button>
         </div>
       </div>
@@ -272,6 +413,9 @@ export default function TeamPage() {
                         ⚠️{(user._count?.warnsReceived ?? 0) > 0 ? ` ${user._count?.warnsReceived}` : ''}
                       </button>
                       <button className="btn btn-ghost btn-sm" title="Giriş şifresi ata/sıfırla" onClick={() => { setPwTarget(user); setPwValue(''); setPwMsg(''); }}>🔑</button>
+                      {canManageAccess(user) && (
+                        <button className="btn btn-ghost btn-sm" title="Ekran Erişimi" onClick={() => openAccess(user)}>🔓</button>
+                      )}
                       <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(user.id)}>Sil</button>
                     </td>
                   </tr>
@@ -392,7 +536,149 @@ export default function TeamPage() {
           </div>
         </>
       )}
+
+      {/* ── Ekran erişimi (kişiye özel) ── */}
+      {accessTarget && (
+        <>
+          <div className="modal-backdrop" onClick={() => setAccessTarget(null)}></div>
+          <div className="modal" style={{ maxWidth: 560 }}>
+            <div className="modal-header">
+              <h2 className="modal-title">🔓 Ekran Erişimi — {accessTarget.name}</h2>
+              <button className="modal-close" onClick={() => setAccessTarget(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {accessErr && <div style={{ color: 'var(--error)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-3)' }}>{accessErr}</div>}
+              {rulesLoading ? (
+                <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--text-muted)' }}>Yükleniyor...</div>
+              ) : (
+                <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+                  {managed.map(({ path, label }) => {
+                    const st = effectiveState(rules, path, { userId: accessTarget.id, role: accessTarget.role });
+                    return (
+                      <div key={path} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-2) 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 'var(--text-sm)' }}>{label}</div>
+                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{path}</div>
+                        </div>
+                        <AccessToggle
+                          state={st}
+                          busy={accessBusy === `${path}:${accessTarget.id}`}
+                          onToggle={() => toggleAccess(path, { userId: accessTarget.id }, !st.allow)}
+                          onDeleteRule={deleteAccessRule}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-3)' }}>
+                Değişiklikler kullanıcıların menüsüne ~1 dk içinde yansır. &quot;kural&quot; rozeti, durumun taban rol yerine
+                özel bir kuraldan geldiğini gösterir; ✕ ile kural silinince taban yetkiye dönülür.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setAccessTarget(null)}>Kapat</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Ekran erişimi (rol geneli — yalnız A) ── */}
+      {roleAccessOpen && me?.role === 'admin' && (
+        <>
+          <div className="modal-backdrop" onClick={() => setRoleAccessOpen(false)}></div>
+          <div className="modal" style={{ maxWidth: 640 }}>
+            <div className="modal-header">
+              <h2 className="modal-title">🔓 Rol Genelinde Ekran Erişimi</h2>
+              <button className="modal-close" onClick={() => setRoleAccessOpen(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {accessErr && <div style={{ color: 'var(--error)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-3)' }}>{accessErr}</div>}
+              {rulesLoading ? (
+                <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--text-muted)' }}>Yükleniyor...</div>
+              ) : (
+                <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px 150px', gap: 'var(--space-2)', padding: 'var(--space-2) 0', borderBottom: '1px solid var(--border-subtle)', fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontWeight: 600 }}>
+                    <div>Ekran</div>
+                    <div>B · Lider/Muhasebe</div>
+                    <div>C · Üye</div>
+                  </div>
+                  {managed.map(({ path, label }) => {
+                    const stB = effectiveState(rules, path, { role: 'editor' });
+                    const stC = effectiveState(rules, path, { role: 'user' });
+                    return (
+                      <div key={path} style={{ display: 'grid', gridTemplateColumns: '1fr 150px 150px', gap: 'var(--space-2)', alignItems: 'center', padding: 'var(--space-2) 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                        <div>
+                          <div style={{ fontSize: 'var(--text-sm)' }}>{label}</div>
+                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{path}</div>
+                        </div>
+                        <div>
+                          <AccessToggle
+                            state={stB}
+                            busy={accessBusy === `${path}:B`}
+                            onToggle={() => toggleAccess(path, { role: 'B' }, !stB.allow)}
+                            onDeleteRule={deleteAccessRule}
+                          />
+                        </div>
+                        <div>
+                          <AccessToggle
+                            state={stC}
+                            busy={accessBusy === `${path}:C`}
+                            onToggle={() => toggleAccess(path, { role: 'C' }, !stC.allow)}
+                            onDeleteRule={deleteAccessRule}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-3)' }}>
+                Değişiklikler kullanıcıların menüsüne ~1 dk içinde yansır. Kişiye özel kurallar rol geneli kurallardan
+                önceliklidir; &quot;kural&quot; rozetindeki ✕ kuralı siler ve taban yetkiye dönülür.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setRoleAccessOpen(false)}>Kapat</button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
+  );
+}
+
+/* Açık/Kapalı toggle + varsa "kural" rozeti (✕ ile kural silme) */
+function AccessToggle({
+  state, busy, onToggle, onDeleteRule,
+}: {
+  state: { allow: boolean; rule: AccessRule | null };
+  busy: boolean;
+  onToggle: () => void;
+  onDeleteRule: (id: string) => void;
+}) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+      <button
+        className={`badge ${state.allow ? 'badge-success' : 'badge-error'}`}
+        style={{ cursor: busy ? 'wait' : 'pointer', border: 'none' }}
+        disabled={busy}
+        title={state.allow ? 'Kapatmak için tıkla' : 'Açmak için tıkla'}
+        onClick={onToggle}
+      >
+        {busy ? '...' : state.allow ? 'Açık' : 'Kapalı'}
+      </button>
+      {state.rule && (
+        <span className="badge badge-warning" title={`Özel kural (${new Date(state.rule.createdAt).toLocaleDateString('tr-TR')})`}>
+          kural
+          <button
+            onClick={() => onDeleteRule(state.rule!.id)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', marginLeft: 4, padding: 0, color: 'inherit', font: 'inherit' }}
+            title="Kuralı sil (taban yetkiye dön)"
+          >✕</button>
+        </span>
+      )}
+    </span>
   );
 }
 

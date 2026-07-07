@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { isLeaderOrAdmin } from '@/lib/permissions';
 
 type Article = {
   id: string;
@@ -41,9 +42,15 @@ export default function KnowledgeBasePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [viewing, setViewing] = useState<Article | null>(null);
+  const [me, setMe] = useState<{ role: string } | null>(null);
+  const canManage = isLeaderOrAdmin(me); // B+ (makale ekle/düzenle/sil)
 
   useEffect(() => {
     fetchArticles();
+    fetch('/api/auth/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((u) => { if (u) setMe(u); })
+      .catch(() => {});
   }, []);
 
   const fetchArticles = async () => {
@@ -141,7 +148,7 @@ export default function KnowledgeBasePage() {
           <p className="page-subtitle">Dokümanlar ve kılavuzlar</p>
         </div>
         <div className="page-header-actions">
-          <button className="btn btn-primary" onClick={openAdd}>+ Yeni Makale</button>
+          {canManage && <button className="btn btn-primary" onClick={openAdd}>+ Yeni Makale</button>}
         </div>
       </div>
 
@@ -195,8 +202,12 @@ export default function KnowledgeBasePage() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{timeAgo(a.createdAt)}</span>
-                <button className="btn btn-ghost btn-sm" onClick={e => openEdit(a, e)}>✏️ Düzenle</button>
-                <button className="btn btn-ghost btn-sm" onClick={e => handleDelete(a.id, e)}>🗑️</button>
+                {canManage && (
+                  <>
+                    <button className="btn btn-ghost btn-sm" onClick={e => openEdit(a, e)}>✏️ Düzenle</button>
+                    <button className="btn btn-ghost btn-sm" onClick={e => handleDelete(a.id, e)}>🗑️</button>
+                  </>
+                )}
               </div>
             </div>
           ))
@@ -255,7 +266,9 @@ export default function KnowledgeBasePage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setViewing(null)}>Kapat</button>
-              <button className="btn btn-primary" onClick={() => { const a = viewing; setViewing(null); openEdit(a); }}>✏️ Düzenle</button>
+              {canManage && (
+                <button className="btn btn-primary" onClick={() => { const a = viewing; setViewing(null); openEdit(a); }}>✏️ Düzenle</button>
+              )}
             </div>
           </div>
         </>

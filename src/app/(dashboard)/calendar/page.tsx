@@ -20,6 +20,8 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [newEvent, setNewEvent] = useState({ title: '', date: '', type: 'meeting', description: '' });
+  const [icsUrl, setIcsUrl] = useState<string | null>(null); // abonelik modalı
+  const [icsCopied, setIcsCopied] = useState(false);
   const [viewDate, setViewDate] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -57,6 +59,30 @@ export default function CalendarPage() {
       }
     } catch (error) {
       console.error('Error creating event:', error);
+    }
+  };
+
+  // Kişisel ICS abonelik adresini al ve kopyalanabilir modalda göster
+  const handleSubscribe = async () => {
+    try {
+      const res = await fetch('/api/calendar/ics-link');
+      if (res.ok) {
+        const data = await res.json();
+        setIcsCopied(false);
+        setIcsUrl(data.url);
+      }
+    } catch (error) {
+      console.error('Error fetching ics link:', error);
+    }
+  };
+
+  const copyIcsUrl = async () => {
+    if (!icsUrl) return;
+    try {
+      await navigator.clipboard.writeText(icsUrl);
+      setIcsCopied(true);
+    } catch {
+      // clipboard izni yoksa kullanıcı metni elle seçebilir
     }
   };
 
@@ -128,6 +154,7 @@ export default function CalendarPage() {
           <p className="page-subtitle">Yaklaşan toplantılar ve önemli tarihler</p>
         </div>
         <div className="page-header-actions">
+          <button className="btn btn-ghost" onClick={handleSubscribe}>📅 Takvime abone ol (Google/Apple)</button>
           <button className="btn btn-primary" onClick={() => setIsAdding(true)}>+ Yeni Etkinlik</button>
         </div>
       </div>
@@ -205,6 +232,30 @@ export default function CalendarPage() {
             })}
           </div>
         </div>
+      )}
+
+      {icsUrl && (
+        <>
+          <div className="modal-backdrop" onClick={() => setIcsUrl(null)}></div>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">📅 Takvim Aboneliği</h2>
+              <button className="modal-close" onClick={() => setIcsUrl(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p style={{marginBottom:'var(--space-3)', fontSize:'var(--text-sm)', color:'var(--text-muted)'}}>
+                Bu adresi Google Takvim&apos;de &quot;URL ile ekle&quot; veya Apple Takvim&apos;de &quot;Yeni Takvim Aboneliği&quot; alanına yapıştırın; etkinlikler ve size atanan görevler otomatik senkronize olur.
+              </p>
+              <div style={{display:'flex', gap:'var(--space-2)'}}>
+                <input className="form-input" readOnly value={icsUrl} onFocus={e => e.currentTarget.select()} style={{flex:1, fontSize:'var(--text-xs)'}} />
+                <button className="btn btn-primary" onClick={copyIcsUrl}>{icsCopied ? '✓ Kopyalandı' : 'Kopyala'}</button>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setIcsUrl(null)}>Kapat</button>
+            </div>
+          </div>
+        </>
       )}
 
       {isAdding && (

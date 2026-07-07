@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { parseBody, handleApiError, requireLevel } from '@/lib/api';
+import { parseBody, handleApiError, requireLevel, ApiError } from '@/lib/api';
+import { audit } from '@/lib/audit';
 import { invoiceUpdate } from '@/lib/schemas';
 import { notify } from '@/lib/notify';
 
@@ -9,7 +10,8 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     await requireLevel('B');
     const body = await parseBody(request, invoiceUpdate);
     const params = await context.params;
-    const before = await prisma.invoice.findUnique({ where: { id: params.id }, select: { status: true } });
+    const before = await prisma.invoice.findUnique({ where: { id: params.id }, select: { status: true, deletedAt: true } });
+    if (!before || before.deletedAt) throw new ApiError(404, 'Kayıt bulunamadı');
     const updated = await prisma.invoice.update({
       where: { id: params.id },
       data: {
@@ -31,9 +33,11 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    await requireLevel('B');
+    const session = await requireLevel('B');
     const params = await context.params;
-    await prisma.invoice.delete({ where: { id: params.id } });
+    // Yumuşak silme: kayıt çöp kutusuna taşınır, /trash sayfasından geri alınabilir
+    const deleted = await prisma.invoice.update({ where: { id: params.id }, data: { deletedAt: new Date() } });
+    await audit(session, 'deleted', 'invoice', deleted.id, `Fatura çöp kutusuna taşındı: ${deleted.invoiceNo}`);
     return NextResponse.json({ success: true });
   } catch (error) {
     return handleApiError(error, 'Fatura silinemedi');

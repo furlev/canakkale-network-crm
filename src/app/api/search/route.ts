@@ -25,16 +25,16 @@ export async function GET(request: Request) {
     const contains = { contains: q, mode: 'insensitive' as const };
 
     const [clients, contacts, invoices, projects, tasks, news, tips, notes, contracts, proposals, users] = await Promise.all([
-      full ? prisma.client.findMany({ where: { OR: [{ companyName: contains }, { contactName: contains }, { email: contains }] }, take: 5, select: { companyName: true, contactName: true } }) : [],
+      full ? prisma.client.findMany({ where: { deletedAt: null, OR: [{ companyName: contains }, { contactName: contains }, { email: contains }] }, take: 5, select: { companyName: true, contactName: true } }) : [],
       full ? prisma.contact.findMany({ where: { OR: [{ firstName: contains }, { lastName: contains }, { email: contains }, { company: contains }] }, take: 5, select: { firstName: true, lastName: true, company: true } }) : [],
-      full ? prisma.invoice.findMany({ where: { invoiceNo: contains }, take: 5, select: { invoiceNo: true, amount: true, status: true } }) : [],
-      full ? prisma.project.findMany({ where: { name: contains }, take: 5, select: { name: true, status: true } }) : [],
-      prisma.task.findMany({ where: { title: contains }, take: 5, select: { title: true, status: true } }),
+      full ? prisma.invoice.findMany({ where: { deletedAt: null, invoiceNo: contains }, take: 5, select: { invoiceNo: true, amount: true, status: true } }) : [],
+      full ? prisma.project.findMany({ where: { deletedAt: null, name: contains }, take: 5, select: { name: true, status: true } }) : [],
+      prisma.task.findMany({ where: { deletedAt: null, title: contains }, take: 5, select: { title: true, status: true } }),
       prisma.news.findMany({ where: { title: contains }, take: 5, select: { title: true, status: true } }),
       prisma.tip.findMany({ where: { OR: [{ subject: contains }, { tipNumber: contains }] }, take: 5, select: { subject: true, tipNumber: true } }),
       prisma.note.findMany({ where: { OR: [{ title: contains }, { content: contains }] }, take: 5, select: { title: true, category: true } }),
-      full ? prisma.contract.findMany({ where: { title: contains }, take: 5, select: { title: true, status: true } }) : [],
-      full ? prisma.proposal.findMany({ where: { title: contains }, take: 5, select: { title: true, status: true } }) : [],
+      full ? prisma.contract.findMany({ where: { deletedAt: null, title: contains }, take: 5, select: { title: true, status: true } }) : [],
+      full ? prisma.proposal.findMany({ where: { deletedAt: null, title: contains }, take: 5, select: { title: true, status: true } }) : [],
       full ? prisma.user.findMany({ where: { OR: [{ name: contains }, { email: contains }] }, take: 5, select: { name: true, role: true } }) : [],
     ]);
 

@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { isLeaderOrAdmin } from '@/lib/permissions';
 
 type News = {
   id: string;
@@ -23,6 +24,15 @@ export default function NewsPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
   const [newArticle, setNewArticle] = useState({ title: '', category: 'Gündem', author: 'Editör', status: 'draft' });
+  const [me, setMe] = useState<{ role: string } | null>(null);
+  const canManage = isLeaderOrAdmin(me); // B+ (yükleme bitene dek gizli)
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((u) => { if (u) setMe(u); })
+      .catch(() => {});
+  }, []);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -131,10 +141,14 @@ export default function NewsPage() {
           <p className="page-subtitle">Sitedeki haber içeriklerinin yönetimi</p>
         </div>
         <div className="page-header-actions">
-          <button className="btn btn-ghost" disabled={syncing} onClick={handleSync}>
-            🔄 {syncing ? 'Senkronize ediliyor...' : "WordPress'ten Çek"}
-          </button>
-          <button className="btn btn-primary" onClick={() => setIsAdding(true)}>+ Yeni Haber</button>
+          {canManage && (
+            <>
+              <button className="btn btn-ghost" disabled={syncing} onClick={handleSync}>
+                🔄 {syncing ? 'Senkronize ediliyor...' : "WordPress'ten Çek"}
+              </button>
+              <button className="btn btn-primary" onClick={() => setIsAdding(true)}>+ Yeni Haber</button>
+            </>
+          )}
         </div>
       </div>
 

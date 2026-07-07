@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { isLeaderOrAdmin } from '@/lib/permissions';
 
 type Announcement = {
   id: string;
@@ -22,9 +23,15 @@ export default function AnnouncementsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [me, setMe] = useState<{ role: string } | null>(null);
+  const canManage = isLeaderOrAdmin(me); // B+ (ekle/düzenle/sil)
 
   useEffect(() => {
     fetchAnnouncements();
+    fetch('/api/auth/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((u) => { if (u) setMe(u); })
+      .catch(() => {});
   }, []);
 
   const fetchAnnouncements = async () => {
@@ -90,7 +97,7 @@ export default function AnnouncementsPage() {
           <p className="page-subtitle">Ekip ve müşteri duyuruları</p>
         </div>
         <div className="page-header-actions">
-          <button className="btn btn-primary" onClick={openAdd}>+ Yeni Duyuru</button>
+          {canManage && <button className="btn btn-primary" onClick={openAdd}>+ Yeni Duyuru</button>}
         </div>
       </div>
 
@@ -101,7 +108,7 @@ export default function AnnouncementsPage() {
           <div className="empty-state-icon">📣</div>
           <div className="empty-state-title">Henüz duyuru yok</div>
           <div className="empty-state-desc">İlk duyurunuzu yayınlayarak başlayın.</div>
-          <button className="btn btn-primary" onClick={openAdd}>+ Yeni Duyuru</button>
+          {canManage && <button className="btn btn-primary" onClick={openAdd}>+ Yeni Duyuru</button>}
         </div>
       ) : (
         <div className="stagger-children" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
@@ -122,8 +129,12 @@ export default function AnnouncementsPage() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                   <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>📅 {new Date(a.createdAt).toLocaleDateString('tr-TR')}</span>
-                  <button className="btn btn-ghost btn-sm" onClick={() => openEdit(a)}>✏️</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(a.id)}>🗑️</button>
+                  {canManage && (
+                    <>
+                      <button className="btn btn-ghost btn-sm" onClick={() => openEdit(a)}>✏️</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(a.id)}>🗑️</button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

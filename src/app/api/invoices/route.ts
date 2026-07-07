@@ -9,8 +9,8 @@ export async function GET(request: Request) {
     await requireLevel('B');
     const pagination = getPagination(request);
     const [items, total] = await Promise.all([
-      prisma.invoice.findMany({ orderBy: { createdAt: 'desc' }, include: { client: true }, ...(pagination ?? {}) }),
-      pagination ? prisma.invoice.count() : Promise.resolve(undefined),
+      prisma.invoice.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, include: { client: true }, ...(pagination ?? {}) }),
+      pagination ? prisma.invoice.count({ where: { deletedAt: null } }) : Promise.resolve(undefined),
     ]);
     return listResponse(items, total);
   } catch (error) {

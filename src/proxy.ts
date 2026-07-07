@@ -7,6 +7,7 @@ const PUBLIC_PREFIXES = [
   '/login',
   '/api/auth/login',
   '/api/health', // yük dengeleyici / izleme ping'i
+  '/api/calendar/ics', // takvim aboneliği (HMAC imzalı kişisel token ile kendini korur)
   '/api/webhooks/',
   '/api/cron/',
   '/api/ai/analyze-article', // WordPress eklentisi Bearer secret ile çağırır; rota kendini korur

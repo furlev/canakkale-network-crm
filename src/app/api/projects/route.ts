@@ -8,8 +8,8 @@ export async function GET(request: Request) {
     await requireLevel('B'); // proje listesi müşteri verisi içerir; yalnız /projects (B+) kullanır
     const pagination = getPagination(request);
     const [items, total] = await Promise.all([
-      prisma.project.findMany({ orderBy: { createdAt: 'desc' }, include: { client: true }, ...(pagination ?? {}) }),
-      pagination ? prisma.project.count() : Promise.resolve(undefined),
+      prisma.project.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, include: { client: true }, ...(pagination ?? {}) }),
+      pagination ? prisma.project.count({ where: { deletedAt: null } }) : Promise.resolve(undefined),
     ]);
     return listResponse(items, total);
   } catch (error) {

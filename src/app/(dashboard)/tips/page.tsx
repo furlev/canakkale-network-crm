@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { isLeaderOrAdmin } from '@/lib/permissions';
 
 type Tip = {
   id: string;
@@ -50,6 +51,15 @@ export default function TipsPage() {
   const [aiBusy, setAiBusy] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<null | { summary: string; priority: string; category: string; newsworthy: boolean; reasoning: string }>(null);
   const [aiDraft, setAiDraft] = useState<null | { title: string; body: string }>(null);
+  const [me, setMe] = useState<{ role: string } | null>(null);
+  const canManage = isLeaderOrAdmin(me); // B+ (durum değişikliği + WP dönüştürme)
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((u) => { if (u) setMe(u); })
+      .catch(() => {});
+  }, []);
 
   const runAiAnalysis = async (tip: Tip) => {
     setAiBusy(true);
@@ -410,12 +420,14 @@ export default function TipsPage() {
                 <div style={{padding:'var(--space-3)',background:'var(--surface-2)',borderRadius:'var(--border-radius)',fontSize:'var(--text-sm)'}}>{selected.reporter?.name || 'Henüz atanmadı'}</div>
               </div>
             </div>
-            <div className="modal-footer" style={{flexWrap:'wrap'}}>
-              <button className="btn btn-ghost" onClick={()=>updateTipStatus(selected.id, 'investigating')}>🔍 İncelemeye Al</button>
-              <button className="btn btn-danger btn-sm" onClick={()=>updateTipStatus(selected.id, 'rejected')}>Reddet</button>
-              <button className="btn btn-accent" onClick={()=>updateTipStatus(selected.id, 'verified')}>✅ Doğrula</button>
-              <button className="btn btn-primary" onClick={()=>convertToWordPress(selected)}>📰 Habere Dönüştür (WP Taslak)</button>
-            </div>
+            {canManage && (
+              <div className="modal-footer" style={{flexWrap:'wrap'}}>
+                <button className="btn btn-ghost" onClick={()=>updateTipStatus(selected.id, 'investigating')}>🔍 İncelemeye Al</button>
+                <button className="btn btn-danger btn-sm" onClick={()=>updateTipStatus(selected.id, 'rejected')}>Reddet</button>
+                <button className="btn btn-accent" onClick={()=>updateTipStatus(selected.id, 'verified')}>✅ Doğrula</button>
+                <button className="btn btn-primary" onClick={()=>convertToWordPress(selected)}>📰 Habere Dönüştür (WP Taslak)</button>
+              </div>
+            )}
           </div>
         </>
       )}

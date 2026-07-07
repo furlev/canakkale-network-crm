@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { canAccessPath } from '@/lib/permissions';
+import NotificationStream, { type LiveNotification } from '@/components/NotificationStream';
+import CommandPalette, { type AccessInfo } from '@/components/CommandPalette';
 
 /* ── Navigation data ─────────────────────────────────── */
 interface NavItem {
@@ -77,6 +79,8 @@ const navSections: NavSection[] = [
     title: 'ANALİZ',
     items: [
       { label: 'Raporlar', href: '/reports', icon: '📈' },
+      { label: 'Çöp Kutusu', href: '/trash', icon: '🗑️' },
+      { label: 'Denetim Kaydı', href: '/audit', icon: '🧾' },
       { label: 'Ayarlar', href: '/settings', icon: '⚙️' },
     ],
   },
@@ -98,6 +102,11 @@ function isLinkActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + '/');
 }
 
+/* "/tasks/5" → "/tasks" (access.ts ile aynı kural) */
+function topSegment(path: string): string {
+  return '/' + (path.split('?')[0].split('/')[1] || '');
+}
+
 /* ── Layout component ────────────────────────────────── */
 export default function DashboardLayout({
   children,
@@ -110,8 +119,14 @@ export default function DashboardLayout({
   const [newTipCount, setNewTipCount] = useState(0);
   const [user, setUser] = useState<{ name: string; role: string } | null>(null);
 
+  /* Dinamik erişim (AccessRule) — nav filtresi + sayfa koruması */
+  const [access, setAccess] = useState<AccessInfo | null>(null);
+
+  /* Cmd+K arama paleti */
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
   /* Notifications (bell) */
-  type NotifItem = { id: string; type: string; title: string; link?: string | null; read: boolean; createdAt: string };
+  type NotifItem = LiveNotification;
   const [notifications, setNotifications] = useState<NotifItem[]>([]);
   const [notifUnread, setNotifUnread] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -150,16 +165,72 @@ export default function DashboardLayout({
     setNotifUnread(0);
   };
 
-  /* Ctrl+K focuses search; Escape closes panels */
+  /* SSE'den gelen canlı bildirim: zil listesine ekle + rozeti artır */
+  const handleLiveNotification = (n: LiveNotification) => {
+    setNotifications((prev) => {
+      if (prev.some((p) => p.id === n.id)) return prev;
+      return [n, ...prev].slice(0, 10);
+    });
+    if (!n.read) setNotifUnread((prev) => prev + 1);
+  };
+
+  /* Dinamik erişim bilgisi (bir kez) — nav + sayfa koruması bunu kullanır */
+  useEffect(() => {
+    fetch('/api/access/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.paths) && Array.isArray(data.managed)) setAccess(data);
+      })
+      .catch(() => {});
+  }, []);
+
+  /* Bir link bu kullanıcıya gösterilsin mi? (dinamik kurallar > taban RBAC) */
+  const isHrefAllowed = (href: string): boolean => {
+    const base = topSegment(href);
+    if (base === '/audit') return user?.role === 'admin'; // denetim kaydı yalnız A
+    if (access && access.managed.some((m) => m.path === base)) {
+      return access.paths.includes(base);
+    }
+    // /settings (yalnız A) ve yönetilmeyen yollar: mevcut taban RBAC davranışı
+    return !user || canAccessPath({ role: user.role }, href);
+  };
+
+  /* Sayfa koruması: AccessRule ile kapatılmış ekrandan ana panele yönlendir */
+  const currentBase = topSegment(pathname);
+  const dynDenied = !!(
+    access &&
+    access.managed.some((m) => m.path === currentBase) &&
+    !access.paths.includes(currentBase)
+  );
+
+  useEffect(() => {
+    if (!dynDenied || !access) return;
+    if (currentBase === '/') {
+      // Ana panel de kapalıysa ilk izinli ekrana (yoksa profile) git
+      const fallback = access.paths.find((p) => p !== '/') || '/profile';
+      router.replace(fallback);
+    } else {
+      router.replace('/');
+    }
+  }, [dynDenied, currentBase, access, router]);
+
+  /* Taban RBAC'ta herkese açık (C allowlist) olmayan ekranlarda, dinamik
+     erişim kararı gelene kadar içerik gösterme (hassas veri parlamasın).
+     Taban RBAC zaten proxy'de sunucu tarafında uygulanıyor. */
+  const cSafePath = canAccessPath({ role: 'user' }, pathname);
+  const gateChildren = dynDenied || (!access && !cSafePath);
+
+  /* Ctrl+K / Cmd+K opens the command palette; Escape closes panels */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        searchInputRef.current?.focus();
+        setPaletteOpen(true);
       }
       if (e.key === 'Escape') {
         setSearchOpen(false);
         setNotifOpen(false);
+        setPaletteOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -272,7 +343,7 @@ export default function DashboardLayout({
         {/* Navigation */}
         <nav className="sidebar-nav">
           {navSections.map((section) => {
-            const items = section.items.filter((it) => !user || canAccessPath({ role: user.role }, it.href));
+            const items = section.items.filter((it) => isHrefAllowed(it.href));
             if (items.length === 0) return null;
             return (
             <div className="sidebar-section" key={section.title}>
@@ -367,6 +438,11 @@ export default function DashboardLayout({
           </div>
 
           <div className="topbar-right">
+            {/* Global arama paleti (Ctrl+K) */}
+            <button className="topbar-btn" title="Global arama (Ctrl+K)" onClick={() => setPaletteOpen(true)}>
+              🔍
+            </button>
+
             {/* Theme toggle */}
             <button className="topbar-btn" title="Tema değiştir" onClick={toggleTheme}>
               {theme === 'light' ? '🌙' : '☀️'}
@@ -383,7 +459,7 @@ export default function DashboardLayout({
                   <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 220, background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', borderRadius: 'var(--border-radius-lg)', boxShadow: '0 16px 48px rgba(0,0,0,0.5)', zIndex: 1000, padding: 'var(--space-2)' }}>
                     <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', padding: 'var(--space-2) var(--space-3)', fontWeight: 600 }}>HIZLI EKLE</div>
                     {quickLinks
-                      .filter((q) => !user || canAccessPath({ role: user.role }, q.href))
+                      .filter((q) => isHrefAllowed(q.href))
                       .map((q) => (
                         <div
                           key={q.href}
@@ -472,8 +548,22 @@ export default function DashboardLayout({
         </header>
 
         {/* ──── PAGE CONTENT ──── */}
-        <main className="main-content">{children}</main>
+        <main className="main-content">
+          {gateChildren ? (
+            <div style={{ padding: 'var(--space-8)', textAlign: 'center', color: 'var(--text-muted)' }}>
+              Yükleniyor...
+            </div>
+          ) : (
+            children
+          )}
+        </main>
       </div>
+
+      {/* SSE canlı bildirimler + tarayıcı bildirimi izni */}
+      <NotificationStream onNotification={handleLiveNotification} />
+
+      {/* Ctrl+K global arama paleti */}
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} access={access} />
     </div>
   );
 }

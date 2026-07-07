@@ -8,97 +8,99 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  name      String
-  password  String?  // bcrypt hash; null = cannot log in yet
-  role      String   @default("user") // admin=A (root), editor=B (lider/muhasebe), user=C (üye)
+  id         String   @id @default(uuid())
+  email      String   @unique
+  name       String
+  password   String? // bcrypt hash; null = cannot log in yet
+  role       String   @default("user") // admin=A (root), editor=B (lider/muhasebe), user=C (üye)
   department String?
-  status    String   @default("active")
-  avatar    String?
-  title      String?  // B/C pozisyonu: Ekip Lideri, Muhasebe, Editör, Muhabir...
-  managerId  String?  // bağlı olduğu ekip lideri (B kullanıcısı)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status     String   @default("active")
+  avatar     String?
+  title      String? // B/C pozisyonu: Ekip Lideri, Muhasebe, Editör, Muhabir...
+  managerId  String? // bağlı olduğu ekip lideri (B kullanıcısı)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  manager     User?   @relation("TeamManager", fields: [managerId], references: [id], onDelete: SetNull)
-  teamMembers User[]  @relation("TeamManager")
+  manager     User?  @relation("TeamManager", fields: [managerId], references: [id], onDelete: SetNull)
+  teamMembers User[] @relation("TeamManager")
 
-  tips      Tip[]    @relation("TipReporter")
-  tasks     Task[]   @relation("TaskAssignee")
-  tickets   Ticket[] @relation("TicketAssignee")
-  sentMessages     Message[] @relation("SentMessages")
-  receivedMessages Message[] @relation("ReceivedMessages")
-  warnsReceived    Warn[]    @relation("WarnTarget")
-  warnsIssued      Warn[]    @relation("WarnIssuer")
+  tips             Tip[]            @relation("TipReporter")
+  tasks            Task[]           @relation("TaskAssignee")
+  tickets          Ticket[]         @relation("TicketAssignee")
+  sentMessages     Message[]        @relation("SentMessages")
+  receivedMessages Message[]        @relation("ReceivedMessages")
+  warnsReceived    Warn[]           @relation("WarnTarget")
+  warnsIssued      Warn[]           @relation("WarnIssuer")
   payments         PaymentRequest[] @relation("PaymentUser")
 }
 
 model Tip {
-  id          String   @id @default(uuid())
-  tipNumber   String   @unique // e.g. TIP-001
-  subject     String
-  content     String
-  source      String   // E.g., Anonim, Veli İhbarı
-  sourceType  String   @default("email") // email, phone
-  priority    String   @default("normal") // low, normal, high, urgent
-  status      String   @default("new") // new, investigating, verified, converted, rejected
-  
-  reporterId  String?
-  reporter    User?    @relation("TipReporter", fields: [reporterId], references: [id])
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String @id @default(uuid())
+  tipNumber  String @unique // e.g. TIP-001
+  subject    String
+  content    String
+  source     String // E.g., Anonim, Veli İhbarı
+  sourceType String @default("email") // email, phone
+  priority   String @default("normal") // low, normal, high, urgent
+  status     String @default("new") // new, investigating, verified, converted, rejected
+
+  reporterId String?
+  reporter   User?   @relation("TipReporter", fields: [reporterId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Contact {
-  id        String   @id @default(uuid())
+  id        String  @id @default(uuid())
   firstName String
   lastName  String
-  email     String   @unique
+  email     String  @unique
   phone     String?
   company   String?
-  status    String   @default("active") // active, inactive
+  status    String  @default("active") // active, inactive
   notes     String?
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Client {
-  id           String   @id @default(uuid())
+  id           String  @id @default(uuid())
   companyName  String
   contactName  String
-  email        String   @unique
+  email        String  @unique
   phone        String?
-  status       String   @default("active") // active, inactive
-  satisfaction Int      @default(100) // 0-100 score
-  
-  projects     Project[]
-  invoices     Invoice[]
-  estimates    Estimate[]
-  tickets      Ticket[]
-  contracts    Contract[]
-  proposals    Proposal[]
-  
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  status       String  @default("active") // active, inactive
+  satisfaction Int     @default(100) // 0-100 score
+
+  projects  Project[]
+  invoices  Invoice[]
+  estimates Estimate[]
+  tickets   Ticket[]
+  contracts Contract[]
+  proposals Proposal[]
+  deletedAt DateTime? // soft delete
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Project {
-  id          String    @id @default(uuid())
-  name        String
-  status      String    @default("active") // active, completed, on_hold
-  progress    Int       @default(0) // 0-100
-  deadline    DateTime?
-  
-  clientId    String?
-  client      Client?   @relation(fields: [clientId], references: [id])
-  
-  tasks       Task[]
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id       String    @id @default(uuid())
+  name     String
+  status   String    @default("active") // active, completed, on_hold
+  progress Int       @default(0) // 0-100
+  deadline DateTime?
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  tasks     Task[]
+  deletedAt DateTime? // soft delete
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Task {
@@ -108,55 +110,61 @@ model Task {
   status      String    @default("todo") // todo, in_progress, review, done
   priority    String    @default("normal") // low, normal, high, urgent
   dueDate     DateTime?
-  
-  projectId   String?
-  project     Project?  @relation(fields: [projectId], references: [id])
-  
-  assigneeId  String?
-  assignee    User?     @relation("TaskAssignee", fields: [assigneeId], references: [id])
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  recurrence  String? // daily | weekly | monthly — done olunca sonraki örnek üretilir
+
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id])
+
+  assigneeId String?
+  assignee   User?     @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  deletedAt  DateTime? // soft delete
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Lead {
-  id          String    @id @default(uuid())
-  name        String
-  company     String?
-  value       Float     @default(0)
-  status      String    @default("new") // new, contacted, proposal, won, lost
-  priority    String    @default("normal") // low, normal, high, urgent
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id        String    @id @default(uuid())
+  name      String
+  company   String?
+  value     Float     @default(0)
+  status    String    @default("new") // new, contacted, proposal, won, lost
+  priority  String    @default("normal") // low, normal, high, urgent
+  deletedAt DateTime? // soft delete
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Invoice {
-  id          String    @id @default(uuid())
-  invoiceNo   String    @unique
-  amount      Float
-  status      String    @default("unpaid") // unpaid, paid, overdue, cancelled
-  dueDate     DateTime?
-  
-  clientId    String?
-  client      Client?   @relation(fields: [clientId], references: [id])
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id             String    @id @default(uuid())
+  invoiceNo      String    @unique
+  amount         Float
+  status         String    @default("unpaid") // unpaid, paid, overdue, cancelled
+  dueDate        DateTime?
+  lastReminderAt DateTime? // son gecikme hatırlatması
+
+  clientId  String?
+  client    Client?   @relation(fields: [clientId], references: [id])
+  deletedAt DateTime? // soft delete
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Estimate {
-  id          String    @id @default(uuid())
-  estimateNo  String    @unique
-  amount      Float
-  status      String    @default("draft") // draft, sent, accepted, rejected
-  validUntil  DateTime?
-  
-  clientId    String?
-  client      Client?   @relation(fields: [clientId], references: [id])
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         String    @id @default(uuid())
+  estimateNo String    @unique
+  amount     Float
+  status     String    @default("draft") // draft, sent, accepted, rejected
+  validUntil DateTime?
+
+  clientId  String?
+  client    Client?   @relation(fields: [clientId], references: [id])
+  deletedAt DateTime? // soft delete
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Expense {
@@ -166,9 +174,10 @@ model Expense {
   description String?
   receiptUrl  String?
   date        DateTime  @default(now())
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime? // soft delete
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model News {
@@ -180,155 +189,212 @@ model News {
   views       Int       @default(0)
   publishDate DateTime?
   wpId        Int?      @unique // WordPress post ID (synced articles)
-  url         String?   // canonical URL on the WordPress site
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  url         String? // canonical URL on the WordPress site
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Subscriber {
-  id          String    @id @default(uuid())
-  email       String    @unique
-  source      String    @default("website")
-  status      String    @default("active") // active, unsubscribed
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id     String @id @default(uuid())
+  email  String @unique
+  source String @default("website")
+  status String @default("active") // active, unsubscribed
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Advertiser {
-  id          String    @id @default(uuid())
+  id          String  @id @default(uuid())
   company     String
   contactName String
   email       String
   phone       String?
-  activeAds   Int       @default(0)
-  totalSpent  Float     @default(0)
-  status      String    @default("active") // active, inactive
+  activeAds   Int     @default(0)
+  totalSpent  Float   @default(0)
+  status      String  @default("active") // active, inactive
 
-  campaigns   AdCampaign[]
+  campaigns AdCampaign[]
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Event {
-  id          String    @id @default(uuid())
+  id          String   @id @default(uuid())
   title       String
   date        DateTime
-  type        String    @default("meeting") // meeting, deadline, event
+  type        String   @default("meeting") // meeting, deadline, event
   description String?
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Ticket {
-  id          String    @id @default(uuid())
-  ticketNo    String    @unique
+  id          String  @id @default(uuid())
+  ticketNo    String  @unique
   subject     String
   description String?
-  status      String    @default("open") // open, in_progress, resolved, closed
-  priority    String    @default("normal") // low, normal, high, urgent
-  
-  clientId    String?
-  client      Client?   @relation(fields: [clientId], references: [id])
-  
-  assigneeId  String?
-  assignee    User?     @relation("TicketAssignee", fields: [assigneeId], references: [id])
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  status      String  @default("open") // open, in_progress, resolved, closed
+  priority    String  @default("normal") // low, normal, high, urgent
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  assigneeId String?
+  assignee   User?   @relation("TicketAssignee", fields: [assigneeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Document {
-  id          String    @id @default(uuid())
-  name        String
-  type        String    @default("pdf") // pdf, word, excel, image, other
-  size        Int       @default(0) // in bytes
-  url         String?   
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id           String    @id @default(uuid())
+  name         String
+  type         String    @default("pdf") // pdf, word, excel, image, other
+  size         Int       @default(0) // in bytes
+  url          String?
+  mime         String? // gerçek MIME türü
+  driveFileId  String? // Google Drive dosya id'si (Drive'a yüklenenler)
+  uploadedById String? // yükleyen kullanıcı
+  folderId     String?
+  folder       Folder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  deletedAt    DateTime? // soft delete
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([folderId])
+}
+
+/// Depo klasörü: hiyerarşik ağaç + erişim kuralları (seviye / belirli kullanıcı / şifre).
+model Folder {
+  id           String    @id @default(uuid())
+  name         String
+  parentId     String?
+  parent       Folder?   @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children     Folder[]  @relation("FolderTree")
+  minLevel     String    @default("C") // A | B | C — bu seviyenin altı göremez
+  restricted   Boolean   @default(false) // true → yalnız FolderAccess listesindekiler (+A)
+  passwordHash String? // şifreli klasör (bcrypt); null = şifresiz
+  createdById  String?
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  documents Document[]
+  access    FolderAccess[]
+
+  @@index([parentId])
+}
+
+/// Kısıtlı klasörlere belirli kullanıcı erişimi.
+model FolderAccess {
+  id       String  @id @default(uuid())
+  folderId String
+  folder   Folder  @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  userId   String
+  canWrite Boolean @default(false)
+
+  @@unique([folderId, userId])
+}
+
+/// Sayfa görünürlük kuralı: taban RBAC'ın üzerine A/B tarafından yönetilen istisnalar.
+/// targetUserId dolu → kişiye özel kural; yoksa targetRole ('B'|'C') rol geneli kural (yalnız A koyabilir).
+model AccessRule {
+  id           String   @id @default(uuid())
+  path         String // üst segment: '/invoices', '/reports'...
+  targetRole   String? // 'B' | 'C'
+  targetUserId String?
+  allow        Boolean // true = eriş, false = engelle
+  grantedById  String?
+  createdAt    DateTime @default(now())
+
+  @@index([path])
+  @@index([targetUserId])
 }
 
 model Contract {
-  id          String    @id @default(uuid())
-  title       String
-  value       Float     @default(0)
-  status      String    @default("draft") // draft, active, expired
-  progress    Int       @default(0) // 0-100
-  startDate   DateTime?
-  endDate     DateTime?
+  id        String    @id @default(uuid())
+  title     String
+  value     Float     @default(0)
+  status    String    @default("draft") // draft, active, expired
+  progress  Int       @default(0) // 0-100
+  startDate DateTime?
+  endDate   DateTime?
 
-  clientId    String?
-  client      Client?   @relation(fields: [clientId], references: [id])
+  clientId  String?
+  client    Client?   @relation(fields: [clientId], references: [id])
+  deletedAt DateTime? // soft delete
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Proposal {
-  id          String    @id @default(uuid())
+  id          String  @id @default(uuid())
   title       String
   description String?
-  value       Float     @default(0)
-  status      String    @default("draft") // draft, sent, approved, rejected
+  value       Float   @default(0)
+  status      String  @default("draft") // draft, sent, approved, rejected
 
-  clientId    String?
-  client      Client?   @relation(fields: [clientId], references: [id])
+  clientId  String?
+  client    Client?   @relation(fields: [clientId], references: [id])
+  deletedAt DateTime? // soft delete
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Announcement {
-  id        String   @id @default(uuid())
-  title     String
-  content   String
-  target    String   @default("Herkes") // Herkes, Ekip, Musteri
-  priority  String   @default("normal") // low, normal, high
-  author    String   @default("Admin")
+  id       String @id @default(uuid())
+  title    String
+  content  String
+  target   String @default("Herkes") // Herkes, Ekip, Musteri
+  priority String @default("normal") // low, normal, high
+  author   String @default("Admin")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Note {
-  id        String   @id @default(uuid())
-  title     String
-  content   String
-  category  String   @default("Genel")
-  color     String   @default("#6c5ce7")
-  shared    Boolean  @default(false)
-  favorite  Boolean  @default(false)
+  id       String  @id @default(uuid())
+  title    String
+  content  String
+  category String  @default("Genel")
+  color    String  @default("#6c5ce7")
+  shared   Boolean @default(false)
+  favorite Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Article {
-  id        String   @id @default(uuid())
-  title     String
-  content   String?
-  category  String   @default("Genel")
-  views     Int      @default(0)
+  id       String  @id @default(uuid())
+  title    String
+  content  String?
+  category String  @default("Genel")
+  views    Int     @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Message {
-  id          String   @id @default(uuid())
-  content     String
-  read        Boolean  @default(false)
+  id      String  @id @default(uuid())
+  content String
+  read    Boolean @default(false)
 
   senderId    String
-  sender      User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  sender      User   @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
   recipientId String
-  recipient   User     @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+  recipient   User   @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([senderId, recipientId])
 }
@@ -337,46 +403,46 @@ model Notification {
   id        String   @id @default(uuid())
   type      String   @default("info") // tip, invoice_paid, project_completed, client, task, news, contract, info
   title     String
-  link      String?  // CRM içi hedef sayfa, ör. /tips
+  link      String? // CRM içi hedef sayfa, ör. /tips
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
 }
 
 model Setting {
   key       String   @id
-  value     String   // JSON string
+  value     String // JSON string
   updatedAt DateTime @updatedAt
 }
 
 model Newsletter {
-  id          String    @id @default(uuid())
-  subject     String
-  intro       String?   // editör girişi / AI özeti
-  content     String    // gönderilen HTML/metin gövdesi
-  status      String    @default("draft") // draft, sent
-  recipients  Int       @default(0) // gönderim anındaki abone sayısı
-  sentAt      DateTime?
+  id         String    @id @default(uuid())
+  subject    String
+  intro      String? // editör girişi / AI özeti
+  content    String // gönderilen HTML/metin gövdesi
+  status     String    @default("draft") // draft, sent
+  recipients Int       @default(0) // gönderim anındaki abone sayısı
+  sentAt     DateTime?
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model AdCampaign {
-  id           String    @id @default(uuid())
-  name         String
-  placement    String    @default("banner") // banner, native, video, sidebar
-  status       String    @default("active") // active, paused, ended
-  startDate    DateTime?
-  endDate      DateTime?
-  budget       Float     @default(0)
-  impressions  Int       @default(0)
-  clicks       Int       @default(0)
+  id          String    @id @default(uuid())
+  name        String
+  placement   String    @default("banner") // banner, native, video, sidebar
+  status      String    @default("active") // active, paused, ended
+  startDate   DateTime?
+  endDate     DateTime?
+  budget      Float     @default(0)
+  impressions Int       @default(0)
+  clicks      Int       @default(0)
 
   advertiserId String?
   advertiser   Advertiser? @relation(fields: [advertiserId], references: [id])
 
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ── RBAC: kullanıcı uyarıları (warn sistemi) ──
@@ -397,32 +463,32 @@ model Budget {
   title       String
   description String?
   totalAmount Float    @default(0)
-  createdBy   String?  // oluşturan yöneticinin adı
+  createdBy   String? // oluşturan yöneticinin adı
   status      String   @default("open") // open, closed
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  requests    PaymentRequest[]
+  requests PaymentRequest[]
 }
 
 // ── Ödeme talebi / maaş kaydı — kişinin paneline düşer, 'ödedim' ile kapanır ──
 model PaymentRequest {
-  id          String    @id @default(uuid())
-  kind        String    @default("collection") // collection (ortak harcama tahsilatı) | salary (maaş)
-  title       String
-  amount      Float
-  status      String    @default("pending") // pending, paid, cancelled
-  note        String?
-  dueDate     DateTime?
-  paidAt      DateTime?
+  id      String    @id @default(uuid())
+  kind    String    @default("collection") // collection (ortak harcama tahsilatı) | salary (maaş)
+  title   String
+  amount  Float
+  status  String    @default("pending") // pending, paid, cancelled
+  note    String?
+  dueDate DateTime?
+  paidAt  DateTime?
 
-  userId      String
-  user        User      @relation("PaymentUser", fields: [userId], references: [id], onDelete: Cascade)
-  budgetId    String?
-  budget      Budget?   @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+  userId   String
+  user     User    @relation("PaymentUser", fields: [userId], references: [id], onDelete: Cascade)
+  budgetId String?
+  budget   Budget? @relation(fields: [budgetId], references: [id], onDelete: SetNull)
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ══════════ WORDPRESS AI HABER MOTORU ══════════
@@ -439,7 +505,7 @@ model NewsSource {
   notes         String?
   createdAt     DateTime  @default(now())
 
-  items         FeedItem[]
+  items FeedItem[]
 }
 
 // Kaynaklardan çekilen ham haber öğesi (dedup + konu bulma için).
@@ -447,7 +513,7 @@ model FeedItem {
   id          String      @id @default(uuid())
   sourceId    String?
   source      NewsSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
-  sourceName  String?     // kaynak silinse de isim kalsın
+  sourceName  String? // kaynak silinse de isim kalsın
   title       String
   link        String
   guidHash    String      @unique // dedup: link/başlık hash
@@ -461,24 +527,24 @@ model FeedItem {
 
 // AI üretilen haber taslağı — onay kuyruğunun kalbi (taslak→onay→yayın).
 model AiDraft {
-  id              String    @id @default(uuid())
+  id              String   @id @default(uuid())
   topic           String
   title           String?
-  body            String?   // Postgres'te text
+  body            String? // Postgres'te text
   category        String?
-  tags            String?   // JSON dizi (string)
+  tags            String? // JSON dizi (string)
   seoTitle        String?
   metaDescription String?
   socialPost      String?
-  imageUrl        String?   // Imagen görseli (data URI / URL), "temsili" etiketli
-  sources         String?   // JSON: atıf verilen linkler
-  confidence      Float?    // fact-check güven skoru 0-1
-  status          String    @default("pending") // pending | approved | rejected | published
-  reviewerId      String?   // onaylayan CRM kullanıcısı (id)
+  imageUrl        String? // Imagen görseli (data URI / URL), "temsili" etiketli
+  sources         String? // JSON: atıf verilen linkler
+  confidence      Float? // fact-check güven skoru 0-1
+  status          String   @default("pending") // pending | approved | rejected | published
+  reviewerId      String? // onaylayan CRM kullanıcısı (id)
   reviewerName    String?
-  wpId            Int?      // yayınlanınca WP post id
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  wpId            Int? // yayınlanınca WP post id
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([status])
 }
@@ -488,10 +554,10 @@ model AuditLog {
   id        String   @id @default(uuid())
   userId    String?
   userName  String?
-  action    String   // created | updated | deleted | paid | approved | rejected | published ...
-  entity    String   // invoice, payment, warn, setting, team, aiDraft ...
+  action    String // created | updated | deleted | paid | approved | rejected | published ...
+  entity    String // invoice, payment, warn, setting, team, aiDraft ...
   entityId  String?
-  detail    String?  // kısa Türkçe açıklama
+  detail    String? // kısa Türkçe açıklama
   createdAt DateTime @default(now())
 
   @@index([entity, createdAt])

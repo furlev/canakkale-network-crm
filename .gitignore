@@ -46,3 +46,6 @@ gcp-vertex-key.json
 do-env-bulk.env
 do-vertex-credentials.json
 do-env-all.txt
+
+# Google Drive OAuth kimliği (scripts/prep-drive-oauth.mjs üretir — asla commit'leme)
+drive-credentials.json

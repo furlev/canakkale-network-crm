@@ -24,23 +24,23 @@ export async function GET() {
       recentProjects,
       recentTasks,
     ] = await Promise.all([
-      prisma.invoice.aggregate({ _sum: { amount: true }, where: { status: 'paid' } }),
-      prisma.client.count({ where: { status: 'active' } }),
-      prisma.project.count({ where: { status: 'active' } }),
+      prisma.invoice.aggregate({ _sum: { amount: true }, where: { status: 'paid', deletedAt: null } }),
+      prisma.client.count({ where: { status: 'active', deletedAt: null } }),
+      prisma.project.count({ where: { status: 'active', deletedAt: null } }),
       prisma.tip.groupBy({ by: ['status'], _count: { _all: true } }),
       prisma.$queryRaw<{ m: Date; total: number }[]>`
         SELECT date_trunc('month', "createdAt") AS m, SUM(amount)::float AS total
         FROM "Invoice"
-        WHERE status = 'paid' AND "createdAt" >= ${twelveMonthsAgo}
+        WHERE status = 'paid' AND "deletedAt" IS NULL AND "createdAt" >= ${twelveMonthsAgo}
         GROUP BY 1
       `,
       prisma.news.findMany({ where: { status: 'published' }, orderBy: { publishDate: 'desc' }, take: 5 }),
-      prisma.task.findMany({ where: { status: { not: 'done' } }, orderBy: { dueDate: 'asc' }, take: 4, include: { project: { select: { name: true } } } }),
+      prisma.task.findMany({ where: { status: { not: 'done' }, deletedAt: null }, orderBy: { dueDate: 'asc' }, take: 4, include: { project: { select: { name: true } } } }),
       prisma.tip.findMany({ orderBy: { createdAt: 'desc' }, take: 3, select: { subject: true, createdAt: true } }),
-      prisma.invoice.findMany({ orderBy: { updatedAt: 'desc' }, take: 3, select: { invoiceNo: true, amount: true, status: true, updatedAt: true } }),
-      prisma.client.findMany({ orderBy: { createdAt: 'desc' }, take: 3, select: { companyName: true, createdAt: true } }),
-      prisma.project.findMany({ orderBy: { updatedAt: 'desc' }, take: 3, select: { name: true, updatedAt: true } }),
-      prisma.task.findMany({ where: { status: 'done' }, orderBy: { updatedAt: 'desc' }, take: 3, select: { title: true, updatedAt: true } }),
+      prisma.invoice.findMany({ where: { deletedAt: null }, orderBy: { updatedAt: 'desc' }, take: 3, select: { invoiceNo: true, amount: true, status: true, updatedAt: true } }),
+      prisma.client.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 3, select: { companyName: true, createdAt: true } }),
+      prisma.project.findMany({ where: { deletedAt: null }, orderBy: { updatedAt: 'desc' }, take: 3, select: { name: true, updatedAt: true } }),
+      prisma.task.findMany({ where: { status: 'done', deletedAt: null }, orderBy: { updatedAt: 'desc' }, take: 3, select: { title: true, updatedAt: true } }),
     ]);
 
     // Last 12 months series from the grouped rows
