@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import { ApiError } from '@/lib/api';
+import { decryptSecret } from '@/lib/secure';
 
 export type WpConfig = {
   url: string;
@@ -40,7 +41,8 @@ export async function getWpConfig(): Promise<WpConfig> {
   return {
     url: value.url.replace(/\/+$/, ''),
     endpoint: (value.endpoint || '/wp-json/cn-crm/v1').replace(/\/+$/, ''),
-    apiKey: value.apiKey,
+    // apiKey DB'de şifreli (enc:v1:) saklanır; eski düz metin kayıtlar olduğu gibi döner
+    apiKey: decryptSecret(value.apiKey),
   };
 }
 
@@ -83,18 +85,54 @@ type WpPostList = {
   current_page: number;
 };
 
-const SYNC_MAX_PAGES = 4; // 4 × 50 = en fazla 200 yazı / senkron
+const SYNC_MAX_PAGES = 4;             // ilk (tam) senkron: 4 × 50 = en fazla 200 yazı
+const SYNC_MAX_PAGES_INCREMENTAL = 20; // artımlı senkron güvenlik tavanı: 20 × 50 = 1000 yazı
+const SYNC_SKEW_MS = 5 * 60 * 1000;    // saat kayması tamponu: lastSync = koşu başlangıcı - 5 dk
 
-/** WP'deki yazıları sayfa sayfa çekip News tablosuna upsert eder. */
+type WpSyncState = { lastSync?: string };
+
+/** Setting 'wpSyncState' kaydını okur (yoksa/bozuksa boş durum). */
+async function readWpSyncState(): Promise<WpSyncState> {
+  try {
+    const row = await prisma.setting.findUnique({ where: { key: 'wpSyncState' } });
+    if (!row) return {};
+    const parsed = JSON.parse(row.value);
+    return parsed && typeof parsed === 'object' ? (parsed as WpSyncState) : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeWpSyncState(state: WpSyncState): Promise<void> {
+  const value = JSON.stringify(state);
+  await prisma.setting.upsert({
+    where: { key: 'wpSyncState' },
+    update: { value },
+    create: { key: 'wpSyncState', value },
+  });
+}
+
+/** WP'deki yazıları sayfa sayfa çekip News tablosuna upsert eder.
+ *  'wpSyncState.lastSync' varsa yalnızca o tarihten sonra DEĞİŞEN yazıları ister
+ *  (connector >= 1.2.0 `modified_after` destekler; eski connector parametreyi yok sayar —
+ *  o durumda tam liste döner, sayfa tavanı yine korur). Başarılı senkron sonunda
+ *  lastSync, koşu başlangıcının 5 dk öncesi olarak yazılır. */
 export async function syncWpPosts(config: WpConfig): Promise<{ created: number; updated: number }> {
+  const runStart = Date.now();
+  const state = await readWpSyncState();
+  const modifiedAfter = typeof state.lastSync === 'string' && state.lastSync ? state.lastSync : null;
+  const maxPages = modifiedAfter ? SYNC_MAX_PAGES_INCREMENTAL : SYNC_MAX_PAGES;
+
   let created = 0;
   let updated = 0;
   let page = 1;
   let totalPages = 1;
 
   do {
-    const list = await wpFetch<WpPostList>(config, `/posts?status=any&per_page=50&page=${page}&orderby=date&order=DESC`);
-    totalPages = Math.min(list.pages || 1, SYNC_MAX_PAGES);
+    const query = `/posts?status=any&per_page=50&page=${page}&orderby=date&order=DESC`
+      + (modifiedAfter ? `&modified_after=${encodeURIComponent(modifiedAfter)}` : '');
+    const list = await wpFetch<WpPostList>(config, query);
+    totalPages = Math.min(list.pages || 1, maxPages);
 
     for (const post of list.posts || []) {
       const result = await upsertNewsFromWpPost(post);
@@ -103,6 +141,9 @@ export async function syncWpPosts(config: WpConfig): Promise<{ created: number; 
     }
     page++;
   } while (page <= totalPages);
+
+  // Başarılı senkron → yeni lastSync (saat kayması için 5 dk geriden)
+  await writeWpSyncState({ ...state, lastSync: new Date(runStart - SYNC_SKEW_MS).toISOString() });
 
   return { created, updated };
 }

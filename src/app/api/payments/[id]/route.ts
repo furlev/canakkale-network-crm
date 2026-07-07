@@ -4,6 +4,7 @@ import { parseBody, handleApiError, ApiError } from '@/lib/api';
 import { paymentUpdate } from '@/lib/schemas';
 import { getSession } from '@/lib/auth';
 import { isLeaderOrAdmin } from '@/lib/permissions';
+import { audit } from '@/lib/audit';
 
 type PaymentData = {
   status?: string;
@@ -49,6 +50,9 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       data,
       include: { user: { select: { id: true, name: true, email: true } }, budget: { select: { id: true, title: true } } },
     });
+    if (body.status) {
+      await audit(session, body.status, 'payment', updated.id, `Ödeme "${updated.title}" → ${body.status} (${updated.amount} ₺)`);
+    }
     return NextResponse.json(updated);
   } catch (error) {
     return handleApiError(error, 'Ödeme güncellenemedi');
@@ -61,6 +65,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
     if (!isLeaderOrAdmin(session)) throw new ApiError(403, 'Bu işlem için yetki gerekli');
     const params = await context.params;
     await prisma.paymentRequest.delete({ where: { id: params.id } });
+    await audit(session, 'deleted', 'payment', params.id, 'Ödeme kaydı silindi');
     return NextResponse.json({ success: true });
   } catch (error) {
     return handleApiError(error, 'Ödeme silinemedi');

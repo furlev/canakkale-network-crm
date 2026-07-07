@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { parseBody, handleApiError, getPagination, listResponse } from '@/lib/api';
+import { parseBody, handleApiError, getPagination, listResponse, requireLevel } from '@/lib/api';
 import { invoiceCreate } from '@/lib/schemas';
 import { nextNumber } from '@/lib/notify';
 
 export async function GET(request: Request) {
   try {
+    await requireLevel('B');
     const pagination = getPagination(request);
     const [items, total] = await Promise.all([
       prisma.invoice.findMany({ orderBy: { createdAt: 'desc' }, include: { client: true }, ...(pagination ?? {}) }),
@@ -19,6 +20,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await requireLevel('B');
     const body = await parseBody(request, invoiceCreate);
 
     const [last, count] = await Promise.all([

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { parseBody, handleApiError, getPagination, listResponse } from '@/lib/api';
+import { parseBody, handleApiError, getPagination, listResponse, requireLevel } from '@/lib/api';
 import { taskCreate } from '@/lib/schemas';
 import { notify } from '@/lib/notify';
 
@@ -8,6 +8,7 @@ const safeAssignee = { select: { id: true, name: true, email: true, role: true, 
 
 export async function GET(request: Request) {
   try {
+    await requireLevel('C');
     const pagination = getPagination(request);
     const [items, total] = await Promise.all([
       prisma.task.findMany({
@@ -25,6 +26,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await requireLevel('C');
     const body = await parseBody(request, taskCreate);
     const created = await prisma.task.create({
       data: {

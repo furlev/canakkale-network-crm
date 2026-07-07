@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
-import { parseBody, handleApiError, getPagination, listResponse } from '@/lib/api';
+import { parseBody, handleApiError, getPagination, listResponse, requireLevel } from '@/lib/api';
 
 const campaignCreate = z.object({
   name: z.string().min(1),
@@ -15,6 +15,7 @@ const campaignCreate = z.object({
 
 export async function GET(request: Request) {
   try {
+    await requireLevel('B');
     const pagination = getPagination(request);
     const [items, total] = await Promise.all([
       prisma.adCampaign.findMany({ orderBy: { createdAt: 'desc' }, include: { advertiser: true }, ...(pagination ?? {}) }),
@@ -28,6 +29,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await requireLevel('B');
     const body = await parseBody(request, campaignCreate);
     const created = await prisma.adCampaign.create({
       data: {

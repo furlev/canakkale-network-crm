@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { parseBody, handleApiError, getPagination, listResponse } from '@/lib/api';
+import { parseBody, handleApiError, getPagination, listResponse, requireLevel } from '@/lib/api';
 import { noteCreate } from '@/lib/schemas';
 
 export async function GET(request: Request) {
   try {
+    await requireLevel('C');
     const pagination = getPagination(request);
     const [items, total] = await Promise.all([
       prisma.note.findMany({ orderBy: { updatedAt: 'desc' }, ...(pagination ?? {}) }),
@@ -18,6 +19,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await requireLevel('C');
     const body = await parseBody(request, noteCreate);
     const created = await prisma.note.create({
       data: {

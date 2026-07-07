@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
 /* Shared field helpers — '' kabul edilir, rotalarda `value || null` ile null'a çevrilir */
-const dateString = z.string().nullable(); // ISO / yyyy-mm-dd; converted with new Date() in routes
+// ISO / yyyy-mm-dd; rotalarda new Date() ile çevrilir. Boş/null hariç geçersiz tarihleri reddet
+// (aksi halde new Date('bozuk') sessizce Invalid Date olarak kaydolur).
+const dateString = z
+  .string()
+  .nullable()
+  .refine(v => !v || !Number.isNaN(new Date(v).getTime()), { message: 'Geçersiz tarih' });
 const idString = z.string().nullable();
 
 /* ── Contact ── */
@@ -120,7 +125,7 @@ export const advertiserUpdate = advertiserCreate.partial();
 /* ── Event ── */
 export const eventCreate = z.object({
   title: z.string().min(1),
-  date: z.string().min(1),
+  date: z.string().min(1).refine(v => !Number.isNaN(new Date(v).getTime()), { message: 'Geçersiz tarih' }),
   type: z.enum(['meeting', 'deadline', 'event']).optional(),
   description: z.string().optional().nullable(),
 });
@@ -270,7 +275,10 @@ export const messageCreate = z.object({
 /* ── Setting ── */
 export const settingPut = z.object({
   key: z.enum(['general', 'company', 'wordpress', 'email', 'notifications', 'ai']),
-  value: z.unknown(),
+  // Boyut sınırı: ayarlar küçük yapılandırma nesneleridir; dev JSON'la depo şişirilemesin.
+  value: z.unknown().refine(v => {
+    try { return JSON.stringify(v).length <= 20_000; } catch { return false; }
+  }, { message: 'Ayar değeri çok büyük' }),
 });
 
 /* ── AiDraft (AI haber taslağı onay kuyruğu) ── */

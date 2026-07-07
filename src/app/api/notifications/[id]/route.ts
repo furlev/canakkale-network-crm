@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { handleApiError } from '@/lib/api';
+import { handleApiError, requireLevel } from '@/lib/api';
 
 /** Tek bir bildirimi okundu (ya da body ile okunmadı) işaretle. */
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
+    await requireLevel('C');
     const params = await context.params;
     let read = true;
     try {

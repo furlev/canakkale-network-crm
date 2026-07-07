@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { parseBody, handleApiError, ApiError } from '@/lib/api';
+import { parseBody, handleApiError, ApiError, getPagination, requireLevel } from '@/lib/api';
 import { messageCreate } from '@/lib/schemas';
-import { getSession } from '@/lib/auth';
 
 // Gerçek kişiden-kişiye mesajlaşma. "conversationId" = karşı tarafın kullanıcı id'si;
 // "ben" tarafı oturumdan gelir, yanıtlar fromMe alanıyla normalize edilir.
@@ -11,12 +10,13 @@ import { getSession } from '@/lib/auth';
 // GET /api/messages?conversationId=xxx   -> o kişiyle mesajlaşma (gelenleri okundu işaretler)
 export async function GET(request: Request) {
   try {
-    const session = await getSession();
-    if (!session) throw new ApiError(401, 'Oturum gerekli');
+    const session = await requireLevel('C');
     const me = session.sub;
 
     const { searchParams } = new URL(request.url);
     const other = searchParams.get('conversationId');
+    // İsteğe bağlı sayfalama (?page=&limit=); yoksa makul bir üst sınır uygulanır.
+    const pagination = getPagination(request);
 
     if (other) {
       await prisma.message.updateMany({
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
           ],
         },
         orderBy: { createdAt: 'asc' },
-        take: 500,
+        ...(pagination ?? { skip: 0, take: 500 }),
       });
       return NextResponse.json(messages.map(m => ({
         id: m.id,
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
       prisma.message.findMany({
         where: { OR: [{ senderId: me }, { recipientId: me }] },
         orderBy: { createdAt: 'desc' },
-        take: 1000,
+        ...(pagination ?? { skip: 0, take: 500 }),
       }),
     ]);
 
@@ -89,8 +89,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const session = await getSession();
-    if (!session) throw new ApiError(401, 'Oturum gerekli');
+    const session = await requireLevel('C');
 
     const body = await parseBody(request, messageCreate);
     if (body.conversationId === session.sub) throw new ApiError(400, 'Kendinize mesaj gönderemezsiniz');

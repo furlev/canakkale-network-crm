@@ -19,7 +19,15 @@ async function authorize(request: Request): Promise<boolean> {
   return isLeaderOrAdmin(session);
 }
 
+// Modül düzeyi kilit: aynı instance'ta eşzamanlı iki üretim koşusunu engeller
+// (cron + elle tetikleme çakışması). Çok-instance ortamda instance başına geçerlidir.
+let generateRunning = false;
+
 export async function POST(request: Request) {
+  if (generateRunning) {
+    return NextResponse.json({ error: 'Üretim zaten çalışıyor' }, { status: 429 });
+  }
+  generateRunning = true;
   try {
     if (!(await authorize(request))) throw new ApiError(403, 'Yetkisiz');
     if (!(await aiEnabled())) throw new ApiError(400, 'AI yapılandırılmamış (Vertex/Gemini)');
@@ -101,5 +109,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, ingest, topicsFound: topics.length, created, skipped });
   } catch (error) {
     return handleApiError(error, 'AI taslak üretimi başarısız');
+  } finally {
+    generateRunning = false;
   }
 }

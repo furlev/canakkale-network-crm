@@ -482,3 +482,18 @@ model AiDraft {
 
   @@index([status])
 }
+
+/// Denetim kaydı: hassas işlemlerin (ödeme, ayar, ekip, uyarı, yayın...) kim/ne/ne zaman izi.
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  userName  String?
+  action    String   // created | updated | deleted | paid | approved | rejected | published ...
+  entity    String   // invoice, payment, warn, setting, team, aiDraft ...
+  entityId  String?
+  detail    String?  // kısa Türkçe açıklama
+  createdAt DateTime @default(now())
+
+  @@index([entity, createdAt])
+  @@index([userId])
+}

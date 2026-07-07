@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { handleApiError, ApiError } from '@/lib/api';
+import { handleApiError, ApiError, requireLevel } from '@/lib/api';
 import { getTransport } from '@/lib/mailer';
 import { notify } from '@/lib/notify';
 
@@ -25,6 +25,7 @@ function buildHtml(subject: string, intro: string | null, content: string): stri
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
+    await requireLevel('B');
     const params = await context.params;
     const newsletter = await prisma.newsletter.findUnique({ where: { id: params.id } });
     if (!newsletter) throw new ApiError(404, 'Bülten bulunamadı');

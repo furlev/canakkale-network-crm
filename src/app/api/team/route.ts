@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import prisma from '@/lib/prisma';
-import { parseBody, handleApiError, getPagination, listResponse, ApiError } from '@/lib/api';
+import { parseBody, handleApiError, getPagination, listResponse, ApiError, requireLevel } from '@/lib/api';
 import { teamCreate } from '@/lib/schemas';
 import { getSession } from '@/lib/auth';
+import { hasLevel } from '@/lib/permissions';
+import { audit } from '@/lib/audit';
 
 // password alanı asla API'den dönmez
 const safeSelect = {
@@ -16,6 +18,17 @@ const safeSelect = {
 
 export async function GET(request: Request) {
   try {
+    const session = await requireLevel('C');
+
+    // C (üye): yalnızca atama/mesaj seçim listeleri için asgari alanlar döner.
+    if (!hasLevel(session, 'B')) {
+      const items = await prisma.user.findMany({
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, name: true, title: true },
+      });
+      return listResponse(items);
+    }
+
     const pagination = getPagination(request);
     const [items, total] = await Promise.all([
       prisma.user.findMany({ orderBy: { createdAt: 'desc' }, select: safeSelect, ...(pagination ?? {}) }),
@@ -46,6 +59,7 @@ export async function POST(request: Request) {
       },
       select: safeSelect,
     });
+    await audit(session, 'created', 'team', created.id, `Yeni ekip üyesi: ${created.name} (${created.email}, rol: ${created.role})`);
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return handleApiError(error, 'Ekip üyesi oluşturulamadı');

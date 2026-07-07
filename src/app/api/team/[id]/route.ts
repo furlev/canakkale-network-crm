@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { parseBody, handleApiError, ApiError } from '@/lib/api';
 import { teamUpdate } from '@/lib/schemas';
 import { getSession } from '@/lib/auth';
+import { audit } from '@/lib/audit';
 
 const safeSelect = {
   id: true, email: true, name: true, role: true, department: true,
@@ -34,6 +35,8 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       },
       select: safeSelect,
     });
+    await audit(session, 'updated', 'team', updated.id,
+      `Ekip üyesi güncellendi: ${updated.name}${body.role ? ` (rol: ${body.role})` : ''}${body.password ? ' (şifre değişti)' : ''}`);
     return NextResponse.json(updated);
   } catch (error) {
     return handleApiError(error, 'Ekip üyesi güncellenemedi');
@@ -49,6 +52,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
     if (session.sub === params.id) throw new ApiError(400, 'Kendi hesabınızı silemezsiniz');
 
     await prisma.user.delete({ where: { id: params.id } });
+    await audit(session, 'deleted', 'team', params.id, 'Ekip üyesi silindi');
     return NextResponse.json({ success: true });
   } catch (error) {
     return handleApiError(error, 'Ekip üyesi silinemedi');

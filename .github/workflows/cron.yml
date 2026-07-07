@@ -7,10 +7,13 @@ name: CRM Cron
 on:
   schedule:
     - cron: '*/15 * * * *'
+    - cron: '0 3 * * *' # günlük temizlik (cleanup)
   workflow_dispatch: {}
 
 jobs:
   cron:
+    # 15 dakikalık zamanlayıcı ve elle tetikleme; günlük temizlik tetiklemesinde koşma
+    if: github.event_name != 'schedule' || github.event.schedule == '*/15 * * * *'
     runs-on: ubuntu-latest
     steps:
       - name: İhbar mailbox kontrolü
@@ -30,3 +33,14 @@ jobs:
           curl -fsS -X POST \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "${{ vars.CRM_URL }}/api/cron/campaign-expiry" || echo "campaign-expiry atlandı/başarısız"
+
+  cleanup:
+    # Günde bir (03:00 UTC): eski feed öğeleri + taslak görselleri + reddedilmiş taslak temizliği
+    if: github.event_name != 'schedule' || github.event.schedule == '0 3 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Eski veri temizliği
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/cleanup" || echo "cleanup atlandı/başarısız"

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { parseBody, handleApiError, getPagination, listResponse } from '@/lib/api';
+import { parseBody, handleApiError, getPagination, listResponse, requireLevel } from '@/lib/api';
 import { tipCreate } from '@/lib/schemas';
 import { notify, nextNumber } from '@/lib/notify';
 
@@ -8,6 +8,7 @@ const safeReporter = { select: { id: true, name: true, email: true, role: true, 
 
 export async function GET(request: Request) {
   try {
+    await requireLevel('C');
     const pagination = getPagination(request);
     const [items, total] = await Promise.all([
       prisma.tip.findMany({
@@ -25,6 +26,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await requireLevel('C');
     const body = await parseBody(request, tipCreate);
 
     const [last, count] = await Promise.all([

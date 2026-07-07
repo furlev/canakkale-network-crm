@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { parseBody, handleApiError } from '@/lib/api';
+import { parseBody, handleApiError, requireLevel } from '@/lib/api';
 import { advertiserUpdate } from '@/lib/schemas';
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
+    await requireLevel('B');
     const body = await parseBody(request, advertiserUpdate);
     const params = await context.params;
     const updated = await prisma.advertiser.update({
@@ -27,6 +28,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
+    await requireLevel('B');
     const params = await context.params;
     await prisma.advertiser.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });

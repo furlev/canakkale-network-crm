@@ -6,6 +6,7 @@ import { canAccessPath } from '@/lib/permissions';
 const PUBLIC_PREFIXES = [
   '/login',
   '/api/auth/login',
+  '/api/health', // yük dengeleyici / izleme ping'i
   '/api/webhooks/',
   '/api/cron/',
   '/api/ai/analyze-article', // WordPress eklentisi Bearer secret ile çağırır; rota kendini korur
@@ -16,6 +17,29 @@ const PUBLIC_PREFIXES = [
 function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some(p => pathname === p || pathname.startsWith(p));
 }
+
+/**
+ * Basit bellek-içi hız sınırlayıcı (instance başına). Oturumlu API isteklerini
+ * kötüye kullanıma karşı frenler; limitler normal kullanımı etkilemeyecek kadar cömert.
+ */
+const rateBuckets = new Map<string, { n: number; reset: number }>();
+
+function rateLimitOk(key: string, limit: number, windowMs: number): boolean {
+  const now = Date.now();
+  if (rateBuckets.size > 5000) {
+    for (const [k, b] of rateBuckets) if (b.reset < now) rateBuckets.delete(k);
+  }
+  const bucket = rateBuckets.get(key);
+  if (!bucket || bucket.reset < now) {
+    rateBuckets.set(key, { n: 1, reset: now + windowMs });
+    return true;
+  }
+  if (bucket.n >= limit) return false;
+  bucket.n++;
+  return true;
+}
+
+const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -37,6 +61,19 @@ export default async function proxy(request: NextRequest) {
     const loginUrl = new URL('/login', request.url);
     if (pathname !== '/') loginUrl.searchParams.set('from', pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // Oturumlu API istekleri için hız sınırı: yazma 120/dk, arama 30/dk (kullanıcı başına)
+  if (pathname.startsWith('/api/')) {
+    const tooMany =
+      (MUTATION_METHODS.has(request.method) && !rateLimitOk(`w:${session.sub}`, 120, 60_000)) ||
+      (pathname === '/api/search' && !rateLimitOk(`s:${session.sub}`, 30, 60_000));
+    if (tooMany) {
+      return NextResponse.json(
+        { error: 'Çok fazla istek — lütfen biraz bekleyip tekrar deneyin' },
+        { status: 429, headers: { 'Retry-After': '30' } }
+      );
+    }
   }
 
   // Rol bazlı sayfa erişimi (A/B/C). API rotaları kendi içinde yetki kontrolü yapar.

@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { handleApiError, requireLevel } from '@/lib/api';
 
 const MONTHS_TR = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
 
 export async function GET() {
   try {
+    await requireLevel('B'); // finansal rapor — yalnız A/B
     const now = new Date();
     const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
@@ -160,7 +162,6 @@ export async function GET() {
       },
     });
   } catch (error) {
-    console.error('[api] reports:', error);
-    return NextResponse.json({ error: 'Rapor verisi alınamadı' }, { status: 500 });
+    return handleApiError(error, 'Rapor verisi alınamadı');
   }
 }

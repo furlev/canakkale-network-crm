@@ -3,7 +3,7 @@
  * Plugin Name: Çanakkale Network CRM Connector
  * Plugin URI: https://canakkale.network
  * Description: canakkale.network haber sitesi için CRM entegrasyon eklentisi. CRM sisteminin WordPress REST API üzerinden haberlere, kategorilere ve kullanıcılara erişimini sağlar.
- * Version: 1.1.1
+ * Version: 1.2.0
  * Author: Çanakkale Network
  * Author URI: https://canakkale.network
  * License: GPL v2 or later
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CN_CRM_VERSION', '1.1.1');
+define('CN_CRM_VERSION', '1.2.0');
 define('CN_CRM_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 class CN_CRM_Connector {
@@ -115,6 +115,8 @@ class CN_CRM_Connector {
                 'status' => array('default' => 'publish', 'sanitize_callback' => 'sanitize_text_field'),
                 'orderby' => array('default' => 'date', 'sanitize_callback' => 'sanitize_text_field'),
                 'order' => array('default' => 'DESC', 'sanitize_callback' => 'sanitize_text_field'),
+                // Artımlı senkron: yalnızca bu ISO8601 tarihten sonra DEĞİŞEN yazılar (post_modified_gmt)
+                'modified_after' => array('sanitize_callback' => 'sanitize_text_field'),
             ),
         ));
         
@@ -221,7 +223,21 @@ class CN_CRM_Connector {
         if (!empty($request['search'])) {
             $args['s'] = $request['search'];
         }
-        
+
+        // Artımlı senkron: modified_after (ISO8601, UTC) → post_modified_gmt üzerinden filtre
+        if (!empty($request['modified_after'])) {
+            $ts = strtotime($request['modified_after']);
+            if ($ts !== false) {
+                $args['date_query'] = array(
+                    array(
+                        'column'    => 'post_modified_gmt',
+                        'after'     => gmdate('Y-m-d H:i:s', $ts),
+                        'inclusive' => true,
+                    ),
+                );
+            }
+        }
+
         $query = new WP_Query($args);
         $posts = array();
         

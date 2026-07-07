@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { getWpConfig, wpFetch } from '@/lib/wordpress';
-import { parseBody, handleApiError, ApiError } from '@/lib/api';
+import { parseBody, handleApiError, ApiError, requireLevel } from '@/lib/api';
 
 const convertSchema = z.object({
   tipId: z.string().min(1),
@@ -17,6 +17,7 @@ type ConvertResponse = {
 /** Send a tip to WordPress as a draft post and mark it converted. */
 export async function POST(request: Request) {
   try {
+    await requireLevel('B');
     const body = await parseBody(request, convertSchema);
 
     const tip = await prisma.tip.findUnique({ where: { id: body.tipId } });

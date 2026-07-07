@@ -12,7 +12,8 @@ type AiDraft = {
   seoTitle: string | null;
   metaDescription: string | null;
   socialPost: string | null;
-  imageUrl: string | null;         // data URI / URL ("temsili" görsel)
+  imageUrl?: string | null;        // yalnızca tekil PUT/publish yanıtlarında gelir (listede taşınmaz)
+  hasImage?: boolean;              // liste yanıtı: görsel var mı? (görsel /api/ai/drafts/:id/image'dan yüklenir)
   sources: string | null;          // JSON string dizi (linkler)
   confidence: number | null;       // 0-1
   status: string;                  // pending | approved | rejected | published
@@ -144,7 +145,9 @@ export default function AiNewsPage() {
     return data as AiDraft;
   };
 
-  const applyToList = (updated: AiDraft) => {
+  const applyToList = (raw: AiDraft) => {
+    // PUT/publish yanıtı imageUrl döndürür ama hasImage içermez → bayrağı normalize et
+    const updated: AiDraft = { ...raw, hasImage: raw.hasImage ?? !!raw.imageUrl, imageUrl: undefined };
     setDrafts(prev => {
       // Aktif sekmeyle uyuşmuyorsa listeden düşür, yoksa güncelle
       const stillHere = tab === 'all' || updated.status === tab;
@@ -259,10 +262,10 @@ export default function AiNewsPage() {
                 onClick={() => openDraft(d)}
                 style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-4)' }}
               >
-                {d.imageUrl && (
+                {d.hasImage && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={d.imageUrl}
+                    src={`/api/ai/drafts/${d.id}/image`}
                     alt=""
                     style={{ width: '100%', height: 140, objectFit: 'cover', borderRadius: 'var(--border-radius)' }}
                   />
@@ -318,10 +321,10 @@ export default function AiNewsPage() {
                 {selected.wpId && <span className="badge badge-success">WP #{selected.wpId}</span>}
               </div>
 
-              {selected.imageUrl && (
+              {selected.hasImage && (
                 <div style={{ marginBottom: 'var(--space-4)' }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={selected.imageUrl} alt="" style={{ width: '100%', maxHeight: 240, objectFit: 'cover', borderRadius: 'var(--border-radius)' }} />
+                  <img src={`/api/ai/drafts/${selected.id}/image`} alt="" style={{ width: '100%', maxHeight: 240, objectFit: 'cover', borderRadius: 'var(--border-radius)' }} />
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 4 }}>Temsili görsel (AI)</div>
                 </div>
               )}

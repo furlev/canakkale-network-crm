@@ -4,6 +4,7 @@ import { handleApiError, ApiError } from '@/lib/api';
 import { getSession } from '@/lib/auth';
 import { isLeaderOrAdmin } from '@/lib/permissions';
 import { getWpConfig, wpFetch } from '@/lib/wordpress';
+import { audit } from '@/lib/audit';
 
 type WpCategory = { id: number; name: string; slug: string };
 type WpCreatedPost = { id: number; thumbnail: string | null };
@@ -17,6 +18,54 @@ function parseTags(raw: string | null): string[] {
   } catch {
     return [];
   }
+}
+
+/** HTML özel karakterlerini kaçır (kaynak bloğu güvenliği). */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Taslağın kaynaklarından (JSON: string linkler ya da {title?, url?} nesneleri)
+ *  gövde sonuna eklenecek "Kaynaklar" HTML bloğunu üretir. Geçerli http(s) URL yoksa boş döner. */
+function buildSourcesHtml(raw: string | null): string {
+  if (!raw) return '';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return '';
+  }
+  if (!Array.isArray(parsed)) return '';
+
+  const items: { url: string; label: string }[] = [];
+  for (const entry of parsed) {
+    let url = '';
+    let title = '';
+    if (typeof entry === 'string') {
+      url = entry;
+    } else if (entry && typeof entry === 'object') {
+      const o = entry as { url?: unknown; title?: unknown };
+      if (typeof o.url === 'string') url = o.url;
+      if (typeof o.title === 'string') title = o.title;
+    }
+    if (!/^https?:\/\//i.test(url)) continue; // yalnızca geçerli http(s) linkler
+    let label = title.trim();
+    if (!label) {
+      try { label = new URL(url).hostname.replace(/^www\./, ''); } catch { label = url; }
+    }
+    items.push({ url, label });
+  }
+  if (items.length === 0) return '';
+
+  const lis = items
+    .map((s) => `<li><a href="${escapeHtml(s.url)}" rel="nofollow noopener" target="_blank">${escapeHtml(s.label)}</a></li>`)
+    .join('');
+  return `<hr /><p><strong>Kaynaklar:</strong></p><ul>${lis}</ul>`;
 }
 
 /** Taslağı WordPress'e yayınlar ve durumunu published yapar. */
@@ -52,11 +101,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       if (match) categories = [match.id];
     }
 
+    // Şeffaflık: gövde sonuna kaynak bloğu ekle (taslağın DB'deki gövdesi DEĞİŞMEZ)
+    const sourcesHtml = buildSourcesHtml(draft.sources);
+
     const created = await wpFetch<WpCreatedPost>(config, '/posts', {
       method: 'POST',
       body: JSON.stringify({
         title: draft.title || draft.topic,
-        content: draft.body || '',
+        content: (draft.body || '') + sourcesHtml,
         status: 'publish',
         excerpt: draft.metaDescription || undefined,
         tags: parseTags(draft.tags),
@@ -85,6 +137,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       },
     });
 
+    await audit(session, 'published', 'aiDraft', draft.id, `AI taslağı WordPress'e yayınlandı (WP #${created.id}): ${draft.title || draft.topic}`);
     return NextResponse.json({ ok: true, wpId: created.id, imageAttached: !!created.thumbnail, warnings, draft: updated });
   } catch (error) {
     return handleApiError(error, 'Taslak yayınlanamadı');

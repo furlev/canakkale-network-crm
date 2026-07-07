@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ZodTypeAny, z } from 'zod';
+import { getSession, type Session } from '@/lib/auth';
+import { hasLevel, type AccessLevel } from '@/lib/permissions';
 
 /** Error carrying an HTTP status, thrown by helpers and converted in handleApiError. */
 export class ApiError extends Error {
@@ -11,6 +13,17 @@ export class ApiError extends Error {
     this.status = status;
     this.issues = issues;
   }
+}
+
+/**
+ * Oturum + asgari seviye guard'ı (defense-in-depth: proxy'den bağımsız).
+ * Oturum yoksa 401, seviye yetmiyorsa 403 fırlatır; geçerse session'ı döndürür.
+ */
+export async function requireLevel(min: AccessLevel = 'C'): Promise<Session> {
+  const session = await getSession();
+  if (!session) throw new ApiError(401, 'Oturum gerekli');
+  if (!hasLevel(session, min)) throw new ApiError(403, 'Bu işlem için yetkiniz yok');
+  return session;
 }
 
 /** Parse + validate a JSON request body against a zod schema. Throws ApiError(400). */

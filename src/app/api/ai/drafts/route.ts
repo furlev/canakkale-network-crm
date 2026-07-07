@@ -17,11 +17,26 @@ export async function GET(request: Request) {
       : (STATUSES as readonly string[]).includes(status) ? { status }
       : { status: 'pending' };
 
-    const items = await prisma.aiDraft.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-    });
-    return NextResponse.json(items);
+    // imageUrl base64 data-URI olabilir (satır başına MB'lar) → listede TAŞIMA.
+    // Hafif alanları seç; görsel varlığını ayrı ucuz bir sorguyla hasImage bayrağına çevir.
+    const [items, withImage] = await Promise.all([
+      prisma.aiDraft.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, topic: true, title: true, body: true, category: true, tags: true,
+          seoTitle: true, metaDescription: true, socialPost: true, sources: true,
+          confidence: true, status: true, reviewerId: true, reviewerName: true,
+          wpId: true, createdAt: true, updatedAt: true,
+        },
+      }),
+      prisma.aiDraft.findMany({
+        where: { ...(where || {}), imageUrl: { not: null } },
+        select: { id: true },
+      }),
+    ]);
+    const imageIds = new Set(withImage.map((r) => r.id));
+    return NextResponse.json(items.map((i) => ({ ...i, hasImage: imageIds.has(i.id) })));
   } catch (error) {
     return handleApiError(error, 'Taslaklar alınamadı');
   }

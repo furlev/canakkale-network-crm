@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getWpConfig, wpFetch } from '@/lib/wordpress';
-import { handleApiError } from '@/lib/api';
+import { handleApiError, requireLevel } from '@/lib/api';
 
 type WpStats = {
   total_published: number;
@@ -11,6 +11,7 @@ type WpStats = {
 
 export async function POST() {
   try {
+    await requireLevel('B');
     const config = await getWpConfig();
     await wpFetch(config, '/ping');
 

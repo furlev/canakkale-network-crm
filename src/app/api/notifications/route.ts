@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { handleApiError } from '@/lib/api';
+import { handleApiError, requireLevel } from '@/lib/api';
 
 // GET /api/notifications?limit=20 -> { items, unread }
 export async function GET(request: Request) {
   try {
+    await requireLevel('C');
     const { searchParams } = new URL(request.url);
     const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '20', 10) || 20, 1), 100);
 

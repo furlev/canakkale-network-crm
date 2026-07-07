@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { parseBody, handleApiError, ApiError } from '@/lib/api';
+import { parseBody, handleApiError, ApiError, requireLevel } from '@/lib/api';
 import { warnCreate } from '@/lib/schemas';
 import { getSession } from '@/lib/auth';
 import { isLeaderOrAdmin } from '@/lib/permissions';
+import { audit } from '@/lib/audit';
 
 export async function GET(request: Request) {
   try {
+    await requireLevel('B'); // uyarı listesi yalnız lider/yönetici
     const url = new URL(request.url);
     const userId = url.searchParams.get('userId');
     const warns = await prisma.warn.findMany({
@@ -37,6 +39,7 @@ export async function POST(request: Request) {
       },
       include: { issuedBy: { select: { id: true, name: true } } },
     });
+    await audit(session, 'created', 'warn', created.id, `Uyarı verildi (${created.severity}): ${body.reason.slice(0, 120)}`);
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return handleApiError(error, 'Uyarı oluşturulamadı');
