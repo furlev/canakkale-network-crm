@@ -49,3 +49,4 @@ do-env-all.txt
 
 # Google Drive OAuth kimliği (scripts/prep-drive-oauth.mjs üretir — asla commit'leme)
 drive-credentials.json
+UsersuserDesktopfeed_test.xml
