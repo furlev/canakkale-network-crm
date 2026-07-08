@@ -166,22 +166,27 @@ function rowToEntry(r: {
 export async function getTodayPharmacies(
   ilce?: string | null,
 ): Promise<{ date: string | null; entries: PharmacyEntry[] }> {
-  const latest = await prisma.nobetciEczane.findFirst({
-    orderBy: { date: 'desc' },
-    select: { date: true },
-  });
-  if (!latest) return { date: null, entries: [] };
+  try {
+    const latest = await prisma.nobetciEczane.findFirst({
+      orderBy: { date: 'desc' },
+      select: { date: true },
+    });
+    if (!latest) return { date: null, entries: [] };
 
-  const rows = await prisma.nobetciEczane.findMany({
-    where: { date: latest.date },
-    orderBy: [{ district: 'asc' }, { name: 'asc' }],
-  });
+    const rows = await prisma.nobetciEczane.findMany({
+      where: { date: latest.date },
+      orderBy: [{ district: 'asc' }, { name: 'asc' }],
+    });
 
-  let entries = rows.map(rowToEntry);
-  const slug = ilce ? normalizeDistrict(ilce) : null;
-  if (slug) entries = entries.filter((e) => e.districtSlug === slug);
+    let entries = rows.map(rowToEntry);
+    const slug = ilce ? normalizeDistrict(ilce) : null;
+    if (slug) entries = entries.filter((e) => e.districtSlug === slug);
 
-  return { date: toDateStr(latest.date), entries };
+    return { date: toDateStr(latest.date), entries };
+  } catch {
+    // DB erişilemezse (ör. build fazında DATABASE_URL yok) boş dön — sayfa boş durumla render olur.
+    return { date: null, entries: [] };
+  }
 }
 
 // ─────────────────────────────────────────────────────────────

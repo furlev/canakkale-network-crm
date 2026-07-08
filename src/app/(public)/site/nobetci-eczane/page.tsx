@@ -4,7 +4,7 @@ import PharmacyCard from '@/components/site/panel/PharmacyCard';
 import RevealInit from '@/components/site/pages/RevealInit';
 import '@/app/(public)/pages.css';
 
-export const revalidate = 1800; // 30 dk
+export const dynamic = 'force-dynamic'; // build'de prerender etme (DATABASE_URL yalnız runtime'da)
 
 const SITE_URL = 'https://canakkale.network';
 

@@ -4,7 +4,7 @@ import MarketTicker from '@/components/site/panel/MarketTicker';
 import RevealInit from '@/components/site/pages/RevealInit';
 import '@/app/(public)/pages.css';
 
-export const revalidate = 600; // 10 dk
+export const dynamic = 'force-dynamic'; // build'de prerender etme (DATABASE_URL yalnız runtime'da)
 
 const SITE_URL = 'https://canakkale.network';
 
