@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySession, SESSION_COOKIE } from '@/lib/auth';
 import { canAccessPath } from '@/lib/permissions';
+import { clientIp } from '@/lib/net';
 
 /** Paths reachable without a session. Webhook/cron routes authenticate themselves via secrets. */
 const PUBLIC_PREFIXES = [
@@ -70,24 +71,23 @@ function tooManyResponse() {
   );
 }
 
-function clientIp(request: NextRequest): string {
-  return (
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    request.headers.get('x-real-ip') ||
-    'unknown'
-  );
-}
-
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = (request.headers.get('host') || '').toLowerCase();
 
   // ── Public site API'leri (tüm host'larda): IP bazlı hız sınırı, oturum gerekmez ──
   if (pathname.startsWith('/api/site/')) {
-    const ip = clientIp(request);
-    const limitOk = MUTATION_METHODS.has(request.method)
-      ? rateLimitOk(`pw:${ip}`, 30, 60_000) // yazma: görüntülenme/abone/başvuru
-      : rateLimitOk(`pr:${ip}`, 240, 60_000); // okuma
+    const ip = clientIp(request.headers);
+    let limitOk: boolean;
+    if (pathname === '/api/site/view') {
+      // Görüntülenme beacon'u düşük-riskli ve sık; paylaşımlı IP (CGNAT/kurumsal
+      // NAT) arkasındaki gerçek okuyucuları 429'lamamak için ayrı, cömert kova.
+      limitOk = rateLimitOk(`pv:${ip}`, 300, 60_000);
+    } else if (MUTATION_METHODS.has(request.method)) {
+      limitOk = rateLimitOk(`pw:${ip}`, 30, 60_000); // abone/başvuru yazma
+    } else {
+      limitOk = rateLimitOk(`pr:${ip}`, 240, 60_000); // okuma
+    }
     if (!limitOk) return tooManyResponse();
     return NextResponse.next();
   }

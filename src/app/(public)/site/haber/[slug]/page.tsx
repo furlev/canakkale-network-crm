@@ -62,8 +62,9 @@ export async function generateMetadata(context: { params: Promise<{ slug: string
   const title = article.seoTitle || article.title;
   const description = article.metaDescription || article.summary || stripHtml(article.body, 160);
   const canonical = `${SITE_URL}/haber/${article.slug}`;
-  // data URI'ler OG görseli olamaz — yalnızca gerçek URL'ler
-  const ogImage = article.imageUrl && /^https?:\/\//i.test(article.imageUrl) ? article.imageUrl : undefined;
+  // Görsel varsa (gerçek URL veya AI data-URI) mutlak endpoint URL'i ver;
+  // /img/[id] gerçek URL'e 308, data-URI'yi decode edip servis eder.
+  const ogImage = article.imageUrl ? `${SITE_URL}/img/${article.id}` : undefined;
 
   return {
     title,
@@ -109,16 +110,31 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
       slug: { not: article.slug },
       ...(article.categorySlug ? { categorySlug: article.categorySlug } : {}),
     },
-    orderBy: { publishedAt: 'desc' },
+    // publishedAt=null satırlar tepeye yapışmasın
+    orderBy: { publishedAt: { sort: 'desc', nulls: 'last' } },
     take: 4,
-    include: { category: { select: { name: true } } },
+    // body ve imageUrl (data-URI olabilir) ASLA seçilmez — satırlar hafif kalır
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      summary: true,
+      imageAlt: true,
+      imageIsAi: true,
+      categorySlug: true,
+      isBreaking: true,
+      publishedAt: true,
+      views: true,
+      authorName: true,
+      category: { select: { name: true } },
+    },
   });
 
   const relatedCards: ArticleCardData[] = related.map(r => ({
+    id: r.id,
     slug: r.slug,
     title: r.title,
     summary: r.summary,
-    imageUrl: r.imageUrl,
     imageAlt: r.imageAlt,
     imageIsAi: r.imageIsAi,
     categorySlug: r.categorySlug,
@@ -140,7 +156,8 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
     mainEntityOfPage: canonical,
     author: { '@type': 'Person', name: article.authorName },
     publisher: { '@type': 'NewsMediaOrganization', name: 'Çanakkale Network', url: SITE_URL },
-    ...(article.imageUrl && /^https?:\/\//i.test(article.imageUrl) ? { image: [article.imageUrl] } : {}),
+    // Görsel varsa (gerçek URL veya AI data-URI) /img/[id] endpoint'i üzerinden ver
+    ...(article.imageUrl ? { image: [`${SITE_URL}/img/${article.id}`] } : {}),
   };
 
   return (
@@ -157,9 +174,15 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
       <header className={`p-hero ${article.imageUrl ? '' : 'p-hero-noimg'}`}>
         {article.imageUrl && (
           <div className="p-hero-media">
-            {/* data URI ve dış görseller için düz img */}
+            {/* Görsel /img/[id] endpoint'inden gelir — data-URI HTML'e gömülmez.
+                Bu, sayfanın LCP öğesi: yüksek öncelikle çekilir. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={article.imageUrl} alt={article.imageAlt || article.title} />
+            <img
+              src={`/img/${article.id}`}
+              alt={article.imageAlt || article.title}
+              fetchPriority="high"
+              decoding="async"
+            />
           </div>
         )}
         {article.imageUrl && article.imageIsAi && (

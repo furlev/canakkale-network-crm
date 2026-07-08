@@ -18,14 +18,19 @@ export type MostReadItem = {
 export default function MostRead({ items }: { items: MostReadItem[] }) {
   const ref = useRef<HTMLElement>(null);
   const started = useInViewOnce(ref); // IO + güvenlik ağı (rect süpürmesi)
-  const [counts, setCounts] = useState<number[]>(() => items.map(() => 0));
+  // Başlangıç GERÇEK değer: SSR ve ilk client render doğru görüntülenme sayısını basar
+  // (hydration uyumlu). JS yoksa/CDN düşerse "0" değil gerçek sayı kalır.
+  const [counts, setCounts] = useState<number[]>(() => items.map(i => i.views));
 
   useEffect(() => {
     if (!started) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      // Motion kapalı: gerçek değerde bırak (zaten öyle), animasyon yok.
       setCounts(items.map(i => i.views));
       return;
     }
+    // Motion açık: görünür olunca önce 0'a çek, sonra yukarı say.
+    setCounts(items.map(() => 0));
     const DURATION = 1500;
     const t0 = performance.now();
     let raf = 0;

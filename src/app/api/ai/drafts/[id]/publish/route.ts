@@ -132,44 +132,60 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!draft.body || !draft.body.trim()) {
       throw new ApiError(400, 'Taslak gövdesi boş — yayınlanamaz');
     }
+    // TS daralması transaction closure'ına taşınmadığı için gövdeyi burada sabitle.
+    const draftBody: string = draft.body;
 
     // ─── Varsayılan yol: SİTE (canakkale.network) ───
     if (target === 'site') {
       const slug = await uniqueSiteSlug(draft.title || draft.topic);
       const categorySlug = await matchSiteCategory(draft.category);
 
-      const article = await prisma.siteArticle.create({
-        data: {
-          slug,
-          title: draft.title || draft.topic,
-          summary: draft.metaDescription || stripHtml(draft.body, 180),
-          body: draft.body,
-          categorySlug,
-          tags: draft.tags,
-          imageUrl: draft.imageUrl,
-          imageAlt: draft.title ? `${draft.title} (temsili görsel)` : null,
-          imageIsAi: !!draft.imageUrl && draft.imageUrl.startsWith('data:'),
-          authorName: session?.name || 'Çanakkale Network',
-          authorId: session?.sub ?? null,
-          status: 'published',
-          newsType: draft.newsType,
-          isBreaking: draft.newsType === 'breaking',
-          publishedAt: new Date(),
-          seoTitle: draft.seoTitle,
-          metaDescription: draft.metaDescription,
-          sourceDraftId: draft.id,
-          sourceLinks: draft.sources,
-        },
-      });
+      // Atomik claim + oluşturma tek transaction'da: çift tıklama / iki sekme
+      // yarışında yalnızca bir istek taslağı 'published'a çevirebilir; diğeri
+      // updateMany count===0 ile 409 alır → tek bir SiteArticle oluşur.
+      const { article, updated } = await prisma.$transaction(async (tx) => {
+        const claim = await tx.aiDraft.updateMany({
+          where: { id: draft.id, status: { not: 'published' } },
+          data: {
+            status: 'published',
+            reviewerId: session?.sub ?? null,
+            reviewerName: session?.name ?? null,
+          },
+        });
+        if (claim.count === 0) {
+          throw new ApiError(409, 'Bu taslak zaten yayınlanmış');
+        }
 
-      const updated = await prisma.aiDraft.update({
-        where: { id: draft.id },
-        data: {
-          status: 'published',
-          articleId: article.id,
-          reviewerId: session?.sub ?? null,
-          reviewerName: session?.name ?? null,
-        },
+        const created = await tx.siteArticle.create({
+          data: {
+            slug,
+            title: draft.title || draft.topic,
+            summary: draft.metaDescription || stripHtml(draftBody, 180),
+            body: draftBody,
+            categorySlug,
+            tags: draft.tags,
+            imageUrl: draft.imageUrl,
+            imageAlt: draft.title ? `${draft.title} (temsili görsel)` : null,
+            imageIsAi: !!draft.imageUrl && draft.imageUrl.startsWith('data:'),
+            authorName: session?.name || 'Çanakkale Network',
+            authorId: session?.sub ?? null,
+            status: 'published',
+            newsType: draft.newsType,
+            isBreaking: draft.newsType === 'breaking',
+            publishedAt: new Date(),
+            seoTitle: draft.seoTitle,
+            metaDescription: draft.metaDescription,
+            sourceDraftId: draft.id,
+            sourceLinks: draft.sources,
+          },
+        });
+
+        const updatedDraft = await tx.aiDraft.update({
+          where: { id: draft.id },
+          data: { articleId: created.id },
+        });
+
+        return { article: created, updated: updatedDraft };
       });
 
       const siteUrl = `https://canakkale.network/haber/${article.slug}`;

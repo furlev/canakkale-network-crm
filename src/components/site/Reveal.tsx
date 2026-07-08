@@ -11,6 +11,10 @@ import { useEffect } from 'react';
  */
 export default function Reveal() {
   useEffect(() => {
+    // JS çalışıyor işareti: CSS reveal gating'i (html:not(.js-ready)) devreye alır.
+    // Script hiç yüklenmezse bu asla eklenmez ve içerik görünür kalır.
+    document.documentElement.classList.add('js-ready');
+
     const revealIfInView = (el: HTMLElement) => {
       const r = el.getBoundingClientRect();
       if (r.top < window.innerHeight * 0.96 && r.bottom > -40) {
@@ -18,12 +22,6 @@ export default function Reveal() {
         return true;
       }
       return false;
-    };
-
-    const sweep = () => {
-      document
-        .querySelectorAll<HTMLElement>('.s-reveal:not(.is-visible)')
-        .forEach(revealIfInView);
     };
 
     let io: IntersectionObserver | null = null;
@@ -41,28 +39,65 @@ export default function Reveal() {
       );
     }
 
-    const observeNew = () => {
-      document
-        .querySelectorAll<HTMLElement>('.s-reveal:not(.is-visible)')
-        .forEach(el => io?.observe(el)); // aynı öğeyi tekrar observe etmek zararsızdır
+    // Tek öğe: zaten görünürse anında aç, değilse gözle.
+    const process = (el: HTMLElement) => {
+      if (el.classList.contains('is-visible')) return;
+      if (!revealIfInView(el) && io) io.observe(el);
     };
 
-    // İlk geçiş: görünürdekileri anında aç, kalanını gözle
-    sweep();
-    observeNew();
+    // İlk geçiş: mevcut tüm .s-reveal öğelerini işle.
+    document
+      .querySelectorAll<HTMLElement>('.s-reveal:not(.is-visible)')
+      .forEach(process);
 
-    // Güvenlik ağı: scroll + periyodik süpürme (IO çalışıyorsa neredeyse hep boş geçer)
+    // Güvenlik ağı 1 — scroll: IO hiç tetiklenmese bile (arka plan sekmesi,
+    // kare üretmeyen renderer) kaydırmada görünürleri yakala.
     let scrollTick = false;
+    const sweepVisible = () => {
+      document
+        .querySelectorAll<HTMLElement>('.s-reveal:not(.is-visible)')
+        .forEach(revealIfInView);
+    };
     const onScroll = () => {
       if (scrollTick) return;
       scrollTick = true;
-      setTimeout(() => { scrollTick = false; sweep(); }, 120);
+      requestAnimationFrame(() => { scrollTick = false; sweepVisible(); });
     };
     window.addEventListener('scroll', onScroll, { passive: true });
-    const timer = window.setInterval(sweep, 1200);
 
-    // Client tarafında sonradan eklenen .s-reveal öğeleri için hafif bir gözcü
-    const mo = new MutationObserver(() => { sweep(); observeNew(); });
+    // Güvenlik ağı 2 — seyrek süpürme: 1200ms yerine 2500ms, ve her şey
+    // görünür olunca kendini durdurur (kalıcı sık çalışma yok).
+    const timer = window.setInterval(() => {
+      const remaining = document.querySelectorAll<HTMLElement>('.s-reveal:not(.is-visible)');
+      if (remaining.length === 0) { window.clearInterval(timer); return; }
+      remaining.forEach(revealIfInView);
+    }, 2500);
+
+    // Sonradan eklenen .s-reveal öğeleri: TÜM belgeyi süpürmek yerine yalnızca
+    // eklenen node'ları tara ve rAF ile toplu işle (her mutasyonda çalışma yok).
+    let moScheduled = false;
+    const pending = new Set<HTMLElement>();
+    const flush = () => {
+      moScheduled = false;
+      const batch = Array.from(pending);
+      pending.clear();
+      batch.forEach(process);
+    };
+    const mo = new MutationObserver(records => {
+      for (const rec of records) {
+        rec.addedNodes.forEach(node => {
+          if (!(node instanceof HTMLElement)) return;
+          if (node.classList.contains('s-reveal')) pending.add(node);
+          node
+            .querySelectorAll<HTMLElement>('.s-reveal:not(.is-visible)')
+            .forEach(el => pending.add(el));
+        });
+      }
+      if (pending.size > 0 && !moScheduled) {
+        moScheduled = true;
+        requestAnimationFrame(flush);
+      }
+    });
     mo.observe(document.body, { childList: true, subtree: true });
 
     return () => {

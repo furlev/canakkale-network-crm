@@ -3,20 +3,28 @@ import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { parseBody, handleApiError, ApiError } from '@/lib/api';
 import { getJoinForm } from '@/lib/site';
+import { clientIp } from '@/lib/net';
 
 /**
  * "Ekibimize Katıl" başvurusu (halka açık; proxy'de public + IP rate-limitli).
  * Ek savunmalar:
  *  - honeypot ("website") doluysa sahte başarı döndürülür (botu bilgilendirmeyiz)
  *  - aynı IP'den saatte en fazla 5 başvuru (module-level Map)
- *  - form şemasındaki zorunlu alanlar sunucuda da doğrulanır
+ *  - gövde boyutu + `data` anahtar sayısı sınırlı (bellek DoS'a karşı)
+ *  - form şemasındaki zorunlu alanlar + select değerleri sunucuda doğrulanır
  */
+
+const MAX_BODY_BYTES = 64 * 1024; // 64KB — başvuru formu için fazlasıyla yeterli
+const MAX_DATA_KEYS = 40;
 
 const joinSchema = z.object({
   name: z.string().trim().min(2, 'Ad Soyad en az 2 karakter olmalı').max(120),
   email: z.string().trim().toLowerCase().email('Geçerli bir e-posta adresi gir'),
   phone: z.string().trim().max(32).optional(),
-  data: z.record(z.string(), z.union([z.string().max(4000), z.boolean()])).optional(),
+  data: z
+    .record(z.string().max(64), z.union([z.string().max(4000), z.boolean()]))
+    .refine(d => Object.keys(d).length <= MAX_DATA_KEYS, `En fazla ${MAX_DATA_KEYS} alan gönderilebilir`)
+    .optional(),
   website: z.string().max(200).optional(), // honeypot
 });
 
@@ -43,13 +51,14 @@ function allowIp(ip: string): boolean {
   return true;
 }
 
-function clientIp(request: Request): string {
-  const fwd = request.headers.get('x-forwarded-for');
-  return fwd?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || 'unknown';
-}
-
 export async function POST(request: Request) {
   try {
+    // Gövde boyutu üst sınırı (bellek/CPU DoS'a karşı) — parse'tan önce.
+    const contentLength = Number(request.headers.get('content-length') || '0');
+    if (contentLength > MAX_BODY_BYTES) {
+      throw new ApiError(413, 'Gönderilen veri çok büyük.');
+    }
+
     const body = await parseBody(request, joinSchema);
 
     // Honeypot dolu → bot. Sahte başarı döndür, kayıt açma.
@@ -57,7 +66,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, message: 'Başvurun alındı.' });
     }
 
-    const ip = clientIp(request);
+    const ip = clientIp(request.headers);
     if (!allowIp(ip)) {
       throw new ApiError(429, 'Çok fazla başvuru denemesi yapıldı. Lütfen daha sonra tekrar dene.');
     }
@@ -67,19 +76,33 @@ export async function POST(request: Request) {
       throw new ApiError(403, 'Başvurular şu an kapalı.');
     }
 
-    // Şemadaki zorunlu alanları sunucuda da doğrula
+    // Form şemasına göre sunucu tarafı doğrulama + allowlist temizliği.
     const data = body.data || {};
+    const cleanData: Record<string, string | boolean> = {};
     for (const field of form.fields) {
-      if (!field.required) continue;
-      if (field.id === 'name' || field.id === 'email') continue; // zod hallediyor
-      if (field.id === 'phone') {
-        if (!body.phone) throw new ApiError(400, `"${field.label}" alanı zorunlu.`);
+      if (field.id === 'name' || field.id === 'email' || field.id === 'phone') {
+        // name/email zod'da, phone aşağıda; bunlar `data` içine yazılmaz
+        if (field.id === 'phone' && field.required && !body.phone) {
+          throw new ApiError(400, `"${field.label}" alanı zorunlu.`);
+        }
         continue;
       }
       const value = data[field.id];
-      const filled =
-        field.type === 'checkbox' ? value === true : typeof value === 'string' && value.trim() !== '';
-      if (!filled) throw new ApiError(400, `"${field.label}" alanı zorunlu.`);
+      const isString = typeof value === 'string';
+      const filled = field.type === 'checkbox' ? value === true : isString && value.trim() !== '';
+
+      if (field.required && !filled) {
+        throw new ApiError(400, `"${field.label}" alanı zorunlu.`);
+      }
+      // Select değeri yalnızca formdaki seçeneklerden olabilir (veri bütünlüğü).
+      if (field.type === 'select' && isString && value.trim() !== '') {
+        const options = Array.isArray(field.options) ? field.options : [];
+        if (!options.includes(value)) {
+          throw new ApiError(400, `"${field.label}" için geçersiz seçim.`);
+        }
+      }
+      // Yalnızca bilinen alan id'lerini sakla (kütle-atama/DoS anahtarlarını düşür).
+      if (value !== undefined) cleanData[field.id] = value;
     }
 
     await prisma.joinApplication.create({
@@ -87,7 +110,7 @@ export async function POST(request: Request) {
         name: body.name,
         email: body.email,
         phone: body.phone || null,
-        data: JSON.stringify(data),
+        data: JSON.stringify(cleanData),
         status: 'new',
       },
     });

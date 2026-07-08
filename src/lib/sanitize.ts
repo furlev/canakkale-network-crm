@@ -1,50 +1,61 @@
 /**
- * Küçük, bağımlılıksız HTML temizleyici (haber gövdesi + statik sayfalar için).
- * script/style/object/embed etiketlerini, YouTube dışı iframe'leri,
- * on* olay attribute'larını ve javascript: URL'lerini söker.
- * Not: Tam bir DOM sanitizer değildir — içerik zaten CRM'deki yetkili
- * editörlerden gelir; bu katman savunma derinliği içindir.
+ * HTML temizleyici (haber gövdesi + statik sayfalar için).
+ *
+ * Gerçek bir HTML ayrıştırıcısı (sanitize-html / htmlparser2) üzerine kurulu
+ * allowlist tabanlı temizlik. Regex tabanlı eski sürüm `<img src=x/onerror=...>`
+ * gibi ayırıcı-varyantlarıyla atlatılabildiği için kaldırıldı: HTML ayrıştırıcısı
+ * `/` ve boşluğu attribute sınırı sayar, regex saymazdı → tıklamasız stored XSS.
+ *
+ * Bu katman savunma derinliğidir: içerik yetkili editörlerden ya da AI boru
+ * hattından gelse de public'e basılmadan önce mutlaka buradan geçer.
  */
+import sanitizeHtmlLib from 'sanitize-html';
 
-const YOUTUBE_SRC = /^https?:\/\/(www\.)?(youtube(-nocookie)?\.com|youtu\.be)\//i;
+const YT_HOSTS = [
+  'youtube.com',
+  'www.youtube.com',
+  'youtube-nocookie.com',
+  'www.youtube-nocookie.com',
+  'youtu.be',
+];
 
-export function sanitizeHtml(html: string): string {
+const OPTIONS: sanitizeHtmlLib.IOptions = {
+  allowedTags: [
+    'p', 'br', 'hr', 'span', 'div',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'blockquote', 'pre', 'code',
+    'ul', 'ol', 'li',
+    'strong', 'b', 'em', 'i', 'u', 's', 'sub', 'sup', 'mark', 'small',
+    'a', 'img', 'figure', 'figcaption',
+    'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption',
+    'iframe',
+  ],
+  allowedAttributes: {
+    a: ['href', 'name', 'target', 'rel', 'title'],
+    img: ['src', 'alt', 'title', 'width', 'height', 'loading'],
+    iframe: ['src', 'width', 'height', 'title', 'allow', 'allowfullscreen', 'loading', 'frameborder'],
+    '*': ['class'],
+  },
+  // javascript:, data:, vbscript: vs. hepsi engellenir; yalnızca güvenli şemalar.
+  allowedSchemes: ['http', 'https', 'mailto', 'tel'],
+  allowedSchemesByTag: { img: ['http', 'https'] },
+  // `//evil.com` protokol-göreli URL'leri reddet (open-redirect/şema atlatma).
+  allowProtocolRelative: false,
+  // iframe yalnızca YouTube barındırıcılarından; diğer tüm iframe'ler düşer.
+  allowedIframeHostnames: YT_HOSTS,
+  allowIframeRelativeUrls: false,
+  // <script>/<style> içerikleriyle birlikte atılır (yalnız etiket değil).
+  nonTextTags: ['script', 'style', 'textarea', 'option', 'noscript'],
+  disallowedTagsMode: 'discard',
+  transformTags: {
+    // Dış bağlantıları yeni sekmede + reverse-tabnabbing koruması ile aç.
+    a: sanitizeHtmlLib.simpleTransform('a', { rel: 'noopener noreferrer' }, true),
+  },
+};
+
+export function sanitizeHtml(html: string | null | undefined): string {
   if (!html) return '';
-  let out = html;
-
-  // script/style blokları (içerikleriyle birlikte)
-  out = out
-    .replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')
-    .replace(/<script\b[^>]*\/?>/gi, '')
-    .replace(/<style\b[\s\S]*?<\/style\s*>/gi, '');
-
-  // tehlikeli gömme/etiketler
-  out = out
-    .replace(/<(object|embed|base|meta|link|form)\b[^>]*>/gi, '')
-    .replace(/<\/(object|form)\s*>/gi, '');
-
-  // iframe: yalnızca YouTube kaynaklılar kalır
-  out = out.replace(
-    /<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>|<iframe\b[^>]*\/?>/gi,
-    match => {
-      const src = match.match(/src\s*=\s*["']([^"']+)["']/i)?.[1] || '';
-      return YOUTUBE_SRC.test(src) ? match : '';
-    }
-  );
-
-  // on* olay attribute'ları (çift/tek tırnaklı ve tırnaksız)
-  out = out
-    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
-    .replace(/\son\w+\s*=\s*[^\s>]+/gi, '');
-
-  // javascript: / data:text URL'leri
-  out = out.replace(
-    /\s(href|src)\s*=\s*["']\s*(javascript|data:text)[^"']*["']/gi,
-    ''
-  );
-
-  return out;
+  return sanitizeHtmlLib(html, OPTIONS);
 }
 
 /**

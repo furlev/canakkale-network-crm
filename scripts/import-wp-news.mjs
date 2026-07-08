@@ -57,18 +57,15 @@ const PAGE_ALLOWLIST = new Set([
 
 // ── Metin yardımcıları (src/lib/site.ts stripHtml kopyası + entity decode) ──
 
-/** HTML gövdeden düz metin özet çıkarır (site.ts stripHtml ile aynı mantık). */
+/** HTML gövdeden düz metin özet çıkarır. Etiketleri söker, ardından entity'leri
+ *  (isimli + sayısal) SİLMEK yerine ÇÖZER — aksi halde Türkçe kesme/tire gibi
+ *  sayısal-entity karakterleri özetten kaybolurdu. */
 function stripHtml(html, maxLen = 200) {
-  const text = (html || '')
+  const stripped = (html || '')
     .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#\d+;/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/<[^>]+>/g, ' ');
+  const text = decodeEntities(stripped).replace(/\s+/g, ' ').trim();
   return text.length > maxLen ? text.slice(0, maxLen).replace(/\s\S*$/, '') + '…' : text;
 }
 
@@ -118,6 +115,7 @@ const report = {
   extraCategoriesCreated: [],
   articles: 0,
   articlesWithImage: 0,
+  skippedExisting: 0,
   pages: 0,
   pagesSkipped: [],
   kunyeCreated: false,
@@ -235,30 +233,36 @@ async function importOnePost(post) {
     return;
   }
 
-  // Slug çakışması: aynı slug'lı ama farklı kaynaklı makale varsa wpId son eki ekle
-  const bySlug = await prisma.siteArticle.findUnique({ where: { slug }, select: { wpId: true } });
-  if (bySlug && bySlug.wpId !== wpId) slug = `${slug}-${wpId}`;
+  // İDEMPOTENT + GÜVENLİ: bu wpId zaten göç edilmişse DOKUNMA. Aksi halde script'in
+  // yeniden çalıştırılması editörün CRM'de yaptığı düzenlemeleri ezer, soft-delete/arşiv
+  // durumunu sıfırlar (silinen haber çöpten geri gelir) ve içerik WP'deki haline döner.
+  // Re-run yalnızca YENİ WP haberlerini içeri alır.
+  const existing = await prisma.siteArticle.findUnique({ where: { wpId }, select: { id: true } });
+  if (existing) {
+    report.skippedExisting = (report.skippedExisting || 0) + 1;
+    return;
+  }
 
-  const data = {
-    slug,
-    title,
-    summary,
-    body,
-    categorySlug,
-    imageUrl,
-    imageAlt,
-    authorName,
-    status: 'published',
-    newsType: 'manual',
-    isEditorPick,
-    publishedAt,
-    wpId,
-    deletedAt: null,
-  };
-  await prisma.siteArticle.upsert({
-    where: { wpId },
-    update: data,
-    create: data,
+  // Slug çakışması: aynı slug'lı başka bir makale varsa wpId son eki ekle
+  const bySlug = await prisma.siteArticle.findUnique({ where: { slug }, select: { id: true } });
+  if (bySlug) slug = `${slug}-${wpId}`;
+
+  await prisma.siteArticle.create({
+    data: {
+      slug,
+      title,
+      summary,
+      body,
+      categorySlug,
+      imageUrl,
+      imageAlt,
+      authorName,
+      status: 'published',
+      newsType: 'manual',
+      isEditorPick,
+      publishedAt,
+      wpId,
+    },
   });
   report.articles++;
 }
@@ -402,7 +406,8 @@ async function main() {
   console.log('\n══════════ ÖZET ══════════');
   console.log(`  Kategoriler   : ${report.categoriesUpserted} varsayılan upsert` +
     (report.extraCategoriesCreated.length > 0 ? ` + WP'den ${report.extraCategoriesCreated.length} ek (nav dışı): ${report.extraCategoriesCreated.join(', ')}` : ''));
-  console.log(`  Haberler      : ${report.articles} (${report.articlesWithImage} kapak görselli)`);
+  console.log(`  Haberler      : ${report.articles} yeni (${report.articlesWithImage} kapak görselli)` +
+    (report.skippedExisting > 0 ? `, ${report.skippedExisting} mevcut atlandı (korundu)` : ''));
   console.log(`  Sayfalar      : ${report.pages} aktarıldı, ${report.pagesSkipped.length} atlandı`);
   console.log(`  Künye         : ${report.kunyeCreated ? 'oluşturuldu' : 'mevcut/atlandı'}`);
   console.log(`  Manşet        : ${report.featuredSet ? `"${report.featuredSet.slice(0, 60)}"` : 'değişmedi'}`);

@@ -18,14 +18,19 @@ export type StatItem = {
 export default function StatsBand({ stats }: { stats: StatItem[] }) {
   const ref = useRef<HTMLDivElement>(null);
   const started = useInViewOnce(ref); // IO + güvenlik ağı (rect süpürmesi)
-  const [values, setValues] = useState<number[]>(() => stats.map(() => 0));
+  // Başlangıç GERÇEK değer: SSR ve ilk client render doğru sayıyı basar (hydration
+  // uyumlu). JS yoksa/CDN düşerse "0" değil gerçek sayı kalır. Animasyon started'da başlar.
+  const [values, setValues] = useState<number[]>(() => stats.map(s => s.value));
 
   useEffect(() => {
     if (!started) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      // Motion kapalı: gerçek değerde bırak (zaten öyle), animasyon yok.
       setValues(stats.map(s => s.value));
       return;
     }
+    // Motion açık: görünür olunca önce 0'a çek, sonra yukarı say.
+    setValues(stats.map(() => 0));
     const DURATION = 1600;
     const t0 = performance.now();
     let raf = 0;

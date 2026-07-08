@@ -7,8 +7,19 @@ import prisma from '@/lib/prisma';
 
 const SITE_URL = 'https://canakkale.network';
 
+/**
+ * XML 1.0'da yasak kontrol/geçersiz karakterleri süzer.
+ * Geçerli: U+0009, U+000A, U+000D, U+0020–U+D7FF, U+E000–U+FFFD, U+10000–U+10FFFF.
+ * Bunların dışındaki kontrol karakterleri (U+0000–U+0008, U+000B, U+000C,
+ * U+000E–U+001F) ve U+FFFE/U+FFFF tüm belgeyi parse edilemez yapar; silinir.
+ * loc URL'lerinde slug'dan gelebilecek bozuk karakterler de böyle temizlenir.
+ */
+function stripInvalidXml(s: string): string {
+  return s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '');
+}
+
 function esc(s: string): string {
-  return s
+  return stripInvalidXml(s)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -37,7 +48,7 @@ export async function GET() {
       prisma.siteArticle.findMany({
         where: { status: 'published', deletedAt: null },
         select: { slug: true, updatedAt: true },
-        orderBy: { publishedAt: 'desc' },
+        orderBy: { publishedAt: { sort: 'desc', nulls: 'last' } },
         take: 5000,
       }),
       prisma.siteCategory.findMany({ select: { slug: true }, orderBy: { order: 'asc' } }),

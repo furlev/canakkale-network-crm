@@ -5,20 +5,24 @@ import { parseBody, handleApiError, requireLevel } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { getSiteSettings } from '@/lib/site';
 
+// Boş bırakılabilen ama doluysa geçerli olması gereken e-posta / URL.
+const emailOpt = z.string().trim().email('Geçerli bir e-posta gir').or(z.literal(''));
+const urlOpt = z.string().trim().url('Geçerli bir URL gir').or(z.literal('')).optional();
+
 const siteSettingsSchema = z.object({
   title: z.string().min(1),
   slogan: z.string(),
   description: z.string(),
-  contactEmail: z.string(),
-  webmasterEmail: z.string(),
-  tekzipEmail: z.string(),
+  contactEmail: emailOpt,
+  webmasterEmail: emailOpt,
+  tekzipEmail: emailOpt,
   address: z.string(),
   social: z.object({
-    facebook: z.string().optional(),
-    x: z.string().optional(),
-    instagram: z.string().optional(),
-    youtube: z.string().optional(),
-    tiktok: z.string().optional(),
+    facebook: urlOpt,
+    x: urlOpt,
+    instagram: urlOpt,
+    youtube: urlOpt,
+    tiktok: urlOpt,
   }),
   tickerEnabled: z.boolean(),
   adsNotice: z.string(),

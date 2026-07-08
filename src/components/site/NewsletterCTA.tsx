@@ -81,8 +81,8 @@ export default function NewsletterCTA({ adsNotice }: { adsNotice?: string }) {
             </form>
             <p
               className={`newsletter-status${status === 'ok' ? ' is-ok' : ''}${status === 'error' ? ' is-error' : ''}`}
-              role="status"
-              aria-live="polite"
+              role={status === 'error' ? 'alert' : 'status'}
+              aria-live={status === 'error' ? 'assertive' : 'polite'}
             >
               {message}
             </p>

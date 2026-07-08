@@ -602,6 +602,7 @@ model SiteArticle {
 
   @@index([status, publishedAt])
   @@index([categorySlug])
+  @@index([categorySlug, publishedAt])
   @@index([isBreaking, publishedAt])
 }
 

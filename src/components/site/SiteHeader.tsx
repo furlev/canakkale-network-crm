@@ -2,10 +2,69 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import ThemeToggle from './ThemeToggle';
 
 export type NavCategory = { slug: string; name: string };
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Açık overlay içinde odağı hapseder: açılışta ilk (ya da verilen) odaklanabilir
+ * elemana odaklanır, Tab/Shift+Tab ile ilk↔son arasında döngü yapar, kapanışta
+ * odağı açan elemana (restoreRef) geri verir.
+ */
+function useFocusTrap<
+  C extends HTMLElement,
+  R extends HTMLElement,
+  I extends HTMLElement = HTMLElement,
+>(
+  active: boolean,
+  containerRef: RefObject<C | null>,
+  restoreRef: RefObject<R | null>,
+  initialFocusRef?: RefObject<I | null>,
+) {
+  useEffect(() => {
+    if (!active) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const getFocusable = () =>
+      Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+
+    // Açılışta: verilen hedef ya da ilk odaklanabilir eleman (yoksa konteyner).
+    (initialFocusRef?.current ?? getFocusable()[0] ?? container).focus();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const items = getFocusable();
+      if (items.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const activeEl = document.activeElement;
+      if (e.shiftKey) {
+        if (activeEl === first || !container.contains(activeEl)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (activeEl === last || !container.contains(activeEl)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    container.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      container.removeEventListener('keydown', onKeyDown);
+      // Kapanışta odağı açan elemana geri ver.
+      restoreRef.current?.focus();
+    };
+  }, [active, containerRef, restoreRef, initialFocusRef]);
+}
 
 /**
  * Yapışkan site başlığı: scroll'da küçülür ve buzlu cam arka plana geçer.
@@ -16,6 +75,10 @@ export default function SiteHeader({ categories }: { categories: NavCategory[] }
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchBtnRef = useRef<HTMLButtonElement>(null);
+  const burgerBtnRef = useRef<HTMLButtonElement>(null);
+  const searchOverlayRef = useRef<HTMLDivElement>(null);
+  const menuOverlayRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
   // Scroll'da başlığı sıkılaştır
@@ -43,9 +106,10 @@ export default function SiteHeader({ categories }: { categories: NavCategory[] }
     };
   }, [searchOpen, menuOpen]);
 
-  useEffect(() => {
-    if (searchOpen) searchInputRef.current?.focus();
-  }, [searchOpen]);
+  // Overlay açıkken odağı içeride tut; kapanışta açan butona geri ver.
+  // Arama açılışında doğrudan arama girişine odaklan.
+  useFocusTrap(searchOpen, searchOverlayRef, searchBtnRef, searchInputRef);
+  useFocusTrap(menuOpen, menuOverlayRef, burgerBtnRef);
 
   const submitSearch = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -78,11 +142,13 @@ export default function SiteHeader({ categories }: { categories: NavCategory[] }
             Ekibimize Katıl
           </Link>
           <button
+            ref={searchBtnRef}
             type="button"
             className="header-icon-btn"
             onClick={() => setSearchOpen(true)}
             aria-label="Haber ara"
             aria-haspopup="dialog"
+            aria-expanded={searchOpen}
           >
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
               <circle cx="11" cy="11" r="7" />
@@ -91,10 +157,12 @@ export default function SiteHeader({ categories }: { categories: NavCategory[] }
           </button>
           <ThemeToggle />
           <button
+            ref={burgerBtnRef}
             type="button"
             className="header-icon-btn nav-burger"
             onClick={() => setMenuOpen(v => !v)}
             aria-label={menuOpen ? 'Menüyü kapat' : 'Menüyü aç'}
+            aria-haspopup="dialog"
             aria-expanded={menuOpen}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
@@ -116,7 +184,14 @@ export default function SiteHeader({ categories }: { categories: NavCategory[] }
       </div>
 
       {searchOpen && (
-        <div className="search-overlay" role="dialog" aria-modal="true" aria-label="Haber arama">
+        <div
+          ref={searchOverlayRef}
+          className="search-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Haber arama"
+          tabIndex={-1}
+        >
           <button
             type="button"
             className="overlay-close"
@@ -149,7 +224,14 @@ export default function SiteHeader({ categories }: { categories: NavCategory[] }
       )}
 
       {menuOpen && (
-        <div className="mobile-menu" role="dialog" aria-modal="true" aria-label="Mobil menü">
+        <div
+          ref={menuOverlayRef}
+          className="mobile-menu"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Mobil menü"
+          tabIndex={-1}
+        >
           <nav className="mobile-nav" aria-label="Mobil ana menü">
             {categories.map((c, i) => (
               <Link

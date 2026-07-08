@@ -3,9 +3,9 @@ import type { CSSProperties } from 'react';
 import { formatDateTr } from '@/lib/site';
 
 export type ReelItem = {
+  id: string;
   slug: string;
   title: string;
-  imageUrl: string | null;
   imageAlt: string | null;
   videoUrl: string | null;
   publishedAt: Date | string | null;
@@ -40,12 +40,9 @@ export default function InterviewReel({ articles }: { articles: ReelItem[] }) {
               style={{ '--reveal-delay': `${Math.min(i * 90, 450)}ms` } as CSSProperties}
             >
               <div className="reel-media">
-                {a.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={a.imageUrl} alt={a.imageAlt || a.title} loading="lazy" />
-                ) : (
-                  <div className="reel-media-fallback" aria-hidden="true" />
-                )}
+                {/* Görsel /img/[id] endpoint'inden gelir (data-URI HTML'e gömülmez) */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={`/img/${a.id}`} alt={a.imageAlt || a.title} loading="lazy" decoding="async" />
                 {a.videoUrl && (
                   <span className="reel-play" aria-label="Video içerik">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

@@ -23,7 +23,12 @@ function LoginForm() {
       });
       if (res.ok) {
         const from = searchParams.get('from');
-        router.push(from && from.startsWith('/') ? from : '/');
+        // Yalnızca site-içi mutlak yol; `//evil.com` / `/\evil.com` gibi
+        // protokol-göreli açık-yönlendirmeleri reddet.
+        const safe = from && from.startsWith('/') && !from.startsWith('//') && !from.startsWith('/\\')
+          ? from
+          : '/';
+        router.push(safe);
         router.refresh();
       } else {
         const data = await res.json().catch(() => null);

@@ -3,10 +3,10 @@ import { formatDateTr } from '@/lib/site';
 
 /** Kart bileşeninin beklediği hafif makale özeti (SiteArticle alt kümesi). */
 export type ArticleCardData = {
+  id: string;
   slug: string;
   title: string;
   summary?: string | null;
-  imageUrl?: string | null;
   imageAlt?: string | null;
   imageIsAi?: boolean;
   categorySlug?: string | null;
@@ -38,13 +38,10 @@ export default function ArticleCard({
       style={revealDelay ? ({ '--reveal-delay': `${revealDelay}ms` } as React.CSSProperties) : undefined}
     >
       <div className="s-card-media">
-        {a.imageUrl ? (
-          // data URI'ler ve dış görseller için düz img (next/image unoptimized zaten)
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={a.imageUrl} alt={a.imageAlt || a.title} loading="lazy" />
-        ) : (
-          <img src="/site/logo-dark.png" alt="" loading="lazy" style={{ objectFit: 'contain', padding: '18%', opacity: 0.5 }} />
-        )}
+        {/* Görsel /img/[id] endpoint'inden gelir — data-URI'ler HTML'e gömülmez;
+            görsel yoksa endpoint markalı placeholder'a yönlendirir. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={`/img/${a.id}`} alt={a.imageAlt || a.title} loading="lazy" decoding="async" />
         {a.isBreaking ? (
           <span className="s-badge s-badge-breaking">Son Dakika</span>
         ) : a.categoryName ? (

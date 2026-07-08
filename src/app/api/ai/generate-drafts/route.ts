@@ -36,12 +36,12 @@ async function authorize(request: Request): Promise<boolean> {
 // Küçük-harf (TR locale) normalize edilmiş başlıkta kök/kalıp arar. Kasıtlı olarak
 // ASCII'ye indirgeme YAPILMAZ: "öldü" → "oldu" dönüşümü sahte pozitif üretirdi.
 const BREAKING_PATTERNS: RegExp[] = [
-  /yangın/, /deprem/, /patla/, /operasyon/, /gözaltı/, /tutukla/,
+  /yangın/, /deprem/, /patlama|patlad[ıi]/, /operasyon/, /gözaltı/, /tutukla/,
   /\bkaza(?![nm])/, // kaza, kazada, kazası... — "kazan(dı/an)" hariç
-  /öldür/, /\böl(dü|üm)/, /hayatını kaybet/, /can kaybı/, /cansız beden/,
-  /yaralı/, /yaralan/, /fırtına/, /\bsel\b|sel bask|sel felaket/,
-  /kayıp/, /alarm/, /tahliye/, /çarpış/, /zehirlen/, /\bacil/, /son dakika/,
-  /facia/, /feci\b/,
+  /öldür/, /\böl(dü|üm)/, /hayatını kaybet/, /can kaybı/, /cansız beden/, /cinayet/, /intihar/,
+  /yaralı/, /yaralan/, /boğ(ul|du)/, /göçük/, /silahl[ıi]|silahla|ateş açıl/, /bıçak/, /kavga/,
+  /fırtına/, /\bsel\b|sel bask|sel felaket/, /tahliye/, /çarpış/, /zehirlen/,
+  /kayıp/, /(yangın|sel|bomba|tsunami) alarm/, /\bacil/, /son dakika/, /facia/, /feci\b/,
 ];
 
 function isBreakingTitle(title: string): boolean {
@@ -75,11 +75,9 @@ async function produceDrafts(
 
   const created: DraftStats['created'] = [];
   const skipped: DraftStats['skipped'] = [];
-  const processedLinks = new Set<string>(); // yalnızca gerçekten işlenen konuların kaynak linkleri
 
   for (const t of topics) {
     if (created.length >= opts.maxDrafts) break;
-    for (const l of t.sourceLinks || []) processedLinks.add(l); // bu konu işlendi (drafted ya da skip)
     try {
       // doğruluk kontrolü (grounding) — son dakikada da eşik DÜŞÜRÜLMEZ (yanlış alarm en pahalı hatadır)
       const fc = await factCheckTopic(t.topic, t.headline);
@@ -118,9 +116,13 @@ async function produceDrafts(
     }
   }
 
-  // YALNIZCA işlenen konulara ait öğeleri işaretle. Diğerleri usedInDraft=false kalır ve
-  // tekrar değerlendirilebilir (recentUnusedItems 3-günlük pencerede doğal olarak eskitir) → veri kaybı yok.
-  const usedIds = items.filter((i) => processedLinks.has(i.link)).map((i) => i.id);
+  // discoverTopics kendisine verilen TÜM öğe kümesini değerlendirdi; bu yüzden hepsini
+  // "işlendi" say. İşaretlemeyi AI'ın döndürdüğü kaynak-link string'ine bağlamak (eski
+  // davranış) kırılgandı: AI linki normalize/kısaltıp döndürünce eşleşme kaçar, öğe
+  // usedInDraft=false kalır ve her koşuda yeniden işlenip mükerrer taslak + boşa AI
+  // maliyeti üretirdi. (discoverTopics baştan hata verirse yukarıda erken dönülür ve
+  // hiçbir öğe işaretlenmez → sonraki koşuda yeniden değerlendirilir.)
+  const usedIds = items.map((i) => i.id);
   if (usedIds.length > 0) {
     await prisma.feedItem.updateMany({
       where: { id: { in: usedIds } },

@@ -51,18 +51,33 @@ export default async function CategoryPage(context: {
     prisma.siteArticle.count({ where }),
     prisma.siteArticle.findMany({
       where,
-      orderBy: { publishedAt: 'desc' },
+      // publishedAt=null satırlar tepeye yapışmasın
+      orderBy: { publishedAt: { sort: 'desc', nulls: 'last' } },
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
+      // body ve imageUrl (data-URI olabilir) ASLA seçilmez — satırlar hafif kalır
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        summary: true,
+        imageAlt: true,
+        imageIsAi: true,
+        categorySlug: true,
+        isBreaking: true,
+        publishedAt: true,
+        views: true,
+        authorName: true,
+      },
     }),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const cards: ArticleCardData[] = articles.map(a => ({
+    id: a.id,
     slug: a.slug,
     title: a.title,
     summary: a.summary,
-    imageUrl: a.imageUrl,
     imageAlt: a.imageAlt,
     imageIsAi: a.imageIsAi,
     categorySlug: a.categorySlug,

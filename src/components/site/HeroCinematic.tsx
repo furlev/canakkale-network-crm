@@ -5,10 +5,10 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import ParticleField from './ParticleField';
 
 export type HeroItem = {
+  id: string;
   slug: string;
   title: string;
   summary: string | null;
-  imageUrl: string | null;
   imageAlt: string | null;
   categoryName: string | null;
   categorySlug: string | null;
@@ -71,17 +71,29 @@ export default function HeroCinematic({ items }: { items: HeroItem[] }) {
   return (
     <section className="hero" aria-label="Manşet haberler">
       <div className="hero-bg-stack" aria-hidden="true">
-        {items.map((item, i) => (
-          <div key={item.slug} className={`hero-bg${i === active ? ' is-active' : ''}`}>
-            {item.imageUrl ? (
-              // data URI olabilir → düz img
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={item.imageUrl} alt="" />
-            ) : (
-              <div className="hero-bg-brand" />
-            )}
-          </div>
-        ))}
+        {items.map((item, i) => {
+          const isActive = i === active;
+          // PERF: yalnızca aktif ve bir sonraki manşetin görselini DOM'a bas;
+          // diğerleri <img> olarak durmasın (5 base64/uzak görsel yerine en fazla 2).
+          const isNext = items.length > 1 && i === (active + 1) % items.length;
+          return (
+            <div key={item.slug} className={`hero-bg${isActive ? ' is-active' : ''}`}>
+              {isActive || isNext ? (
+                // Görsel /img/[id] endpoint'inden gelir (data-URI HTML'e gömülmez)
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={`/img/${item.id}`}
+                  alt=""
+                  decoding="async"
+                  fetchPriority={isActive ? 'high' : 'auto'}
+                  loading={isActive ? 'eager' : 'lazy'}
+                />
+              ) : (
+                <div className="hero-bg-brand" />
+              )}
+            </div>
+          );
+        })}
       </div>
       <div className="hero-veil" aria-hidden="true" />
       <ParticleField />

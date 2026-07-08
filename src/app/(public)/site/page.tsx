@@ -20,12 +20,13 @@ export const revalidate = 60;
 // ── Ortak sorgu parçaları ──
 const PUB = { status: 'published', deletedAt: null } as const;
 
+// body ve imageUrl (dev base64 data-URI olabilir) ASLA seçilmez — kart satırları hafif kalır;
+// görseller /img/[id] endpoint'inden gelir.
 const CARD_SELECT = {
   id: true,
   slug: true,
   title: true,
   summary: true,
-  imageUrl: true,
   imageAlt: true,
   imageIsAi: true,
   categorySlug: true,
@@ -37,12 +38,14 @@ const CARD_SELECT = {
   category: { select: { name: true } },
 } as const;
 
+// publishedAt=null yayınlanmış satırlar listenin tepesine yapışmasın
+const PUB_ORDER = { publishedAt: { sort: 'desc', nulls: 'last' } } as const;
+
 type ArticleRow = {
   id: string;
   slug: string;
   title: string;
   summary: string | null;
-  imageUrl: string | null;
   imageAlt: string | null;
   imageIsAi: boolean;
   categorySlug: string | null;
@@ -56,10 +59,10 @@ type ArticleRow = {
 
 function toCard(a: ArticleRow): ArticleCardData {
   return {
+    id: a.id,
     slug: a.slug,
     title: a.title,
     summary: a.summary,
-    imageUrl: a.imageUrl,
     imageAlt: a.imageAlt,
     imageIsAi: a.imageIsAi,
     categorySlug: a.categorySlug,
@@ -73,10 +76,10 @@ function toCard(a: ArticleRow): ArticleCardData {
 
 function toHero(a: ArticleRow): HeroItem {
   return {
+    id: a.id,
     slug: a.slug,
     title: a.title,
     summary: a.summary,
-    imageUrl: a.imageUrl,
     imageAlt: a.imageAlt,
     categoryName: a.category?.name ?? null,
     categorySlug: a.categorySlug,
@@ -111,13 +114,13 @@ async function getHomeData(): Promise<HomeData> {
         getSiteSettings(),
         prisma.siteArticle.findMany({
           where: { ...PUB, isFeatured: true },
-          orderBy: { publishedAt: 'desc' },
+          orderBy: PUB_ORDER,
           take: 5,
           select: CARD_SELECT,
         }),
         prisma.siteArticle.findMany({
           where: PUB,
-          orderBy: { publishedAt: 'desc' },
+          orderBy: PUB_ORDER,
           take: 9,
           select: CARD_SELECT,
         }),
@@ -128,7 +131,7 @@ async function getHomeData(): Promise<HomeData> {
         }),
         prisma.siteArticle.findMany({
           where: { ...PUB, categorySlug: 'roportajlar' },
-          orderBy: { publishedAt: 'desc' },
+          orderBy: PUB_ORDER,
           take: 6,
           select: CARD_SELECT,
         }),
@@ -148,7 +151,7 @@ async function getHomeData(): Promise<HomeData> {
     if (heroRows.length < 5) {
       const fill = await prisma.siteArticle.findMany({
         where: { ...PUB, id: { notIn: heroRows.map(h => h.id) } },
-        orderBy: { publishedAt: 'desc' },
+        orderBy: PUB_ORDER,
         take: 5 - heroRows.length,
         select: CARD_SELECT,
       });
@@ -162,7 +165,7 @@ async function getHomeData(): Promise<HomeData> {
       railCats.map(c =>
         prisma.siteArticle.findMany({
           where: { ...PUB, categorySlug: c.slug },
-          orderBy: { publishedAt: 'desc' },
+          orderBy: PUB_ORDER,
           take: 8,
           select: CARD_SELECT,
         })
@@ -183,9 +186,9 @@ async function getHomeData(): Promise<HomeData> {
       latest: latest.map(toCard),
       rails,
       interviews: interviews.map(a => ({
+        id: a.id,
         slug: a.slug,
         title: a.title,
-        imageUrl: a.imageUrl,
         imageAlt: a.imageAlt,
         videoUrl: a.videoUrl,
         publishedAt: a.publishedAt,

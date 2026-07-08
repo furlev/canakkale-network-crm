@@ -267,6 +267,12 @@
 
 .s-reveal.is-visible { opacity: 1; transform: none; }
 
+/* No-JS / CDN düşmesi güvenlik ağı: JS başarıyla çalışıp <html> üzerine
+   .js-ready eklemedikçe içerik ANINDA görünür kalır. Böylece script hiç
+   yüklenmezse bile anasayfa gizlenmez (haber sitesi için zorunlu).
+   .js-ready eklendikten sonra reveal animasyonu normal şekilde işler. */
+html:not(.js-ready) .s-reveal { opacity: 1; transform: none; transition: none; }
+
 /* ── Film greni (atmosfer) ── */
 /* Statik gren: animasyonlu 2x-ekran katmanı düşük GPU'larda compositing'i
    boğuyordu (kaydırmada boyanmamış karo). Doku döşemesi yeterli atmosfer verir. */
