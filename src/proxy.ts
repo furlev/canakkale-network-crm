@@ -13,7 +13,28 @@ const PUBLIC_PREFIXES = [
   '/api/ai/analyze-article', // WordPress eklentisi Bearer secret ile çağırır; rota kendini korur
   '/api/ai/generate-drafts', // cron Bearer CRON_SECRET ile çağırır; rota kendini korur
   '/api/admin/seed-sources', // Bearer CRON_SECRET/admin ile kaynak seed; rota kendini korur
+  '/site', // halka açık haber sitesi (canakkale.network)
+  '/api/site/', // sitenin public API'leri (aşağıda IP bazlı hız sınırı)
 ];
+
+/**
+ * Haber sitesini sunan alan adları. Bu host'lardan gelen istekler /site/*
+ * rotalarına rewrite edilir; panel yalnızca panel.canakkale.network'te kalır.
+ * Yerelde 127.0.0.1:3000 site önizlemesidir (localhost:3000 = panel).
+ */
+const SITE_HOSTS = new Set(
+  (process.env.SITE_HOSTS || 'canakkale.network,www.canakkale.network')
+    .split(',')
+    .map(h => h.trim())
+    .filter(Boolean)
+);
+if (process.env.NODE_ENV !== 'production') {
+  SITE_HOSTS.add('127.0.0.1:3000');
+  SITE_HOSTS.add('127.0.0.1:3001');
+}
+
+/** Site host'unda kök yollara eşlenen özel dosya rotaları. */
+const SITE_FILE_ROUTES = new Set(['/sitemap.xml', '/robots.txt', '/feed.xml', '/rss', '/feed']);
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some(p => pathname === p || pathname.startsWith(p));
@@ -42,8 +63,63 @@ function rateLimitOk(key: string, limit: number, windowMs: number): boolean {
 
 const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+function tooManyResponse() {
+  return NextResponse.json(
+    { error: 'Çok fazla istek — lütfen biraz bekleyip tekrar deneyin' },
+    { status: 429, headers: { 'Retry-After': '30' } }
+  );
+}
+
+function clientIp(request: NextRequest): string {
+  return (
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip') ||
+    'unknown'
+  );
+}
+
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const host = (request.headers.get('host') || '').toLowerCase();
+
+  // ── Public site API'leri (tüm host'larda): IP bazlı hız sınırı, oturum gerekmez ──
+  if (pathname.startsWith('/api/site/')) {
+    const ip = clientIp(request);
+    const limitOk = MUTATION_METHODS.has(request.method)
+      ? rateLimitOk(`pw:${ip}`, 30, 60_000) // yazma: görüntülenme/abone/başvuru
+      : rateLimitOk(`pr:${ip}`, 240, 60_000); // okuma
+    if (!limitOk) return tooManyResponse();
+    return NextResponse.next();
+  }
+
+  // ── Haber sitesi host'u: her şeyi /site/* altına rewrite et ──
+  if (SITE_HOSTS.has(host)) {
+    // Panel API'leri site alan adında yok sayılır (bilgi sızdırma yüzeyini kapat)
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Bulunamadı' }, { status: 404 });
+    }
+    // Kök dosya rotaları (sitemap/robots/feed) → /site altındaki route handler'lara
+    if (SITE_FILE_ROUTES.has(pathname)) {
+      const target = pathname === '/rss' || pathname === '/feed' ? '/feed.xml' : pathname;
+      const url = request.nextUrl.clone();
+      url.pathname = `/site${target}`;
+      return NextResponse.rewrite(url);
+    }
+    // Uzantılı yollar (public/ dosyaları: /site/logo-light.png, /site/brand.mp4...) olduğu gibi geçer
+    if (/\.[a-zA-Z0-9]{2,5}$/.test(pathname)) {
+      return NextResponse.next();
+    }
+    // /site/... ile doğrudan gelen SAYFA isteklerini kanonik köke yönlendir (query korunur)
+    if (pathname === '/site' || pathname.startsWith('/site/')) {
+      const url = request.nextUrl.clone();
+      url.pathname = pathname.slice('/site'.length) || '/';
+      return NextResponse.redirect(url, 308);
+    }
+    // Sayfaları /site altına rewrite et — query string'i koruyarak
+    const url = request.nextUrl.clone();
+    url.pathname = `/site${pathname === '/' ? '' : pathname}`;
+    return NextResponse.rewrite(url);
+  }
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const session = token ? await verifySession(token) : null;
@@ -69,12 +145,7 @@ export default async function proxy(request: NextRequest) {
     const tooMany =
       (MUTATION_METHODS.has(request.method) && !rateLimitOk(`w:${session.sub}`, 120, 60_000)) ||
       (pathname === '/api/search' && !rateLimitOk(`s:${session.sub}`, 30, 60_000));
-    if (tooMany) {
-      return NextResponse.json(
-        { error: 'Çok fazla istek — lütfen biraz bekleyip tekrar deneyin' },
-        { status: 429, headers: { 'Retry-After': '30' } }
-      );
-    }
+    if (tooMany) return tooManyResponse();
   }
 
   // Rol bazlı sayfa erişimi (A/B/C). API rotaları kendi içinde yetki kontrolü yapar.

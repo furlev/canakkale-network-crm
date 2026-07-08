@@ -22,6 +22,7 @@ export const MANAGED_PATHS: { path: string; label: string }[] = [
   { path: '/news', label: 'Haberler' },
   { path: '/tips', label: 'İhbarlar' },
   { path: '/ai-news', label: 'AI Haber Kuyruğu' },
+  { path: '/site-yonetimi', label: 'Site Yönetimi' },
   { path: '/clients', label: 'Müşteriler' },
   { path: '/contacts', label: 'Kişiler' },
   { path: '/projects', label: 'Projeler' },

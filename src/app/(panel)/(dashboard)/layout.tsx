@@ -63,6 +63,13 @@ const navSections: NavSection[] = [
     ],
   },
   {
+    title: 'SİTE',
+    items: [
+      { label: 'Site Yönetimi', href: '/site-yonetimi', icon: '🌐' },
+      { label: 'Başvurular', href: '/site-yonetimi/basvurular', icon: '📋' },
+    ],
+  },
+  {
     title: 'EKİP & İLETİŞİM',
     items: [
       { label: 'Mesajlar', href: '/messages', icon: '💬' },

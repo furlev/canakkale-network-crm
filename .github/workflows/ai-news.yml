@@ -1,5 +1,8 @@
-# AI haber üretimi: günde 3 kez taslak üretir (onay kuyruğuna düşer, otomatik YAYINLAMAZ).
-# Saatler UTC — Türkiye (UTC+3) ile: 08:00, 13:00, 19:00.
+# AI haber üretimi — ÜÇ KATMAN (taslaklar onay kuyruğuna düşer, otomatik YAYINLANMAZ):
+#   - daily    : günde 3 kez (05,10,16 UTC = TR 08,13,19) klasik taslak üretimi
+#   - breaking : her 30 dakikada son dakika radarı — sunucu tarafındaki ucuz keyword
+#                ön-filtresi sayesinde çoğu koşu AI çağrısı YAPMADAN biter (maliyet ~0)
+#   - weekly   : pazartesi 05:30 UTC (TR 08:30) haftalık panorama yazısı
 # Kurulum (repo Settings → Secrets and variables → Actions):
 #   - Secret  CRON_SECRET : .env'deki CRON_SECRET ile aynı değer
 #   - Variable CRM_URL    : https://panel.canakkale.network (sondaki / olmadan)
@@ -8,11 +11,22 @@ name: AI Haber Üretimi
 
 on:
   schedule:
-    - cron: '0 5,10,16 * * *'
+    - cron: '0 5,10,16 * * *'   # daily
+    - cron: '*/30 * * * *'      # breaking (radar)
+    - cron: '30 5 * * 1'        # weekly (pazartesi)
   workflow_dispatch:
     inputs:
+      mode:
+        description: 'Üretim modu'
+        required: false
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - breaking
+          - weekly
       count:
-        description: 'Üretilecek taslak sayısı (1-6)'
+        description: 'Üretilecek taslak sayısı (1-6, yalnızca daily)'
         required: false
         default: '3'
 
@@ -20,24 +34,50 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
+      - name: Modu belirle
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ github.event.inputs.mode || 'daily' }}"
+          elif [ "${{ github.event.schedule }}" = "*/30 * * * *" ]; then
+            MODE="breaking"
+          elif [ "${{ github.event.schedule }}" = "30 5 * * 1" ]; then
+            MODE="weekly"
+          else
+            MODE="daily"
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "Seçilen mod: $MODE (tetikleyici: ${{ github.event_name }} ${{ github.event.schedule }})"
+
       - name: AI taslak üret
         run: |
+          MODE="${{ steps.mode.outputs.mode }}"
           COUNT="${{ github.event.inputs.count || '3' }}"
-          echo "AI haber taslağı üretiliyor (count=$COUNT)..."
+          echo "AI haber taslağı üretiliyor (mode=$MODE, count=$COUNT)..."
           HTTP=$(curl -sS -w '%{http_code}' -o /tmp/resp.json \
             --max-time 300 \
             -X POST \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"mode\":\"$MODE\"}" \
             "${{ vars.CRM_URL }}/api/ai/generate-drafts?count=$COUNT")
           echo "HTTP $HTTP"
           cat /tmp/resp.json | head -c 2000 || true
           echo ""
+          if [ "$HTTP" = "429" ]; then
+            # Başka bir üretim koşusu sürüyor (ör. daily ile breaking çakıştı) — hata sayma
+            echo "::warning::Üretim zaten çalışıyor (429), bu koşu atlandı"
+            exit 0
+          fi
           if [ "$HTTP" != "200" ]; then
-            echo "::error::AI taslak üretimi başarısız (HTTP $HTTP)"
+            echo "::error::AI taslak üretimi başarısız (HTTP $HTTP, mode=$MODE)"
             exit 1
           fi
           CREATED=$(jq '.created | length' /tmp/resp.json 2>/dev/null || echo "?")
           echo "Üretilen taslak sayısı: $CREATED"
-          if [ "$CREATED" = "0" ]; then
+          if [ "$MODE" = "breaking" ]; then
+            FOUND=$(jq '.found // 0' /tmp/resp.json 2>/dev/null || echo "?")
+            echo "Radar eşleşmesi: $FOUND"
+          elif [ "$CREATED" = "0" ]; then
             echo "::warning::Bu çalıştırmada hiç taslak üretilmedi (düşük güven / kaynak yok / AI hatası olabilir)"
           fi

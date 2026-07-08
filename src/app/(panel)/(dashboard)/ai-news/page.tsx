@@ -20,6 +20,7 @@ type AiDraft = {
   reviewerId: string | null;
   reviewerName: string | null;
   wpId: number | null;
+  articleId?: string | null;       // sitede yayınlanınca SiteArticle id (publish yanıtında gelir)
   createdAt: string;
   updatedAt: string;
 };
@@ -80,7 +81,7 @@ export default function AiNewsPage() {
   const [selected, setSelected] = useState<AiDraft | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
   const [busy, setBusy] = useState(false);
-  const [modalMsg, setModalMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const [modalMsg, setModalMsg] = useState<{ kind: 'error' | 'success'; text: string; link?: string } | null>(null);
 
   const fetchDrafts = useCallback(async (status: StatusKey) => {
     setLoading(true);
@@ -156,21 +157,32 @@ export default function AiNewsPage() {
     });
   };
 
-  /* ✓ Onayla & Yayınla — önce düzenlemeleri kaydet, sonra WP'ye yayınla */
-  const handleApproveAndPublish = async () => {
+  /* ✓ Onayla & Yayınla — önce düzenlemeleri kaydet, sonra hedefe yayınla.
+     Varsayılan hedef SİTE (canakkale.network); 'wordpress' ikincil seçenek. */
+  const handleApproveAndPublish = async (target: 'site' | 'wordpress' = 'site') => {
     if (!edit) return;
     setBusy(true);
     setModalMsg(null);
     try {
       await saveEdits(); // düzenlemeleri kalıcılaştır
-      const res = await fetch(`/api/ai/drafts/${edit.id}/publish`, { method: 'POST' });
+      const res = await fetch(`/api/ai/drafts/${edit.id}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target }),
+      });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.ok) {
         throw new Error((data && data.error) || 'Yayınlama başarısız oldu.');
       }
       if (data.draft) applyToList(data.draft as AiDraft);
-      setModalMsg({ kind: 'success', text: `Yayınlandı ✓ (WP #${data.wpId})` });
-      setTimeout(() => { setSelected(null); setEdit(null); setModalMsg(null); }, 1200);
+      if (data.target === 'site') {
+        // Site linkini göster — modal açık kalır, editör linke tıklayabilir
+        setModalMsg({ kind: 'success', text: 'Siteye yayınlandı ✓', link: data.siteUrl });
+        setSelected((prev) => (prev ? { ...prev, status: 'published', articleId: data.articleId } : prev));
+      } else {
+        setModalMsg({ kind: 'success', text: `Yayınlandı ✓ (WP #${data.wpId})` });
+        setTimeout(() => { setSelected(null); setEdit(null); setModalMsg(null); }, 1200);
+      }
     } catch (e) {
       setModalMsg({ kind: 'error', text: e instanceof Error ? e.message : 'Yayınlama başarısız oldu.' });
     } finally {
@@ -305,6 +317,14 @@ export default function AiNewsPage() {
               {modalMsg && (
                 <div style={{ padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--border-radius)', background: modalMsg.kind === 'success' ? 'rgba(0,184,148,0.12)' : 'rgba(255,118,117,0.12)', color: modalMsg.kind === 'success' ? 'var(--success)' : 'var(--error)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>
                   {modalMsg.text}
+                  {modalMsg.link && (
+                    <>
+                      {' '}
+                      <a href={modalMsg.link} target="_blank" rel="noreferrer" style={{ color: 'var(--primary-light)', wordBreak: 'break-all' }}>
+                        {modalMsg.link} ↗
+                      </a>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -319,6 +339,7 @@ export default function AiNewsPage() {
                   return conf ? <span className={`badge ${conf.cls}`}>{conf.text}</span> : null;
                 })()}
                 {selected.wpId && <span className="badge badge-success">WP #{selected.wpId}</span>}
+                {selected.articleId && <span className="badge badge-success">🌐 Sitede</span>}
               </div>
 
               {selected.hasImage && (
@@ -376,8 +397,11 @@ export default function AiNewsPage() {
             <div className="modal-footer" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
               <button className="btn btn-danger btn-sm" disabled={busy} onClick={handleDelete}>Sil</button>
               <button className="btn btn-ghost" disabled={busy} onClick={handleReject}>Reddet</button>
-              <button className="btn btn-primary" disabled={busy} onClick={handleApproveAndPublish} style={{ marginLeft: 'auto' }}>
-                {busy ? 'İşleniyor...' : '✓ Onayla & Yayınla'}
+              <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleApproveAndPublish('wordpress')} style={{ marginLeft: 'auto' }} title="Eski WordPress sitesine yayınla">
+                WP&apos;ye Yayınla
+              </button>
+              <button className="btn btn-primary" disabled={busy} onClick={() => handleApproveAndPublish('site')}>
+                {busy ? 'İşleniyor...' : '🌐 Siteye Yayınla'}
               </button>
             </div>
           </div>

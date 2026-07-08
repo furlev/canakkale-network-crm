@@ -543,6 +543,8 @@ model AiDraft {
   reviewerId      String? // onaylayan CRM kullanıcısı (id)
   reviewerName    String?
   wpId            Int? // yayınlanınca WP post id
+  articleId       String? // yayınlanınca site makalesi (SiteArticle) id
+  newsType        String   @default("daily") // breaking | daily | weekly
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -562,4 +564,81 @@ model AuditLog {
 
   @@index([entity, createdAt])
   @@index([userId])
+}
+
+// ═══════════════ ÖZEL HABER SİTESİ (canakkale.network) ═══════════════
+
+// Sitede yayınlanan haber/makale — AI taslağından, WP içe aktarımından veya elle.
+model SiteArticle {
+  id              String        @id @default(uuid())
+  slug            String        @unique
+  title           String
+  summary         String? // spot / kısa özet
+  body            String // HTML gövde
+  categorySlug    String?
+  category        SiteCategory? @relation(fields: [categorySlug], references: [slug], onDelete: SetNull)
+  tags            String? // JSON dizi (string)
+  imageUrl        String? // kapak görseli (URL veya data URI)
+  imageAlt        String?
+  imageIsAi       Boolean       @default(false) // "Temsili görsel" rozeti
+  videoUrl        String? // röportaj/video haberler (YouTube vb.)
+  authorName      String        @default("Çanakkale Network")
+  authorId        String? // CRM kullanıcısı (varsa)
+  status          String        @default("draft") // draft | published | archived
+  newsType        String        @default("daily") // breaking | daily | weekly | manual
+  isBreaking      Boolean       @default(false) // son dakika şeridi
+  isFeatured      Boolean       @default(false) // anasayfa manşet
+  isEditorPick    Boolean       @default(false) // editörün seçimi
+  publishedAt     DateTime?
+  views           Int           @default(0)
+  seoTitle        String?
+  metaDescription String?
+  sourceDraftId   String? // köken AiDraft id
+  sourceLinks     String? // JSON: kaynak atıf linkleri
+  wpId            Int?          @unique // WP'den içe aktarılan haberler
+  deletedAt       DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([status, publishedAt])
+  @@index([categorySlug])
+  @@index([isBreaking, publishedAt])
+}
+
+// Site kategorileri (nav + haber sınıflandırma), CRM'den yönetilir.
+model SiteCategory {
+  slug      String    @id
+  name      String
+  color     String? // vurgu rengi (opsiyonel)
+  order     Int       @default(0)
+  showInNav Boolean   @default(true)
+  articles  SiteArticle[]
+}
+
+// Statik site sayfaları (hakkımızda, künye, sözleşmeler...) — CRM'den düzenlenir.
+model SitePage {
+  slug            String   @id
+  title           String
+  content         String // HTML
+  status          String   @default("published") // published | hidden
+  seoTitle        String?
+  metaDescription String?
+  updatedBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// "Ekibimize Katıl" başvuruları — form şeması Setting('joinForm') içinde.
+model JoinApplication {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  phone     String?
+  data      String // JSON: dinamik form yanıtları
+  status    String   @default("new") // new | reviewed | accepted | rejected
+  note      String? // değerlendirme notu
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
 }

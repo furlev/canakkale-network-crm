@@ -281,19 +281,23 @@ export const IMAGE_MODEL = process.env.GOOGLE_IMAGE_MODEL || 'imagen-3.0-generat
 
 export type DiscoveredTopic = { topic: string; headline: string; newsworthiness: number; category: string; sourceLinks: string[] };
 
-/** Ham haber öğelerinden aday konular çıkar + haber değeri puanla (grounding gerekmez). */
+/** Ham haber öğelerinden aday konular çıkar + haber değeri puanla (grounding gerekmez).
+ *  `extraInstruction` ile çağıran, seçim kriterine mod-özel yönerge ekleyebilir
+ *  (ör. son dakika radarında "yalnızca gerçekten acil olayları seç"). */
 export async function discoverTopics(
   items: { title: string; link: string }[],
   maxTopics = 5,
+  extraInstruction?: string,
 ): Promise<DiscoveredTopic[]> {
   const ai = await getClient();
   // Feed başlıkları dış kaynaklı (güvenilmez) metin → prompt'a gömmeden önce temizle
   const list = items.slice(0, 120)
     .map((i, n) => `${n + 1}. ${sanitizeForPrompt(i.title, 300)} — ${sanitizeForPrompt(i.link, 500)}`)
     .join('\n');
+  const extra = extraInstruction ? `\n\nEK YÖNERGE: ${extraInstruction}` : '';
   const res = await withRetry(() => ai.models.generateContent({
     model: AI_MODEL,
-    contents: `Aşağıda Çanakkale yerel haber başlıkları var. Benzer olanları kümeleyip en fazla ${maxTopics} AYRI, güncel ve haber değeri yüksek KONU çıkar. Aynı olayın farklı kaynaklardaki tekrarlarını TEK konuda birleştir. Reklam/ilan/spam olanları ele.\n\n${list}`,
+    contents: `Aşağıda Çanakkale yerel haber başlıkları var. Benzer olanları kümeleyip en fazla ${maxTopics} AYRI, güncel ve haber değeri yüksek KONU çıkar. Aynı olayın farklı kaynaklardaki tekrarlarını TEK konuda birleştir. Reklam/ilan/spam olanları ele.${extra}\n\n${list}`,
     config: {
       systemInstruction: 'Sen Çanakkale Network haber ajansının editörüsün. Haber akışından günün en önemli, özgün konularını seçersin. Türkçe.',
       thinkingConfig: { thinkingBudget: 0 },
@@ -377,6 +381,67 @@ export async function writeArticleFromTopic(headline: string, verifiedSummary: s
     throw new Error('AI boş başlık/gövde üretti (yayına uygun değil)');
   }
   return draft;
+}
+
+/* ── Haftalık panorama: sitede yayınlanmış haberlerden kuşbakışı değerlendirme yazısı ── */
+export type WeeklyRoundupInput = {
+  title: string;
+  summary: string | null;
+  category: string | null;
+  views: number;
+};
+
+export type WeeklyRoundup = {
+  title: string;
+  body: string; // HTML gövde
+  summary: string;
+  tags: string[];
+  seoTitle: string;
+  metaDescription: string;
+};
+
+/** Son 7 günün yayınlanmış haberlerinden "Çanakkale'de Bu Hafta" tarzı, tema tema ilerleyen
+ *  akıcı bir haftalık değerlendirme yazısı üretir (tek AI çağrısı). */
+export async function writeWeeklyRoundup(articles: WeeklyRoundupInput[]): Promise<WeeklyRoundup> {
+  const ai = await getClient();
+  // Haber başlık/özetleri site içeriği olsa da tek tip hijyen uygula (token şişmesine karşı sınırla)
+  const list = articles.slice(0, 60)
+    .map((a, n) => {
+      const cat = a.category ? `[${sanitizeForPrompt(a.category, 60)}] ` : '';
+      const sum = a.summary ? ` — ${sanitizeForPrompt(a.summary, 300)}` : '';
+      return `${n + 1}. ${cat}${sanitizeForPrompt(a.title, 300)}${sum} (${a.views} görüntülenme)`;
+    })
+    .join('\n');
+  const res = await withRetry(() => ai.models.generateContent({
+    model: AI_MODEL,
+    contents: `Aşağıda Çanakkale Network haber sitesinde SON 7 GÜNDE yayınlanan haberler var. Bunlardan "Çanakkale'de Bu Hafta" tarzı, haftaya kuşbakışı bakan bir değerlendirme yazısı yaz.\n\nKurallar:\n- Öne çıkan olayları TEMA TEMA grupla (ör. asayiş, üniversite, spor, etkinlikler) ve akıcı bir köşe yazısı üslubuyla anlat.\n- Kaynak haberlere BAŞLIKLARIYLA atıf yap (ör. "Haftanın en çok konuşulan gelişmesi '...' başlıklı haberimizdi").\n- Yeni bilgi UYDURMA; yalnızca verilen başlık/özetlerdeki bilgiyi kullan.\n- Gövde <p> (gerekirse tema başlıkları için <h3>) etiketli HTML olsun.\n\nHaberler:\n${list}`,
+    config: {
+      systemInstruction: 'Sen Çanakkale Network haber sitesinin deneyimli köşe yazarı/editörüsün. Haftalık panorama yazıları sıcak, akıcı ama abartısız ve nesneldir. Tüm çıktılar Türkçe.',
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING, description: 'Yazının başlığı (ör. "Çanakkale\'de Bu Hafta: ...")' },
+          body: { type: Type.STRING, description: 'Tema tema ilerleyen, <p>/<h3> etiketli HTML gövde' },
+          summary: { type: Type.STRING, description: '2-3 cümlelik spot/özet' },
+          tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: '5-8 anahtar etiket' },
+          seoTitle: { type: Type.STRING, description: 'SEO uyumlu, ~60 karakter başlık' },
+          metaDescription: { type: Type.STRING, description: 'Arama motoru için ~155 karakter meta açıklama' },
+        },
+        required: ['title', 'body', 'summary', 'tags', 'seoTitle', 'metaDescription'],
+      },
+    },
+  }));
+  const parsed = parseAiJson<WeeklyRoundup>(res);
+  if (!parsed.title?.trim() || !parsed.body?.trim()) {
+    throw new Error('AI boş başlık/gövde üretti (haftalık panorama yayına uygun değil)');
+  }
+  return {
+    ...parsed,
+    seoTitle: truncateAtWord(parsed.seoTitle || '', 70),
+    metaDescription: truncateAtWord(parsed.metaDescription || '', 160),
+    tags: clampTags(parsed.tags),
+  };
 }
 
 /** Habere uygun "temsili" başlık görseli üret (Imagen) → base64 data URI. */

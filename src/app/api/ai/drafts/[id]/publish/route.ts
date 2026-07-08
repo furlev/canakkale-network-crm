@@ -5,6 +5,7 @@ import { getSession } from '@/lib/auth';
 import { isLeaderOrAdmin } from '@/lib/permissions';
 import { getWpConfig, wpFetch } from '@/lib/wordpress';
 import { audit } from '@/lib/audit';
+import { slugifyTr, stripHtml } from '@/lib/site';
 
 type WpCategory = { id: number; name: string; slug: string };
 type WpCreatedPost = { id: number; thumbnail: string | null };
@@ -68,19 +69,62 @@ function buildSourcesHtml(raw: string | null): string {
   return `<hr /><p><strong>Kaynaklar:</strong></p><ul>${lis}</ul>`;
 }
 
-/** Taslağı WordPress'e yayınlar ve durumunu published yapar. */
+/** Benzersiz site slug'ı: çakışmada -2, -3... eki dener. */
+async function uniqueSiteSlug(base: string): Promise<string> {
+  const root = slugifyTr(base) || 'haber';
+  let slug = root;
+  for (let i = 2; ; i++) {
+    const existing = await prisma.siteArticle.findUnique({ where: { slug }, select: { id: true } });
+    if (!existing) return slug;
+    slug = `${root}-${i}`;
+  }
+}
+
+/** Taslağın kategori metnini mevcut SiteCategory'lerle eşler (ad/slug benzerliği).
+ *  Eşleşme yoksa 'genel' varsa onu, o da yoksa null döner. */
+async function matchSiteCategory(draftCategory: string | null): Promise<string | null> {
+  const categories = await prisma.siteCategory.findMany({ select: { slug: true, name: true } });
+  if (draftCategory && draftCategory.trim()) {
+    const wantedSlug = slugifyTr(draftCategory);
+    const wantedName = draftCategory.trim().toLocaleLowerCase('tr-TR');
+    const exact = categories.find(
+      (c) => c.slug === wantedSlug || slugifyTr(c.name) === wantedSlug || c.name.trim().toLocaleLowerCase('tr-TR') === wantedName
+    );
+    if (exact) return exact.slug;
+    // Gevşek benzerlik: biri diğerini kapsıyorsa (ör. "spor" ↔ "spor-haberleri")
+    const partial = categories.find(
+      (c) => wantedSlug.length >= 4 && (c.slug.includes(wantedSlug) || wantedSlug.includes(c.slug))
+    );
+    if (partial) return partial.slug;
+  }
+  return categories.find((c) => c.slug === 'genel')?.slug ?? null;
+}
+
+/**
+ * Taslağı yayınlar. Varsayılan hedef SİTE (canakkale.network);
+ * body {target: 'wordpress'} ile eski WordPress akışı korunur.
+ */
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const session = await getSession();
     if (!isLeaderOrAdmin(session)) throw new ApiError(403, 'Bu işlem için ekip lideri/yönetici yetkisi gerekli');
+
+    // Body opsiyonel: {target?: 'site'|'wordpress'} — varsayılan site
+    let target: 'site' | 'wordpress' = 'site';
+    try {
+      const body = (await request.json()) as { target?: string } | null;
+      if (body?.target === 'wordpress') target = 'wordpress';
+    } catch { /* boş gövde = varsayılan */ }
 
     const { id } = await context.params;
     const draft = await prisma.aiDraft.findUnique({ where: { id } });
     if (!draft) throw new ApiError(404, 'Taslak bulunamadı');
 
     // Idempotency + onay akışı: zaten yayınlanmışı tekrar yayınlama, reddedilmişi/boşu engelle
-    if (draft.status === 'published' && draft.wpId) {
-      throw new ApiError(409, 'Bu taslak zaten yayınlanmış (WP #' + draft.wpId + ')');
+    if (draft.status === 'published' && (draft.wpId || draft.articleId)) {
+      throw new ApiError(409, draft.articleId
+        ? 'Bu taslak zaten sitede yayınlanmış'
+        : 'Bu taslak zaten yayınlanmış (WP #' + draft.wpId + ')');
     }
     if (draft.status === 'rejected') {
       throw new ApiError(409, 'Reddedilmiş taslak yayınlanamaz');
@@ -89,6 +133,51 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       throw new ApiError(400, 'Taslak gövdesi boş — yayınlanamaz');
     }
 
+    // ─── Varsayılan yol: SİTE (canakkale.network) ───
+    if (target === 'site') {
+      const slug = await uniqueSiteSlug(draft.title || draft.topic);
+      const categorySlug = await matchSiteCategory(draft.category);
+
+      const article = await prisma.siteArticle.create({
+        data: {
+          slug,
+          title: draft.title || draft.topic,
+          summary: draft.metaDescription || stripHtml(draft.body, 180),
+          body: draft.body,
+          categorySlug,
+          tags: draft.tags,
+          imageUrl: draft.imageUrl,
+          imageAlt: draft.title ? `${draft.title} (temsili görsel)` : null,
+          imageIsAi: !!draft.imageUrl && draft.imageUrl.startsWith('data:'),
+          authorName: session?.name || 'Çanakkale Network',
+          authorId: session?.sub ?? null,
+          status: 'published',
+          newsType: draft.newsType,
+          isBreaking: draft.newsType === 'breaking',
+          publishedAt: new Date(),
+          seoTitle: draft.seoTitle,
+          metaDescription: draft.metaDescription,
+          sourceDraftId: draft.id,
+          sourceLinks: draft.sources,
+        },
+      });
+
+      const updated = await prisma.aiDraft.update({
+        where: { id: draft.id },
+        data: {
+          status: 'published',
+          articleId: article.id,
+          reviewerId: session?.sub ?? null,
+          reviewerName: session?.name ?? null,
+        },
+      });
+
+      const siteUrl = `https://canakkale.network/haber/${article.slug}`;
+      await audit(session, 'published', 'aiDraft', draft.id, `AI taslağı siteye yayınlandı (${article.slug}): ${article.title}`);
+      return NextResponse.json({ ok: true, target: 'site', articleId: article.id, slug: article.slug, siteUrl, draft: updated });
+    }
+
+    // ─── İkincil yol: WordPress (mevcut davranış) ───
     // WP yapılandırılmamışsa getWpConfig dostça 400 fırlatır — handleApiError yakalar
     const config = await getWpConfig();
 
@@ -138,7 +227,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     });
 
     await audit(session, 'published', 'aiDraft', draft.id, `AI taslağı WordPress'e yayınlandı (WP #${created.id}): ${draft.title || draft.topic}`);
-    return NextResponse.json({ ok: true, wpId: created.id, imageAttached: !!created.thumbnail, warnings, draft: updated });
+    return NextResponse.json({ ok: true, target: 'wordpress', wpId: created.id, imageAttached: !!created.thumbnail, warnings, draft: updated });
   } catch (error) {
     return handleApiError(error, 'Taslak yayınlanamadı');
   }
