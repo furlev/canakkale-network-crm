@@ -28,6 +28,7 @@ const articleCreate = z.object({
   imageIsAi: z.boolean().optional(),
   videoUrl: z.string().optional().nullable(),
   authorName: z.string().optional().nullable(),
+  authorSlug: z.string().optional().nullable(), // yazar hub bağı (Author.slug)
   status: z.enum(['draft', 'published', 'archived']).optional(),
   newsType: z.enum(['breaking', 'daily', 'weekly', 'manual']).optional(),
   isBreaking: z.boolean().optional(),
@@ -143,6 +144,7 @@ export async function POST(request: Request) {
         imageIsAi: body.imageIsAi ?? false,
         videoUrl: body.videoUrl || null,
         authorName: body.authorName || session.name || 'Çanakkale Network',
+        authorSlug: body.authorSlug?.trim() || null,
         authorId: session.sub,
         status,
         newsType: body.newsType || 'manual',

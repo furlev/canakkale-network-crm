@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import ParticleField from './ParticleField';
+import { useMotionTier } from './motion/MotionProvider';
+import { useScrollProgress } from '@/hooks/useScrollProgress';
 
 export type HeroItem = {
   id: string;
@@ -26,10 +28,46 @@ export default function HeroCinematic({ items }: { items: HeroItem[] }) {
   const [active, setActive] = useState(0);
   const [cycle, setCycle] = useState(0); // manuel seçimde sayaç sıfırlansın diye
   const reducedRef = useRef(false);
+  const heroRef = useRef<HTMLElement>(null);
+  const tier = useMotionTier();
+  const [jsScrub, setJsScrub] = useState(false);
 
   useEffect(() => {
     reducedRef.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }, []);
+
+  // ── Scroll-scrub kurulumu ──
+  // Native CSS scroll-timeline destekleniyorsa CSS-only (data-scrub="css"),
+  // yoksa rAF fallback (data-scrub="js" → useScrollProgress --hero-p yazar).
+  // off tier / reduced-motion → hiç scrub yok, hero statik.
+  useEffect(() => {
+    const el = heroRef.current;
+    if (!el) return;
+    if (tier === 'off') {
+      el.removeAttribute('data-scrub');
+      setJsScrub(false);
+      return;
+    }
+    const supportsTimeline =
+      typeof CSS !== 'undefined' &&
+      typeof CSS.supports === 'function' &&
+      CSS.supports('animation-timeline', 'scroll()');
+    if (supportsTimeline) {
+      el.setAttribute('data-scrub', 'css');
+      setJsScrub(false);
+    } else {
+      el.setAttribute('data-scrub', 'js');
+      setJsScrub(true);
+    }
+  }, [tier, items.length]);
+
+  useScrollProgress(
+    heroRef,
+    p => {
+      heroRef.current?.style.setProperty('--hero-p', p.toFixed(4));
+    },
+    { disabled: !jsScrub }
+  );
 
   useEffect(() => {
     if (items.length < 2 || reducedRef.current) return;
@@ -45,7 +83,7 @@ export default function HeroCinematic({ items }: { items: HeroItem[] }) {
   // ── DB boşken zarif fallback: marka videosu + slogan ──
   if (items.length === 0) {
     return (
-      <section className="hero hero-fallback" aria-label="Çanakkale Network">
+      <section ref={heroRef} className="hero hero-fallback" aria-label="Çanakkale Network">
         <video
           className="hero-brand-video"
           src="/site/brand.mp4"
@@ -69,7 +107,7 @@ export default function HeroCinematic({ items }: { items: HeroItem[] }) {
   const current = items[active];
 
   return (
-    <section className="hero" aria-label="Manşet haberler">
+    <section ref={heroRef} className="hero" aria-label="Manşet haberler">
       <div className="hero-bg-stack" aria-hidden="true">
         {items.map((item, i) => {
           const isActive = i === active;

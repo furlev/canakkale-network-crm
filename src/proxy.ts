@@ -35,7 +35,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 /** Site host'unda kök yollara eşlenen özel dosya rotaları. */
-const SITE_FILE_ROUTES = new Set(['/sitemap.xml', '/robots.txt', '/feed.xml', '/rss', '/feed']);
+const SITE_FILE_ROUTES = new Set(['/sitemap.xml', '/sitemap-news.xml', '/robots.txt', '/feed.xml', '/rss', '/feed']);
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some(p => pathname === p || pathname.startsWith(p));

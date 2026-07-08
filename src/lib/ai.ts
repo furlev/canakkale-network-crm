@@ -1,6 +1,9 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import prisma from '@/lib/prisma';
 import { decryptSecret } from '@/lib/secure';
+import { districtName } from '@/lib/districts';
+import { withUsage } from '@/lib/ai-usage';
+import { getCategoryTemplate, resolveStyleOverride, type StyleGuide } from '@/lib/ai-templates';
 
 /**
  * Google Gemini (2.5 Flash) entegrasyonu. Anahtar önce GEMINI_API_KEY ortam
@@ -9,6 +12,14 @@ import { decryptSecret } from '@/lib/secure';
  */
 
 export const AI_MODEL = 'gemini-3.5-flash';
+
+/**
+ * Model yönlendirme (P1): ucuz işler (konu bulma / analiz / özet) flash'ta, ağır işler
+ * (fact-check / haber yazımı) daha güçlü modelde. env tanımlı değilse İKİSİ de AI_MODEL'e
+ * düşer → geriye dönük uyumlu (davranış değişmez). Değerler @google/genai model adları.
+ */
+export const AI_MODEL_CHEAP = process.env.AI_MODEL_CHEAP || AI_MODEL;
+export const AI_MODEL_STRONG = process.env.AI_MODEL_STRONG || AI_MODEL;
 
 /** Metin gömme (embedding) modeli — çoklu-kaynak teyidi için kümeleme. Vertex + AI Studio ortak. */
 export const EMBED_MODEL = process.env.AI_EMBED_MODEL || 'text-embedding-004';
@@ -167,8 +178,8 @@ export async function analyzeTip(subject: string, content: string): Promise<TipA
   // Kullanıcı girdisi (e-posta ihbarı) → prompt'a gömmeden önce temizle
   const safeSubject = sanitizeForPrompt(subject, 300);
   const safeContent = sanitizeForPrompt(content, 8000);
-  const res = await ai.models.generateContent({
-    model: AI_MODEL,
+  const res = await withUsage('analyzeTip', AI_MODEL_CHEAP, () => ai.models.generateContent({
+    model: AI_MODEL_CHEAP,
     contents: `Aşağıdaki ihbarı gazetecilik açısından değerlendir.\n\nKonu: ${safeSubject}\n\nİçerik:\n${safeContent}`,
     config: {
       systemInstruction: 'Sen Çanakkale Network haber ajansının editör asistanısın. Gelen ihbarları gazetecilik açısından değerlendirip önceliklendirirsin. Çıktıların Türkçe olmalı.',
@@ -186,7 +197,7 @@ export async function analyzeTip(subject: string, content: string): Promise<TipA
         required: ['summary', 'priority', 'category', 'newsworthy', 'reasoning'],
       },
     },
-  });
+  }));
   return parseAiJson<TipAnalysis>(res);
 }
 
@@ -199,8 +210,8 @@ export async function draftArticleFromTip(subject: string, content: string, sour
   const safeSubject = sanitizeForPrompt(subject, 300);
   const safeContent = sanitizeForPrompt(content, 8000);
   const safeSource = sanitizeForPrompt(source, 300);
-  const res = await ai.models.generateContent({
-    model: AI_MODEL,
+  const res = await withUsage('draftArticleFromTip', AI_MODEL_STRONG, () => ai.models.generateContent({
+    model: AI_MODEL_STRONG,
     contents: `Aşağıdaki ihbardan yayına hazır bir haber taslağı yaz.\n\nKonu: ${safeSubject}\nKaynak: ${safeSource}\n\nİçerik:\n${safeContent}`,
     config: {
       systemInstruction: 'Sen Çanakkale Network haber sitesinin muhabirisin. İhbarlardan nesnel, doğrulanabilir dille haber taslağı yazarsın. Asılsız iddiaları kesin bilgi gibi sunmaz, "iddia edildi/öne sürüldü" gibi ifadeler kullanırsın. Çıktı Türkçe.',
@@ -214,7 +225,7 @@ export async function draftArticleFromTip(subject: string, content: string, sour
         required: ['title', 'body'],
       },
     },
-  });
+  }));
   return parseAiJson<ArticleDraft>(res);
 }
 
@@ -235,8 +246,8 @@ export async function analyzeArticle(title: string, content: string): Promise<Ar
   // Başlık/içerik WP editöründen (kullanıcı) gelebilir → temizle + sınırla
   const safeTitle = sanitizeForPrompt(title, 300);
   const safeContent = sanitizeForPrompt(content, 8000);
-  const res = await withRetry(() => ai.models.generateContent({
-    model: AI_MODEL,
+  const res = await withUsage('analyzeArticle', AI_MODEL_CHEAP, () => withRetry(() => ai.models.generateContent({
+    model: AI_MODEL_CHEAP,
     contents: `Aşağıdaki haberi analiz et.\n\nBaşlık: ${safeTitle}\n\nİçerik:\n${safeContent}`,
     config: {
       systemInstruction: 'Sen Çanakkale Network haber sitesinin SEO ve içerik editörüsün. Haberleri analiz edip yayın ve arama motoru için meta verileri üretirsin. Tüm çıktılar Türkçe, nesnel ve abartısız olmalı.',
@@ -256,7 +267,7 @@ export async function analyzeArticle(title: string, content: string): Promise<Ar
         required: ['summary', 'metaDescription', 'seoTitle', 'category', 'tags', 'socialPost', 'district'],
       },
     },
-  }));
+  })));
   const parsed = parseAiJson<ArticleAnalysis>(res);
   // Çıktı doğrulama: SEO alanlarını karakter limitine, etiketleri 8 adede sabitle
   return {
@@ -270,14 +281,14 @@ export async function analyzeArticle(title: string, content: string): Promise<Ar
 /* ── Serbest metin özeti (bülten, rapor yorumu vb.) ── */
 export async function summarizeText(prompt: string, system?: string): Promise<string> {
   const ai = await getClient();
-  const res = await ai.models.generateContent({
-    model: AI_MODEL,
+  const res = await withUsage('summarizeText', AI_MODEL_CHEAP, () => ai.models.generateContent({
+    model: AI_MODEL_CHEAP,
     contents: prompt,
     config: {
       systemInstruction: system || 'Sen yardımcı bir Türkçe editör asistanısın.',
       thinkingConfig: { thinkingBudget: 0 },
     },
-  });
+  }));
   return (res.text ?? '').trim();
 }
 
@@ -334,8 +345,8 @@ export async function discoverTopics(
     })
     .join('\n');
   const extra = extraInstruction ? `\n\nEK YÖNERGE: ${extraInstruction}` : '';
-  const res = await withRetry(() => ai.models.generateContent({
-    model: AI_MODEL,
+  const res = await withUsage('discoverTopics', AI_MODEL_CHEAP, () => withRetry(() => ai.models.generateContent({
+    model: AI_MODEL_CHEAP,
     contents: `Aşağıda Çanakkale yerel haber başlıkları var; bazılarında köşeli parantezde kaynak güven bağlamı (güven puanı 0-100, kaynak türü, "teyit:N" = N ayrı kaynakça doğrulanmış) yer alır. Benzer olanları kümeleyip en fazla ${maxTopics} AYRI, güncel ve haber değeri yüksek KONU çıkar. Aynı olayın farklı kaynaklardaki tekrarlarını TEK konuda birleştir. Reklam/ilan/spam olanları ele. Her konu için hangi Çanakkale ilçesiyle ilgili olduğunu (district) ve konunun Çanakkale ile ilgili olup olmadığını (isLocal) belirt.${extra}\n\n${list}`,
     config: {
       systemInstruction: 'Sen Çanakkale Network haber ajansının editörüsün. Haber akışından günün en önemli, özgün konularını seçersin. Kaynak güvenini dikkate al: DÜŞÜK güvenli TEK kaynaktan gelen doğrulanmamış iddiaları yüksek puanlama; birden çok kaynakça teyit edilen (teyit:2+) ya da resmi kaynaklı olayları öne çıkar. Çanakkale ile ilgisi olmayan (ulusal/alakasız) konuları isLocal=false işaretle. Türkçe.',
@@ -358,7 +369,7 @@ export async function discoverTopics(
         },
       },
     },
-  }));
+  })));
   const arr = parseAiJson<DiscoveredTopic[]>(res, 'array');
   return arr.sort((a, b) => b.newsworthiness - a.newsworthiness).slice(0, maxTopics);
 }
@@ -373,11 +384,11 @@ export async function embedText(texts: string[], taskType = 'SEMANTIC_SIMILARITY
   const CHUNK = 100; // model başına instance sınırına karşı güvenli parça boyutu
   for (let i = 0; i < texts.length; i += CHUNK) {
     const batch = texts.slice(i, i + CHUNK).map((t) => sanitizeForPrompt(t, 2000) || ' ');
-    const res = await withRetry(() => ai.models.embedContent({
+    const res = await withUsage('embed', EMBED_MODEL, () => withRetry(() => ai.models.embedContent({
       model: EMBED_MODEL,
       contents: batch,
       config: { taskType },
-    }));
+    })), { estInputChars: batch.reduce((n, s) => n + s.length, 0) });
     const embs = res.embeddings ?? [];
     for (let j = 0; j < batch.length; j++) {
       const v = embs[j]?.values;
@@ -419,14 +430,14 @@ function independentDomain(uri: string | undefined): string | null {
  *  çekilir (tek kaynaklı iddia yüksek güven alamaz). */
 export async function factCheckTopic(topic: string, headline: string): Promise<FactCheck> {
   const ai = await getClient();
-  const res = await withRetry(() => ai.models.generateContent({
-    model: AI_MODEL,
+  const res = await withUsage('factCheck', AI_MODEL_STRONG, () => withRetry(() => ai.models.generateContent({
+    model: AI_MODEL_STRONG,
     contents: `Şu Çanakkale haber konusunu güncel web kaynaklarıyla DOĞRULA:\nKonu: ${topic}\nBaşlık: ${headline}\n\nBirden çok BAĞIMSIZ kaynağı karşılaştır. Kaynaklar arasında çelişki varsa açıkça yaz ve güveni düşür. SADECE şu JSON'u döndür (başka metin yok):\n{"confidence": 0 ile 1 arası sayı, "verifiedSummary": "doğrulanmış kısa özet", "caveats": "şüphe/uyarı ya da boş", "sourceCount": doğrulayan bağımsız kaynak sayısı (tam sayı), "contradictions": ["kaynaklar arası çelişki maddeleri; yoksa boş dizi"]}`,
     config: {
       systemInstruction: 'Sen titiz bir haber doğrulama editörüsün. Yalnızca kaynaklarca desteklenen bilgiyi doğrularsın; farklı bağımsız kaynakları karşılaştırır, çeliştiklerinde contradictions listesine yazar ve güveni düşürürsün. Türkçe.',
       tools: [{ googleSearch: {} }],
     },
-  }));
+  })));
   const text = res.text ?? '';
   const links: string[] = [];
   const domains = new Set<string>();
@@ -465,14 +476,29 @@ export async function factCheckTopic(topic: string, headline: string): Promise<F
   };
 }
 
-/** Doğrulanmış konudan özgün, nesnel haber metni yaz. */
-export async function writeArticleFromTopic(headline: string, verifiedSummary: string, category: string): Promise<ArticleDraft> {
+/** Doğrulanmış konudan özgün, nesnel haber metni yaz.
+ *  Kategoriye göre yazım şablonu (ai-templates) sistem yönergesine + yapı talimatına
+ *  eklenir; `styleGuide` verilirse (Setting('styleGuide')) editör override'ı önceliklidir. */
+export async function writeArticleFromTopic(
+  headline: string,
+  verifiedSummary: string,
+  category: string,
+  styleGuide?: StyleGuide | null,
+): Promise<ArticleDraft> {
   const ai = await getClient();
-  const res = await withRetry(() => ai.models.generateContent({
-    model: AI_MODEL,
-    contents: `Aşağıdaki doğrulanmış bilgiden yayına hazır, ÖZGÜN (kopya değil) bir haber metni yaz.\nBaşlık fikri: ${headline}\nKategori: ${category}\nDoğrulanmış bilgi:\n${verifiedSummary}`,
+  const tpl = getCategoryTemplate(category);
+  const override = resolveStyleOverride(styleGuide, category);
+  const baseSystem = 'Sen Çanakkale Network muhabirisin. Nesnel, doğrulanabilir, abartısız gazetecilik diliyle 3-5 paragraf haber yazarsın. Asılsız iddiaları kesin sunmaz, "iddia edildi/bildirildi" gibi ifadeler kullanırsın. Gövde metninde EN AZ BİR kaynağa açık atıf yap (ör. "yetkililerin açıklamasına göre", "... kaynaklara göre"). Türkçe.';
+  const systemInstruction = [
+    baseSystem,
+    tpl.systemInstruction,
+    override ? `EDİTÖR STİL REHBERİ (bu talimat önceliklidir): ${override}` : '',
+  ].filter(Boolean).join('\n\n');
+  const res = await withUsage('writeArticle', AI_MODEL_STRONG, () => withRetry(() => ai.models.generateContent({
+    model: AI_MODEL_STRONG,
+    contents: `Aşağıdaki doğrulanmış bilgiden yayına hazır, ÖZGÜN (kopya değil, kaynak metni birebir tekrar etmeyen) bir haber metni yaz.\nBaşlık fikri: ${headline}\nKategori: ${category}\n\nYAPI/BİÇİM: ${tpl.structure}\n\nDoğrulanmış bilgi:\n${verifiedSummary}`,
     config: {
-      systemInstruction: 'Sen Çanakkale Network muhabirisin. Nesnel, doğrulanabilir, abartısız gazetecilik diliyle 3-5 paragraf haber yazarsın. Asılsız iddiaları kesin sunmaz, "iddia edildi/bildirildi" gibi ifadeler kullanırsın. Gövde metninde EN AZ BİR kaynağa açık atıf yap (ör. "yetkililerin açıklamasına göre", "... kaynaklara göre"). Türkçe.',
+      systemInstruction,
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -483,7 +509,7 @@ export async function writeArticleFromTopic(headline: string, verifiedSummary: s
         required: ['title', 'body'],
       },
     },
-  }));
+  })));
   const draft = parseAiJson<ArticleDraft>(res);
   if (!draft.body || !draft.body.trim() || !draft.title || !draft.title.trim()) {
     throw new Error('AI boş başlık/gövde üretti (yayına uygun değil)');
@@ -520,8 +546,8 @@ export async function writeWeeklyRoundup(articles: WeeklyRoundupInput[]): Promis
       return `${n + 1}. ${cat}${sanitizeForPrompt(a.title, 300)}${sum} (${a.views} görüntülenme)`;
     })
     .join('\n');
-  const res = await withRetry(() => ai.models.generateContent({
-    model: AI_MODEL,
+  const res = await withUsage('writeWeeklyRoundup', AI_MODEL_STRONG, () => withRetry(() => ai.models.generateContent({
+    model: AI_MODEL_STRONG,
     contents: `Aşağıda Çanakkale Network haber sitesinde SON 7 GÜNDE yayınlanan haberler var. Bunlardan "Çanakkale'de Bu Hafta" tarzı, haftaya kuşbakışı bakan bir değerlendirme yazısı yaz.\n\nKurallar:\n- Öne çıkan olayları TEMA TEMA grupla (ör. asayiş, üniversite, spor, etkinlikler) ve akıcı bir köşe yazısı üslubuyla anlat.\n- Kaynak haberlere BAŞLIKLARIYLA atıf yap (ör. "Haftanın en çok konuşulan gelişmesi '...' başlıklı haberimizdi").\n- Yeni bilgi UYDURMA; yalnızca verilen başlık/özetlerdeki bilgiyi kullan.\n- Gövde <p> (gerekirse tema başlıkları için <h3>) etiketli HTML olsun.\n\nHaberler:\n${list}`,
     config: {
       systemInstruction: 'Sen Çanakkale Network haber sitesinin deneyimli köşe yazarı/editörüsün. Haftalık panorama yazıları sıcak, akıcı ama abartısız ve nesneldir. Tüm çıktılar Türkçe.',
@@ -539,7 +565,7 @@ export async function writeWeeklyRoundup(articles: WeeklyRoundupInput[]): Promis
         required: ['title', 'body', 'summary', 'tags', 'seoTitle', 'metaDescription'],
       },
     },
-  }));
+  })));
   const parsed = parseAiJson<WeeklyRoundup>(res);
   if (!parsed.title?.trim() || !parsed.body?.trim()) {
     throw new Error('AI boş başlık/gövde üretti (haftalık panorama yayına uygun değil)');
@@ -556,15 +582,141 @@ export async function writeWeeklyRoundup(articles: WeeklyRoundupInput[]): Promis
 export async function generateArticleImage(prompt: string): Promise<string | null> {
   const ai = await getClient();
   try {
-    const res = await ai.models.generateImages({
+    const res = await withUsage('image', IMAGE_MODEL, () => ai.models.generateImages({
       model: IMAGE_MODEL,
       prompt: `Haber başlık görseli, temsili, fotogerçekçi, Çanakkale/Türkiye bağlamı: ${prompt}. Görselde metin ve logo olmasın.`,
       config: { numberOfImages: 1, aspectRatio: '16:9' },
-    });
+    }), { images: 1 });
     const bytes = res.generatedImages?.[0]?.image?.imageBytes;
     return bytes ? `data:image/png;base64,${bytes}` : null;
   } catch (e) {
     console.error('[ai] generateArticleImage', e);
     return null;
   }
+}
+
+/* ══════════ P1: GERİ BESLEME · STİL/OTO-YAYIN AYARLARI · ÖZGÜNLÜK ══════════ */
+
+function clampNum(v: unknown, min: number, max: number, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
+}
+
+/**
+ * Geri besleme döngüsü: son `days` günde SİTEDE yayınlanan haberlerin kategori/ilçe
+ * bazında toplam okunmasından kısa bir Türkçe "okuyucu ilgisi" özeti üretir. AI ÇAĞIRMAZ
+ * (yalnız DB toplama). Hata-toleranslı: sorun olursa '' döner. generate-drafts bunu daily
+ * modun discoverInstruction'ına enjekte eder.
+ */
+export async function summarizeEngagement(days = 30): Promise<string> {
+  try {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const rows = await prisma.siteArticle.findMany({
+      where: { status: 'published', deletedAt: null, publishedAt: { gte: since } },
+      select: { views: true, district: true, categorySlug: true, category: { select: { name: true } } },
+    });
+    if (rows.length === 0) return '';
+    const catViews = new Map<string, number>();
+    const distViews = new Map<string, number>();
+    for (const r of rows) {
+      const cat = r.category?.name || r.categorySlug;
+      if (cat) catViews.set(cat, (catViews.get(cat) ?? 0) + (r.views || 0));
+      const dist = districtName(r.district) || r.district;
+      if (dist) distViews.set(dist, (distViews.get(dist) ?? 0) + (r.views || 0));
+    }
+    const topCats = [...catViews.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const topDists = [...distViews.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    if (topCats.length === 0 && topDists.length === 0) return '';
+    const parts: string[] = [];
+    if (topCats.length) parts.push(`kategori olarak ${topCats.map(([c, v]) => `${c} (${v.toLocaleString('tr-TR')} okunma)`).join(', ')}`);
+    if (topDists.length) parts.push(`ilçe olarak ${topDists.map(([d]) => d).join(', ')}`);
+    return `Okuyucular son ${days} günde ${parts.join('; ')} içeriklerine daha çok ilgi gösterdi. Bu ilgi alanlarına uygun güncel ve özgün konulara öncelik ver — ama günün gerçek haber değerini gölgede bırakma.`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Setting('styleGuide') → editör stil rehberi. Obje ise olduğu gibi, düz string ise
+ * `{ global }` olarak çözer. Yoksa/bozuksa null. writeArticleFromTopic'e geçirilir.
+ */
+export async function getStyleGuide(): Promise<StyleGuide | null> {
+  try {
+    const row = await prisma.setting.findUnique({ where: { key: 'styleGuide' } });
+    if (!row) return null;
+    const parsed = JSON.parse(row.value);
+    if (typeof parsed === 'string') return parsed.trim() ? { global: parsed } : null;
+    if (parsed && typeof parsed === 'object') return parsed as StyleGuide;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Yarı-otomatik yayın kuralları — Setting('autoPublish').
+ * VARSAYILAN KAPALIDIR (güvenlik: CLAUDE.md — taslak asla otomatik yayınlanmaz). Kural
+ * yalnızca DAILY üretimde ve enabled=true iken taslağı 'approved' + scheduledAt yapar;
+ * gerçek yayını planlı-yayın cron'u + editör denetimi yapar. BREAKING/WEEKLY asla otomatik.
+ */
+export type AutoPublishConfig = {
+  enabled: boolean;
+  minConfidence: number; // 0-1 fact-check güveni
+  minQuality: number;    // 0-100 kalite skoru
+  minOriginality: number; // 0-100 özgünlük skoru
+  modes: string[];       // izinli modlar (yalnız 'daily' desteklenir)
+  delayMinutes: number;  // scheduledAt = şimdi + delay
+};
+
+const AUTO_PUBLISH_DEFAULT: AutoPublishConfig = {
+  enabled: false, minConfidence: 0.8, minQuality: 75, minOriginality: 55, modes: ['daily'], delayMinutes: 30,
+};
+
+export async function getAutoPublishConfig(): Promise<AutoPublishConfig> {
+  try {
+    const row = await prisma.setting.findUnique({ where: { key: 'autoPublish' } });
+    if (!row) return AUTO_PUBLISH_DEFAULT;
+    const p = JSON.parse(row.value) as Partial<AutoPublishConfig>;
+    return {
+      enabled: p.enabled === true,
+      minConfidence: clampNum(p.minConfidence, 0, 1, AUTO_PUBLISH_DEFAULT.minConfidence),
+      minQuality: clampNum(p.minQuality, 0, 100, AUTO_PUBLISH_DEFAULT.minQuality),
+      minOriginality: clampNum(p.minOriginality, 0, 100, AUTO_PUBLISH_DEFAULT.minOriginality),
+      modes: Array.isArray(p.modes) ? p.modes.filter((m): m is string => typeof m === 'string') : AUTO_PUBLISH_DEFAULT.modes,
+      delayMinutes: clampNum(p.delayMinutes, 0, 24 * 60, AUTO_PUBLISH_DEFAULT.delayMinutes),
+    };
+  } catch {
+    return AUTO_PUBLISH_DEFAULT;
+  }
+}
+
+/** Kelime trigram (3-gram) kümesi — HTML/etiket temizler, TR küçük harf, noktalama atar. */
+function wordTrigrams(s: string): Set<string> {
+  const words = (s || '')
+    .replace(/<[^>]+>/g, ' ')
+    .toLocaleLowerCase('tr-TR')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 1);
+  const set = new Set<string>();
+  for (let i = 0; i + 3 <= words.length; i++) {
+    set.add(`${words[i]} ${words[i + 1]} ${words[i + 2]}`);
+  }
+  return set;
+}
+
+/**
+ * Özgünlük/intihal skoru (0-100, yüksek = özgün). embedText yerine deterministik n-gram
+ * KAPSAMA (containment) ölçer: kaynak özetinin trigram'larının ne kadarı üretilen gövdede
+ * BİREBİR tekrar ediyor → yüksek tekrar = düşük özgünlük. (Semantik embedding aynı olayı
+ * yazınca doğal olarak yüksek benzerlik verir; kopya tespitinde n-gram daha isabetli.)
+ * Sinyal yetersizse (kısa metin) null → computeQualityScore bunu nötr sayar.
+ */
+export function textOriginalityScore(generated: string, source: string): number | null {
+  const gen = wordTrigrams(generated);
+  const src = wordTrigrams(source);
+  if (gen.size < 5 || src.size < 5) return null;
+  let overlap = 0;
+  for (const t of src) if (gen.has(t)) overlap++;
+  const containment = overlap / src.size;
+  return Math.round(Math.max(0, Math.min(1, 1 - containment)) * 100);
 }

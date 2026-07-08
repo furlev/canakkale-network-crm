@@ -1,0 +1,25 @@
+/* İmleç aurası — tam ekran sabit katman, işaretçiyi izleyen radyal kor parıltısı. */
+.glow {
+  position: fixed;
+  inset: 0;
+  z-index: 90; /* içeriğin üstünde, header(200)/overlay(400) altında */
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.45s var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+  background: radial-gradient(
+    220px 220px at var(--cx, 50%) var(--cy, 50%),
+    color-mix(in srgb, var(--accent) 18%, transparent),
+    transparent 62%
+  );
+  mix-blend-mode: screen;
+}
+
+.visible {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glow {
+    display: none;
+  }
+}

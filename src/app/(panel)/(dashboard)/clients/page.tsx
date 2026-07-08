@@ -1,5 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
+import DataTable, { type Column } from '@/components/DataTable';
+import { SkeletonStats } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
 
 type Client = {
   id: string;
@@ -13,7 +16,7 @@ type Client = {
 };
 
 export default function ClientsPage() {
-  const [view, setView] = useState<'grid'|'list'>('grid');
+  const [view, setView] = useState<'grid'|'list'>('list');
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -54,8 +57,7 @@ export default function ClientsPage() {
     }
   };
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDelete = async (id: string) => {
     if (!confirm('Bu müşteriyi silmek istediğinize emin misiniz?')) return;
     try {
       const res = await fetch(`/api/clients/${id}`, { method: 'DELETE' });
@@ -67,46 +69,129 @@ export default function ClientsPage() {
     }
   };
 
+  const handleBulkDelete = async (rows: Client[]) => {
+    if (!confirm(`${rows.length} müşteriyi silmek istediğinize emin misiniz?`)) return;
+    const ids = new Set(rows.map(r => r.id));
+    try {
+      await Promise.all(rows.map(r => fetch(`/api/clients/${r.id}`, { method: 'DELETE' })));
+      setClients(prev => prev.filter(c => !ids.has(c.id)));
+    } catch (error) {
+      console.error('Error bulk deleting clients:', error);
+    }
+  };
+
+  const avgSatisfaction = clients.length === 0 ? 0 : Math.round(clients.reduce((acc, c) => acc + c.satisfaction, 0) / clients.length);
+
+  const columns: Column<Client>[] = [
+    {
+      key: 'companyName',
+      header: 'Firma Adı',
+      filterable: true,
+      render: (c) => <span style={{ fontWeight: 500 }}>{c.companyName}</span>,
+    },
+    { key: 'contactName', header: 'Yetkili', filterable: true },
+    { key: 'email', header: 'E-Posta', render: (c) => <span className="text-muted" style={{ fontSize: 'var(--text-xs)' }}>{c.email}</span> },
+    { key: 'phone', header: 'Telefon', render: (c) => c.phone || '-', defaultHidden: true },
+    {
+      key: 'status',
+      header: 'Durum',
+      accessor: (c) => (c.status === 'active' ? 'Aktif' : 'Pasif'),
+      filterable: true,
+      render: (c) => (
+        <span className={`badge ${c.status === 'active' ? 'badge-success' : 'badge-error'}`}>
+          {c.status === 'active' ? 'Aktif' : 'Pasif'}
+        </span>
+      ),
+    },
+    {
+      key: 'satisfaction',
+      header: 'Memnuniyet',
+      accessor: (c) => c.satisfaction,
+      numeric: true,
+      render: (c) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', justifyContent: 'flex-end' }}>
+          <div className="progress-bar" style={{ width: 60 }}>
+            <div className="progress-bar-fill accent" style={{ width: `${c.satisfaction}%` }} />
+          </div>
+          <span className="dt-num" style={{ fontSize: 'var(--text-xs)' }}>{c.satisfaction}%</span>
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'İşlemler',
+      sortable: false,
+      hideable: false,
+      csv: false,
+      align: 'right',
+      render: (c) => (
+        <div onClick={(e) => e.stopPropagation()}>
+          <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(c.id)}>Sil</button>
+        </div>
+      ),
+    },
+  ];
+
+  const viewToggle = (
+    <div className="tabs" style={{ marginBottom: 0 }}>
+      <button className={`tab ${view === 'list' ? 'active' : ''}`} onClick={() => setView('list')}>Tablo</button>
+      <button className={`tab ${view === 'grid' ? 'active' : ''}`} onClick={() => setView('grid')}>Grid</button>
+    </div>
+  );
+
   return (
     <div>
       <div className="page-header">
         <div className="page-header-left">
           <h1 className="page-title">🏢 Müşteriler</h1>
-          <p className="page-subtitle">Toplam {clients.length} aktif kurumsal müşteri</p>
+          <p className="page-subtitle">Toplam {clients.length} kurumsal müşteri</p>
         </div>
         <div className="page-header-actions">
-          <div className="tabs" style={{marginBottom: 0}}>
-            <button className={`tab ${view==='grid'?'active':''}`} onClick={()=>setView('grid')}>Grid</button>
-            <button className={`tab ${view==='list'?'active':''}`} onClick={()=>setView('list')}>Liste</button>
-          </div>
+          {view === 'grid' && viewToggle}
           <button className="btn btn-primary" onClick={() => setIsAdding(true)}>+ Yeni Müşteri</button>
         </div>
       </div>
 
-      <div className="stats-grid" style={{marginBottom: 'var(--space-6)'}}>
-        <div className="stat-card">
-          <div className="stat-card-label">Toplam Müşteri</div>
-          <div className="stat-card-value">{loading ? '-' : clients.length}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-label">Aktif Müşteri</div>
-          <div className="stat-card-value" style={{color:'var(--success)'}}>
-            {loading ? '-' : clients.filter(c => c.status === 'active').length}
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-label">Ort. Memnuniyet</div>
-          <div className="stat-card-value" style={{color:'var(--accent)'}}>
-            {loading || clients.length === 0 ? '-' : Math.round(clients.reduce((acc, c) => acc + c.satisfaction, 0) / clients.length)}%
-          </div>
-        </div>
-      </div>
-
       {loading ? (
-        <div style={{textAlign:'center', padding:'var(--space-8)'}}>Yükleniyor...</div>
+        <SkeletonStats count={3} />
+      ) : (
+        <div className="stats-grid" style={{marginBottom: 'var(--space-6)'}}>
+          <div className="stat-card">
+            <div className="stat-card-label">Toplam Müşteri</div>
+            <div className="stat-card-value">{clients.length}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-label">Aktif Müşteri</div>
+            <div className="stat-card-value" style={{color:'var(--success)'}}>
+              {clients.filter(c => c.status === 'active').length}
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-label">Ort. Memnuniyet</div>
+            <div className="stat-card-value" style={{color:'var(--accent)'}}>{avgSatisfaction}%</div>
+          </div>
+        </div>
+      )}
+
+      {view === 'list' ? (
+        <DataTable<Client>
+          columns={columns}
+          rows={clients}
+          rowKey={(c) => c.id}
+          loading={loading}
+          searchPlaceholder="Firma, yetkili veya e-posta ara..."
+          csvFileName="musteriler"
+          selectable
+          initialSort={{ key: 'companyName', dir: 'asc' }}
+          toolbarExtra={viewToggle}
+          bulkActions={[{ label: 'Sil', icon: '🗑️', variant: 'danger', onClick: handleBulkDelete }]}
+          emptyState={<EmptyState icon="🏢" title="Henüz müşteri yok" description="İlk kurumsal müşterinizi ekleyerek başlayın." actionLabel="+ Yeni Müşteri" onAction={() => setIsAdding(true)} />}
+        />
+      ) : loading ? (
+        <div style={{textAlign:'center', padding:'var(--space-8)', color:'var(--text-muted)'}}>Yükleniyor...</div>
       ) : clients.length === 0 ? (
-        <div style={{textAlign:'center', padding:'var(--space-8)', color:'var(--text-muted)'}}>Henüz hiç müşteri eklenmemiş.</div>
-      ) : view === 'grid' ? (
+        <EmptyState icon="🏢" title="Henüz müşteri yok" description="İlk kurumsal müşterinizi ekleyerek başlayın." actionLabel="+ Yeni Müşteri" onAction={() => setIsAdding(true)} />
+      ) : (
         <div className="grid-3">
           {clients.map(client => (
             <div key={client.id} className="card" style={{position:'relative'}}>
@@ -114,13 +199,13 @@ export default function ClientsPage() {
                 <div className="avatar" style={{background:'var(--surface-2)'}}>
                   {client.companyName.substring(0,2).toUpperCase()}
                 </div>
-                <button className="btn btn-ghost btn-sm" onClick={(e) => handleDelete(client.id, e)}>Sil</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(client.id)}>Sil</button>
               </div>
               <h3 style={{fontSize:'var(--text-lg)', marginBottom:'var(--space-2)'}}>{client.companyName}</h3>
               <p style={{color:'var(--text-muted)', fontSize:'var(--text-sm)', marginBottom:'var(--space-4)'}}>
                 Yetkili: {client.contactName}
               </p>
-              
+
               <div style={{display:'flex', flexDirection:'column', gap:'var(--space-2)', fontSize:'var(--text-sm)', marginBottom:'var(--space-4)'}}>
                 <div style={{display:'flex', alignItems:'center', gap:'var(--space-2)'}}>
                   <span>📧</span> {client.email}
@@ -130,58 +215,17 @@ export default function ClientsPage() {
                 </div>
               </div>
 
-              <div style={{borderTop:'1px solid var(--border)', paddingTop:'var(--space-4)'}}>
+              <div style={{borderTop:'1px solid var(--border-subtle)', paddingTop:'var(--space-4)'}}>
                 <div style={{display:'flex', justifyContent:'space-between', fontSize:'var(--text-xs)', marginBottom:'var(--space-2)'}}>
                   <span>Memnuniyet</span>
                   <span style={{color:'var(--accent)'}}>{client.satisfaction}%</span>
                 </div>
                 <div className="progress-bar">
-                  <div className="progress-fill" style={{width: `${client.satisfaction}%`, background:'var(--primary-gradient)'}}></div>
+                  <div className="progress-bar-fill primary" style={{width: `${client.satisfaction}%`}}></div>
                 </div>
               </div>
             </div>
           ))}
-        </div>
-      ) : (
-        <div className="data-table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Firma Adı</th>
-                <th>Yetkili</th>
-                <th>İletişim</th>
-                <th>Durum</th>
-                <th>Memnuniyet</th>
-                <th>İşlemler</th>
-              </tr>
-            </thead>
-            <tbody>
-              {clients.map(client => (
-                <tr key={client.id}>
-                  <td style={{fontWeight:500}}>{client.companyName}</td>
-                  <td>{client.contactName}</td>
-                  <td style={{fontSize:'var(--text-xs)'}}>
-                    <div>{client.email}</div>
-                    <div style={{color:'var(--text-muted)'}}>{client.phone}</div>
-                  </td>
-                  <td>
-                    <span className={`badge ${client.status === 'active' ? 'badge-success' : 'badge-error'}`}>
-                      {client.status === 'active' ? 'Aktif' : 'Pasif'}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{display:'flex', alignItems:'center', gap:'var(--space-2)'}}>
-                      <div className="progress-bar" style={{width: 60}}>
-                        <div className="progress-fill" style={{width: `${client.satisfaction}%`, background:'var(--accent)'}}></div>
-                      </div>
-                      <span style={{fontSize:'var(--text-xs)'}}>{client.satisfaction}%</span>
-                    </div>
-                  </td>
-                  <td><button className="btn btn-ghost btn-sm" onClick={(e) => handleDelete(client.id, e)}>Sil</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
 

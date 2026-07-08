@@ -40,6 +40,18 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "${{ vars.CRM_URL }}/api/cron/publish-scheduled" || echo "publish-scheduled atlandı/başarısız"
 
+      - name: Şehir Panosu — hava durumu
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/weather" || echo "weather atlandı/başarısız"
+
+      - name: Şehir Panosu — piyasa (döviz/altın)
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/market" || echo "market atlandı/başarısız"
+
   cleanup:
     # Günde bir (03:00 UTC): eski feed öğeleri + taslak görselleri + reddedilmiş taslak temizliği
     if: github.event_name != 'schedule' || github.event.schedule == '0 3 * * *'
@@ -50,3 +62,27 @@ jobs:
           curl -fsS -X POST \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "${{ vars.CRM_URL }}/api/cron/cleanup" || echo "cleanup atlandı/başarısız"
+
+      - name: Şehir Panosu — nöbetçi eczane
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/pharmacy" || echo "pharmacy atlandı/başarısız"
+
+      - name: Namaz vakitleri
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/prayer" || echo "prayer atlandı/başarısız"
+
+      - name: Tekrarlayan faturalar
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/recurring-invoices" || echo "recurring-invoices atlandı/başarısız"
+
+      - name: Fatura vade hatırlatmaları
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/invoice-reminders" || echo "invoice-reminders atlandı/başarısız"

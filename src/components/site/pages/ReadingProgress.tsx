@@ -31,5 +31,5 @@ export default function ReadingProgress() {
     };
   }, []);
 
-  return <div ref={barRef} className="p-progress" aria-hidden="true" />;
+  return <div ref={barRef} className="p-progress s-progress" aria-hidden="true" />;
 }

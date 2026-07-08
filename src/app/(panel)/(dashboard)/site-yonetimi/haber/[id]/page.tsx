@@ -22,6 +22,7 @@ function slugifyTr(input: string): string {
 }
 
 type Category = { slug: string; name: string };
+type Author = { slug: string; name: string; title?: string | null };
 
 type FormState = {
   title: string;
@@ -36,6 +37,7 @@ type FormState = {
   imageIsAi: boolean;
   videoUrl: string;
   authorName: string;
+  authorSlug: string;        // yazar hub bağı (Author.slug) — '' = bağsız
   status: string;            // draft | published | archived
   newsType: string;          // breaking | daily | weekly | manual
   isBreaking: boolean;
@@ -52,7 +54,7 @@ type FormState = {
 
 const EMPTY: FormState = {
   title: '', slug: '', summary: '', body: '', categorySlug: '', district: '', tags: '',
-  imageUrl: '', imageAlt: '', imageIsAi: false, videoUrl: '', authorName: '',
+  imageUrl: '', imageAlt: '', imageIsAi: false, videoUrl: '', authorName: '', authorSlug: '',
   status: 'draft', newsType: 'manual', isBreaking: false, isFeatured: false,
   isEditorPick: false, seoTitle: '', metaDescription: '', publishedAt: null,
   correctionNote: '', correctedAt: null, retractionNote: '', retractedAt: null,
@@ -78,6 +80,7 @@ function toForm(a: Record<string, unknown>): FormState {
     imageIsAi: !!a.imageIsAi,
     videoUrl: (a.videoUrl as string) || '',
     authorName: (a.authorName as string) || '',
+    authorSlug: (a.authorSlug as string) || '',
     status: (a.status as string) || 'draft',
     newsType: (a.newsType as string) || 'manual',
     isBreaking: !!a.isBreaking,
@@ -102,6 +105,7 @@ export default function HaberEditorPage() {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [slugTouched, setSlugTouched] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [authors, setAuthors] = useState<Author[]>([]);
   const [bodyTab, setBodyTab] = useState<'edit' | 'preview'>('edit');
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
@@ -111,6 +115,10 @@ export default function HaberEditorPage() {
     fetch('/api/site-admin/categories')
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => { if (Array.isArray(data)) setCategories(data); })
+      .catch(() => {});
+    fetch('/api/site-admin/authors')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => { if (Array.isArray(data)) setAuthors(data); })
       .catch(() => {});
   }, []);
 
@@ -159,6 +167,7 @@ export default function HaberEditorPage() {
       imageIsAi: form.imageIsAi,
       videoUrl: form.videoUrl || null,
       authorName: form.authorName || null,
+      authorSlug: form.authorSlug || null,
       status,
       newsType: form.newsType,
       isBreaking: form.isBreaking,
@@ -345,6 +354,18 @@ export default function HaberEditorPage() {
             <div className="form-group">
               <label className="form-label">Yazar Adı</label>
               <input className="form-input" value={form.authorName} onChange={(e) => setField('authorName', e.target.value)} placeholder="Boşsa oturum kullanıcısı" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Yazar Hub Bağı</label>
+              <select className="form-select" value={form.authorSlug} onChange={(e) => setField('authorSlug', e.target.value)}>
+                <option value="">Yazar sayfası yok</option>
+                {authors.map((a) => (
+                  <option key={a.slug} value={a.slug}>{a.name}{a.title ? ` — ${a.title}` : ''}</option>
+                ))}
+              </select>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 4 }}>
+                Seçilirse haber /yazar/{form.authorSlug || '...'} sayfasında listelenir.
+              </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', fontSize: 'var(--text-sm)' }}>
               <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer' }}>

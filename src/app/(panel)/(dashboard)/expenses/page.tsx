@@ -1,5 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
+import DataTable, { type Column } from '@/components/DataTable';
+import { SkeletonStats } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
 
 type Expense = {
   id: string;
@@ -17,6 +20,8 @@ const categoryMap: Record<string, {label:string, icon:string}> = {
   travel: {label: 'Seyahat', icon: '✈️'},
   other: {label: 'Diğer', icon: '🏷️'},
 };
+
+const catLabel = (c: string) => categoryMap[c]?.label || c;
 
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -73,6 +78,17 @@ export default function ExpensesPage() {
     }
   };
 
+  const handleBulkDelete = async (rows: Expense[]) => {
+    if (!confirm(`${rows.length} gider kalemini silmek istediğinize emin misiniz?`)) return;
+    const ids = new Set(rows.map(r => r.id));
+    try {
+      await Promise.all(rows.map(r => fetch(`/api/expenses/${r.id}`, { method: 'DELETE' })));
+      setExpenses(prev => prev.filter(e => !ids.has(e.id)));
+    } catch (error) {
+      console.error('Error bulk deleting expenses:', error);
+    }
+  };
+
   const openEdit = (expense: Expense) => {
     setEditError('');
     setEditingExpense({ ...expense, date: expense.date ? new Date(expense.date).toISOString().slice(0, 10) : '' });
@@ -109,6 +125,58 @@ export default function ExpensesPage() {
   };
 
   const totalExpense = expenses.reduce((acc, curr) => acc + curr.amount, 0);
+  const thisMonth = expenses
+    .filter(e => new Date(e.date).getMonth() === new Date().getMonth() && new Date(e.date).getFullYear() === new Date().getFullYear())
+    .reduce((acc, curr) => acc + curr.amount, 0);
+
+  const columns: Column<Expense>[] = [
+    {
+      key: 'date',
+      header: 'Tarih',
+      accessor: (e) => (e.date ? new Date(e.date).toISOString().slice(0, 10) : ''),
+      render: (e) => <span className="text-muted">{e.date ? new Date(e.date).toLocaleDateString('tr-TR') : '-'}</span>,
+      width: 130,
+    },
+    {
+      key: 'category',
+      header: 'Kategori',
+      accessor: (e) => catLabel(e.category),
+      filterable: true,
+      render: (e) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <span>{categoryMap[e.category]?.icon || '🏷️'}</span>
+          <span className="badge badge-info">{catLabel(e.category)}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'description',
+      header: 'Açıklama',
+      accessor: (e) => e.description || '',
+      render: (e) => e.description || '-',
+    },
+    {
+      key: 'amount',
+      header: 'Tutar',
+      accessor: (e) => e.amount,
+      numeric: true,
+      render: (e) => <span style={{ fontWeight: 500, color: 'var(--error)' }}>-₺{e.amount.toLocaleString('tr-TR')}</span>,
+    },
+    {
+      key: 'actions',
+      header: 'İşlemler',
+      sortable: false,
+      hideable: false,
+      csv: false,
+      align: 'right',
+      render: (e) => (
+        <div onClick={(ev) => ev.stopPropagation()}>
+          <button className="btn btn-ghost btn-sm" onClick={() => openEdit(e)}>Düzenle</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(e.id)}>Sil</button>
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div>
@@ -122,63 +190,37 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      <div className="stats-grid">
-        <div className="stat-card" style={{borderTop:'2px solid var(--error)'}}>
-          <div className="stat-card-label">Toplam Gider</div>
-          <div className="stat-card-value" style={{color:'var(--error)'}}>₺{loading ? '-' : totalExpense.toLocaleString('tr-TR')}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-label">Bu Ayki Gider</div>
-          <div className="stat-card-value">
-            ₺{loading ? '-' : expenses
-              .filter(e => new Date(e.date).getMonth() === new Date().getMonth() && new Date(e.date).getFullYear() === new Date().getFullYear())
-              .reduce((acc, curr) => acc + curr.amount, 0).toLocaleString('tr-TR')}
+      {loading ? (
+        <SkeletonStats count={3} />
+      ) : (
+        <div className="stats-grid">
+          <div className="stat-card" style={{borderTop:'2px solid var(--error)'}}>
+            <div className="stat-card-label">Toplam Gider</div>
+            <div className="stat-card-value" style={{color:'var(--error)'}}>₺{totalExpense.toLocaleString('tr-TR')}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-label">Bu Ayki Gider</div>
+            <div className="stat-card-value">₺{thisMonth.toLocaleString('tr-TR')}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-label">İşlem Sayısı</div>
+            <div className="stat-card-value">{expenses.length}</div>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-card-label">İşlem Sayısı</div>
-          <div className="stat-card-value">{loading ? '-' : expenses.length}</div>
-        </div>
-      </div>
+      )}
 
-      <div className="data-table-container">
-        {loading ? (
-          <div style={{padding:'var(--space-8)', textAlign:'center'}}>Yükleniyor...</div>
-        ) : expenses.length === 0 ? (
-          <div style={{padding:'var(--space-8)', textAlign:'center', color:'var(--text-muted)'}}>Kayıtlı gider yok.</div>
-        ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Tarih</th>
-                <th>Kategori</th>
-                <th>Açıklama</th>
-                <th>Tutar</th>
-                <th>İşlemler</th>
-              </tr>
-            </thead>
-            <tbody>
-              {expenses.map((expense) => (
-                <tr key={expense.id}>
-                  <td style={{color:'var(--text-muted)'}}>{new Date(expense.date).toLocaleDateString('tr-TR')}</td>
-                  <td>
-                    <div style={{display:'flex', alignItems:'center', gap:'var(--space-2)'}}>
-                      <span>{categoryMap[expense.category]?.icon || '🏷️'}</span>
-                      <span className="badge badge-info">{categoryMap[expense.category]?.label || expense.category}</span>
-                    </div>
-                  </td>
-                  <td>{expense.description || '-'}</td>
-                  <td style={{fontWeight:500, color:'var(--error)'}}>-₺{expense.amount.toLocaleString('tr-TR')}</td>
-                  <td>
-                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(expense)}>Düzenle</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(expense.id)}>Sil</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      <DataTable<Expense>
+        columns={columns}
+        rows={expenses}
+        rowKey={(e) => e.id}
+        loading={loading}
+        searchPlaceholder="Açıklama veya kategori ara..."
+        csvFileName="giderler"
+        selectable
+        initialSort={{ key: 'date', dir: 'desc' }}
+        bulkActions={[{ label: 'Sil', icon: '🗑️', variant: 'danger', onClick: handleBulkDelete }]}
+        emptyState={<EmptyState icon="💸" title="Kayıtlı gider yok" description="İlk gider kalemini ekleyerek başlayın." actionLabel="+ Yeni Gider" onAction={() => setIsAdding(true)} />}
+      />
 
       {isAdding && (
         <>

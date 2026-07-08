@@ -15,6 +15,8 @@ import Reveal from '@/components/site/Reveal';
 import MotionProvider from '@/components/site/motion/MotionProvider';
 import CityBar from '@/components/site/panel/CityBar';
 import CookieConsent from '@/components/site/CookieConsent';
+import CursorGlow from '@/components/site/CursorGlow';
+import PushPrompt from '@/components/site/PushPrompt';
 import './site.css';
 import './home.css'; // header/footer/kabuk stilleri tum site rotalarinda gecerli
 
@@ -136,6 +138,7 @@ export default async function PublicSiteLayout({ children }: { children: React.R
       <body className="site-body s-grain">
         <MotionProvider>
           <Reveal />
+          <CursorGlow />
           <a href="#icerik" className="skip-link">
             İçeriğe atla
           </a>
@@ -145,6 +148,7 @@ export default async function PublicSiteLayout({ children }: { children: React.R
           <main id="icerik">{children}</main>
           <SiteFooter settings={settings} />
           <CookieConsent />
+          <PushPrompt />
         </MotionProvider>
       </body>
     </html>

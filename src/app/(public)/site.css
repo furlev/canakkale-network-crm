@@ -190,11 +190,14 @@
   overflow: hidden;
   text-decoration: none;
   color: var(--ink);
+  /* Dinlenme durumu: yalnız kaldırma (--card-lift). Varsayılan 0 → tilt kapalıyken
+     davranış eskisiyle BİREBİR aynı (3B katman yok → metin bulanıklığı yok). */
+  transform: translate3d(0, var(--card-lift, 0px), 0);
   transition: transform 0.35s var(--ease-out), box-shadow 0.35s var(--ease-out), border-color 0.35s;
 }
 
 .s-card:hover {
-  transform: translateY(-6px);
+  --card-lift: -6px;
   box-shadow: var(--card-shadow), var(--glow);
   border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
 }
@@ -298,4 +301,238 @@ html:not(.js-ready) .s-reveal { opacity: 1; transform: none; transition: none; }
 
 @media (max-width: 720px) {
   .s-section-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   P1 — MOTION & TASARIM TOKEN DERİNLEŞTİRME + YENİ BİLEŞENLER
+   (Mevcut token/sınıflar KORUNUR; buradan sonrası eklemedir.)
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Süre ölçeği */
+  --dur-1: 0.15s;
+  --dur-2: 0.25s;
+  --dur-3: 0.4s;
+  --dur-4: 0.6s;
+  --dur-5: 0.9s;
+
+  /* Ek easing / spring */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --spring-soft: cubic-bezier(0.34, 1.4, 0.64, 1);
+
+  /* Elevation (koyu tema) */
+  --e1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --e2: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --e3: 0 12px 34px rgba(0, 0, 0, 0.45);
+  --e4: 0 24px 60px rgba(0, 0, 0, 0.55);
+
+  /* Odak halkası */
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);
+
+  /* Akışkan tipografi merdiveni (opsiyonel yardımcılar) */
+  --step--1: clamp(0.78rem, 0.75rem + 0.15vw, 0.86rem);
+  --step-0: clamp(0.95rem, 0.9rem + 0.25vw, 1.05rem);
+  --step-1: clamp(1.12rem, 1.02rem + 0.5vw, 1.4rem);
+  --step-2: clamp(1.4rem, 1.2rem + 1vw, 2rem);
+  --step-3: clamp(1.8rem, 1.4rem + 2vw, 2.9rem);
+  --step-4: clamp(2.3rem, 1.7rem + 3vw, 4rem);
+  --step-5: clamp(2.9rem, 1.9rem + 5vw, 5.6rem);
+}
+
+[data-site-theme='truva'] {
+  --e1: 0 1px 2px rgba(22, 38, 63, 0.1);
+  --e2: 0 4px 12px rgba(22, 38, 63, 0.12);
+  --e3: 0 12px 34px rgba(22, 38, 63, 0.16);
+  --e4: 0 24px 60px rgba(22, 38, 63, 0.2);
+}
+
+/* ── Klavye odağı halkası (erişilebilirlik) ── */
+.s-btn:focus-visible,
+.s-card:focus-visible,
+.hero-cta:focus-visible,
+.site-nav-join:focus-visible,
+.p-share-btn:focus-visible,
+.s-share-ico:focus-visible,
+.hero-list-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.s-card:focus-visible { border-color: var(--accent); }
+
+/* ── ArticleCard 3B tilt katmanları ── */
+/* İşaretçi kart üzerindeyken: 3B perspektif + eğim devreye girer, geçiş hızlanır
+   (pointer'ı takip etsin). 3B katman YALNIZCA burada oluşur; ayrılınca kaldırılır. */
+.s-card[data-tilt='active'] {
+  transform:
+    perspective(1000px)
+    translate3d(0, var(--card-lift, 0px), 0)
+    rotateX(var(--tilt-rx, 0deg))
+    rotateY(var(--tilt-ry, 0deg));
+  transform-style: preserve-3d;
+  transition: transform 0.08s linear, box-shadow 0.35s var(--ease-out), border-color 0.35s;
+}
+
+/* Gloss — işaretçi konumuna göre parlama; yalnız tilt aktifken görünür */
+.s-card-gloss {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    200px 200px at var(--tilt-mx, 50%) var(--tilt-my, 50%),
+    rgba(255, 255, 255, 0.16),
+    transparent 60%
+  );
+  transition: opacity 0.3s var(--ease-out);
+}
+.s-card[data-tilt='active'] .s-card-gloss { opacity: 1; }
+
+/* Görsel parallax — tilt aktifken işaretçiye göre hafif kayma (eş specificity,
+   sonra geldiği için mevcut hover scale kuralını geçersiz kılar) */
+.s-card[data-tilt='active'] .s-card-media img {
+  transform: scale(1.08) translate(calc(var(--tilt-px, 0) * -10px), calc(var(--tilt-py, 0) * -10px));
+  transition: transform 0.12s linear;
+}
+
+/* ── Yönlü / kademeli reveal varyantları (IO davranışı değişmez) ── */
+.s-reveal[data-reveal='left'] { transform: translateX(-34px); }
+.s-reveal[data-reveal='right'] { transform: translateX(34px); }
+.s-reveal[data-reveal='scale'] { transform: scale(0.93); }
+.s-reveal[data-reveal='clip'] {
+  opacity: 0;
+  transform: none;
+  clip-path: inset(0 0 42% 0);
+  transition: opacity 0.7s var(--ease-out), clip-path 0.8s var(--ease-out);
+  transition-delay: var(--reveal-delay, 0s);
+}
+.s-reveal[data-reveal='clip'].is-visible { clip-path: inset(0 0 0 0); }
+/* No-JS güvenlik ağı: clip varyantı da anında görünür kalsın */
+html:not(.js-ready) .s-reveal[data-reveal='clip'] { clip-path: none; }
+
+/* ── İskelet / shimmer (loading.tsx) ── */
+.s-skel {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 9%, var(--surface));
+  border-radius: var(--radius-sm);
+}
+.s-skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--accent) 16%, transparent) 45%,
+    color-mix(in srgb, var(--cn-gold) 12%, transparent) 55%,
+    transparent
+  );
+  animation: s-shimmer 1.5s ease-in-out infinite;
+}
+@keyframes s-shimmer {
+  100% { transform: translateX(100%); }
+}
+
+.s-skel-stack { display: flex; flex-direction: column; gap: 12px; }
+.s-skel-line { display: block; height: 14px; border-radius: 6px; }
+.s-skel-sm { height: 12px; }
+.s-skel-meta { margin-top: auto; height: 11px; opacity: 0.8; }
+.s-skel-kicker { height: 12px; border-radius: 4px; }
+.s-skel-prose { height: 16px; }
+.s-skel-hero-title { height: clamp(30px, 5vw, 52px); border-radius: 10px; }
+.s-skel-page-title { height: clamp(32px, 5vw, 56px); border-radius: 10px; }
+
+/* Kart iskeleti — ArticleCard ile aynı geometri (CLS=0) */
+.s-skel-card { pointer-events: none; }
+.s-skel-card .s-card-media { border-radius: 0; }
+
+/* Anasayfa hero iskeleti — hero ile yakın ölçü (CLS≈0) */
+.s-skel-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-height: max(80vh, 560px);
+  margin-top: calc(var(--header-h) * -1);
+  padding: calc(var(--header-h) + clamp(60px, 8vh, 110px)) 0 clamp(60px, 9vh, 100px);
+  overflow: hidden;
+  background: linear-gradient(150deg, var(--bg-elevated), var(--bg));
+}
+
+/* ── Okuma ilerlemesi — accent parıltı + baş nokta (p-progress'i tamamlar) ── */
+.s-progress {
+  box-shadow: 0 0 10px 0 color-mix(in srgb, var(--accent) 60%, transparent);
+  border-top-right-radius: 3px;
+  border-bottom-right-radius: 3px;
+}
+.s-progress::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  transform: translate(50%, -50%);
+  background: var(--cn-gold);
+  box-shadow: 0 0 8px 2px color-mix(in srgb, var(--cn-gold) 70%, transparent);
+}
+
+/* ── Sabit dikey paylaşım rayı (ShareBar; geniş ekran görsel zenginleştirme) ── */
+.s-share-rail {
+  position: fixed;
+  left: clamp(14px, 2.5vw, 34px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 120;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.s-share-rail-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 4px;
+}
+.s-share-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform 0.25s var(--ease-spring), border-color 0.2s, color 0.2s, box-shadow 0.25s;
+}
+.s-share-ico svg { width: 17px; height: 17px; fill: currentColor; }
+.s-share-ico:hover {
+  transform: translateY(-2px) scale(1.06);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: var(--glow);
+}
+.s-share-ico.is-copied { border-color: #2fb96b; color: #2fb96b; }
+@media (min-width: 1200px) {
+  .s-share-rail { display: flex; }
+}
+
+/* ── Azaltılmış hareket: shimmer/gloss/aura dursun, iskelet sabit kalsın ── */
+@media (prefers-reduced-motion: reduce) {
+  .s-skel::after { animation: none; opacity: 0.5; transform: none; }
+  .s-card-gloss { transition: none; }
+  .s-reveal[data-reveal='clip'] { opacity: 1; clip-path: none; transition: none; }
 }

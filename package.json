@@ -19,6 +19,7 @@
     "bcryptjs": "^3.0.3",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.6",
+    "exceljs": "^4.4.0",
     "html2canvas": "^1.4.1",
     "imapflow": "^1.4.0",
     "jose": "^6.2.3",
@@ -31,12 +32,14 @@
     "react-dom": "^19.2.6",
     "sanitize-html": "^2.17.5",
     "typescript": "^6.0.3",
+    "web-push": "^3.6.7",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/mailparser": "^3.4.6",
     "@types/nodemailer": "^8.0.1",
-    "@types/sanitize-html": "^2.16.1"
+    "@types/sanitize-html": "^2.16.1",
+    "@types/web-push": "^3.6.4"
   }
 }

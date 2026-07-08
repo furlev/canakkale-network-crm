@@ -1364,3 +1364,46 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
 @media (max-width: 900px) {
   .site-header-actions .site-nav-join { display: none; }
 }
+
+/* ═══ HERO SCROLL-SCRUB (P1) ═══
+   Sayfa kaydıkça hero: arka planda parallax+ölçek, görsel koyulaşma, başlık
+   yukarı+opaklık. Sürücü tek custom property --hero-p (0→1).
+   • Native CSS scroll-timeline destekleyende data-scrub="css" → --hero-p CSS ile
+     animasyonlanır (JS yok).
+   • Desteklemeyende data-scrub="js" → HeroCinematic useScrollProgress ile yazar.
+   • reduced-motion / off tier → data-scrub HİÇ eklenmez → hero statik. */
+@property --hero-p {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
+@keyframes hero-scrub-kf {
+  from { --hero-p: 0; }
+  to { --hero-p: 1; }
+}
+
+.hero[data-scrub='css'] {
+  animation: hero-scrub-kf linear both;
+  animation-timeline: scroll(root block);
+  animation-range: 0 100vh;
+}
+
+.hero[data-scrub] .hero-bg-stack {
+  transform: translate3d(0, calc(var(--hero-p, 0) * 8%), 0) scale(calc(1 + var(--hero-p, 0) * 0.14));
+  filter: brightness(calc(1 - var(--hero-p, 0) * 0.4));
+  will-change: transform, filter;
+}
+.hero[data-scrub] .hero-brand-video {
+  transform: translate3d(0, calc(var(--hero-p, 0) * 8%), 0) scale(calc(1 + var(--hero-p, 0) * 0.1));
+  will-change: transform;
+}
+.hero[data-scrub] .hero-content,
+.hero[data-scrub] .hero-fallback-inner {
+  transform: translate3d(0, calc(var(--hero-p, 0) * -56px), 0);
+  opacity: calc(1 - var(--hero-p, 0) * 0.92);
+  will-change: transform, opacity;
+}
+.hero[data-scrub] .hero-scroll {
+  opacity: calc(1 - var(--hero-p, 0) * 3);
+}

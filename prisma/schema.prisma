@@ -183,6 +183,9 @@ model Estimate {
   amount     Float
   status     String    @default("draft") // draft, sent, accepted, rejected
   validUntil DateTime?
+  sourceId     String? // dönüştürüldüyse köken kayıt
+  convertedToId String? // dönüştürülen hedef (Contract/Invoice) id
+  publicToken  String?   @unique // müşteri onay linki (imzasız)
 
   clientId  String?
   client    Client?   @relation(fields: [clientId], references: [id])
@@ -221,13 +224,19 @@ model News {
 }
 
 model Subscriber {
-  id     String @id @default(uuid())
-  email  String @unique
-  source String @default("website")
-  status String @default("active") // active, unsubscribed
+  id           String    @id @default(uuid())
+  email        String    @unique
+  source       String    @default("website")
+  status       String    @default("active") // pending, active, unsubscribed
+  confirmToken String? // çift-onay (double opt-in) doğrulama token'ı
+  confirmedAt  DateTime?
+  unsubToken   String?   @unique // tek-tık abonelikten çıkma
+  tags         String? // JSON: ilgi ilçeleri/kategorileri (segment)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  newsletterRecipients NewsletterRecipient[]
 }
 
 model Advertiser {
@@ -239,6 +248,7 @@ model Advertiser {
   activeAds   Int     @default(0)
   totalSpent  Float   @default(0)
   status      String  @default("active") // active, inactive
+  reportToken String? @unique // token'lı public performans raporu (self-servis)
 
   campaigns AdCampaign[]
 
@@ -304,6 +314,7 @@ model Folder {
   minLevel     String    @default("C") // A | B | C — bu seviyenin altı göremez
   restricted   Boolean   @default(false) // true → yalnız FolderAccess listesindekiler (+A)
   passwordHash String? // şifreli klasör (bcrypt); null = şifresiz
+  driveFolderId String? // eşlenen Google Drive klasörü (büyük video akışı/senkron)
   createdById  String?
   deletedAt    DateTime?
   createdAt    DateTime  @default(now())
@@ -349,6 +360,9 @@ model Contract {
   progress  Int       @default(0) // 0-100
   startDate DateTime?
   endDate   DateTime?
+  sourceId      String? // köken (Estimate/Proposal) id
+  convertedToId String? // üretilen Invoice id
+  publicToken   String?   @unique // müşteri onay/e-imza linki
 
   clientId  String?
   client    Client?   @relation(fields: [clientId], references: [id])
@@ -364,6 +378,9 @@ model Proposal {
   description String?
   value       Float   @default(0)
   status      String  @default("draft") // draft, sent, approved, rejected
+  sourceId      String?
+  convertedToId String?
+  publicToken   String?   @unique
 
   clientId  String?
   client    Client?   @relation(fields: [clientId], references: [id])
@@ -664,6 +681,8 @@ model SiteArticle {
   correctedAt     DateTime?
   retractedAt     DateTime? // geri çekme (retraction)
   retractionNote  String?
+  authorSlug      String? // yazar/köşe hub bağı (Author.slug)
+  scheduledAt     DateTime? // planlı yayın (status='scheduled' → cron yayınlar)
   wpId            Int?          @unique // WP'den içe aktarılan haberler
   deletedAt       DateTime?
   createdAt       DateTime      @default(now())
@@ -710,6 +729,7 @@ model JoinApplication {
   data      String // JSON: dinamik form yanıtları
   status    String   @default("new") // new | reviewed | accepted | rejected
   note      String? // değerlendirme notu
+  convertedLeadId String? // kabul edilince oluşturulan Lead id (İK/lead akışı)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -750,4 +770,127 @@ model NobetciEczane {
 
   @@unique([date, district, name])
   @@index([date, district])
+}
+
+// ══════════ P1 ══════════
+
+// Bülten per-subscriber gönderim + açılma/tık takibi.
+model NewsletterRecipient {
+  id           String     @id @default(uuid())
+  newsletterId String
+  subscriberId String
+  subscriber   Subscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  token        String     @unique // açılma pikseli + tık sarmalayıcı
+  openedAt     DateTime?
+  clickedAt    DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@index([newsletterId])
+}
+
+// Web push aboneliği (son dakika bildirimi). İlçe-hedefli olabilir.
+model PushSubscription {
+  id        String   @id @default(uuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  district  String?
+  createdAt DateTime @default(now())
+
+  @@index([district])
+}
+
+// Yazar / köşe yazarı (yazar hub sayfaları).
+model Author {
+  slug        String   @id
+  name        String
+  bio         String?
+  avatar      String?
+  title       String? // ünvan (ör. "Genel Yayın Yönetmeni")
+  isColumnist Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Tekrarlayan fatura şablonu (aylık/çeyreklik retainer → otomatik Invoice).
+model RecurringInvoice {
+  id        String    @id @default(uuid())
+  clientId  String?
+  title     String
+  items     String // JSON: kalem listesi (InvoiceItem şekli)
+  currency  String    @default("TRY")
+  interval  String    @default("monthly") // monthly | quarterly | yearly
+  nextRunAt DateTime?
+  active    Boolean   @default(true)
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([active, nextRunAt])
+}
+
+// Basit e-imza kaydı (teklif/sözleşme onayı — hukuki iz).
+model Signature {
+  id        String   @id @default(uuid())
+  entity    String // estimate | proposal | contract
+  entityId  String
+  name      String
+  ip        String?
+  hash      String? // içerik özeti (bütünlük)
+  signedAt  DateTime @default(now())
+
+  @@index([entity, entityId])
+}
+
+// Kaydedilen rapor şablonu (özelleştirilebilir raporlama).
+model SavedReport {
+  id        String   @id @default(uuid())
+  name      String
+  type      String // revenue | collection | vat | editor ...
+  config    String // JSON: tarih aralığı + metrikler
+  ownerId   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Sosyal medya yayın kuyruğu (çoklu-kanal yayın — site+bülten+sosyal).
+model SocialPost {
+  id        String    @id @default(uuid())
+  articleId String?
+  platform  String    @default("instagram") // instagram | x | facebook
+  text      String
+  status    String    @default("queued") // queued | posted | skipped
+  postedAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([status, createdAt])
+}
+
+// Feribot/vapur tarifesi (admin-yönetimli; GESTAŞ resmi API yok).
+model FerrySchedule {
+  id        String  @id @default(uuid())
+  route     String // "Çanakkale-Eceabat" ...
+  departTime String // "HH:MM"
+  days      String  @default("hergun") // hergun | haftaici | haftasonu
+  operator  String  @default("GESTAŞ")
+  season    String? // yaz | kis
+  active    Boolean @default(true)
+
+  @@index([route, active])
+}
+
+// AI çağrı/maliyet logu (model yönlendirme + kota takibi).
+model AiUsageLog {
+  id           String   @id @default(uuid())
+  fn           String // discoverTopics | factCheck | writeArticle | image | embed ...
+  model        String
+  inputTokens  Int?
+  outputTokens Int?
+  images       Int?
+  costUsd      Float?
+  ms           Int?
+  ok           Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
 }

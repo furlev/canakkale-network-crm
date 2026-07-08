@@ -69,6 +69,13 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+/** Tarayıcıda satır içi açılabilen (önizlenebilen) türler: video/görsel/PDF. */
+function isPreviewable(doc: DocItem): boolean {
+  const m = (doc.mime || '').toLowerCase();
+  if (m.startsWith('video/') || m.startsWith('image/') || m === 'application/pdf') return true;
+  return doc.type === 'image' || doc.type === 'pdf';
+}
+
 /* ── Kilit token'ları (sessionStorage, 30 dk) ── */
 const tokenKey = (folderId: string) => `depot_token_${folderId}`;
 
@@ -255,6 +262,19 @@ export default function DocumentsPage() {
     } catch {
       alert('Dosya indirilemedi');
     }
+  };
+
+  /* ── Önizleme (satır içi; video için Range/byte-serving ile seek destekli) ── */
+  const openPreview = (doc: DocItem) => {
+    // Harici bağlantı (Drive'sız, data: olmayan) → doğrudan aç
+    if (!doc.driveFileId && doc.url && !doc.url.startsWith('data:')) {
+      window.open(doc.url, '_blank', 'noopener');
+      return;
+    }
+    let url = `/api/documents/${doc.id}/download?inline=1`;
+    const token = folderId ? getStoredToken(folderId) : null;
+    if (token) url += `&token=${encodeURIComponent(token)}`;
+    window.open(url, '_blank', 'noopener');
   };
 
   /* ── Silme ── */
@@ -483,6 +503,9 @@ export default function DocumentsPage() {
                       <td style={{ color: 'var(--text-muted)' }}>{new Date(doc.createdAt).toLocaleDateString('tr-TR')}</td>
                       <td>
                         <div style={{ display: 'flex', gap: 'var(--space-2)', position: 'relative' }}>
+                          {isPreviewable(doc) && (
+                            <button className="btn btn-ghost btn-sm" onClick={() => openPreview(doc)} title="Yeni sekmede önizle / oynat">Önizle</button>
+                          )}
                           <button className="btn btn-ghost btn-sm" onClick={() => downloadDoc(doc)}>İndir</button>
                           {canWriteHere && (
                             <>

@@ -1,5 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { StackedBar, LineChart, Donut, formatTry, formatCompact } from '@/components/charts';
+import ReportExport from '@/components/ReportExport';
 
 type ReportData = {
   summary: {
@@ -26,42 +28,6 @@ type ReportData = {
 
 const fmt = (n: number) => `₺${n.toLocaleString('tr-TR')}`;
 
-function Donut({ items, total }: { items: { l: string; v: number; c: string }[]; total: number }) {
-  let cum = 0;
-  const conicStr = total > 0
-    ? items.map(p => { const start = cum; cum += (p.v / total) * 100; return `${p.c} ${start}% ${cum}%`; }).join(', ')
-    : 'var(--surface-3) 0% 100%';
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-6)' }}>
-      <div style={{ width: 140, height: 140, borderRadius: '50%', background: `conic-gradient(${conicStr})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <div style={{ width: 90, height: 90, borderRadius: '50%', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-xl)', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{total}</div>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-        {items.map((p, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            <div style={{ width: 12, height: 12, borderRadius: 3, background: p.c }} />
-            <span style={{ fontSize: 'var(--text-sm)' }}>{p.l}: <strong>{p.v}</strong></span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function BarChart({ data, color }: { data: { label: string; value: number }[]; color?: string }) {
-  const max = Math.max(1, ...data.map(d => d.value));
-  return (
-    <div className="chart-bar-group" style={{ height: 180 }}>
-      {data.map((d, i) => (
-        <div key={i} className="chart-bar-wrapper">
-          <div className={`chart-bar ${color || 'primary'}`} style={{ height: `${Math.max((d.value / max) * 100, 2)}%`, animationDelay: `${i * 0.1}s` }} title={fmt(d.value)} />
-          <span className="chart-bar-label">{d.label}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function ReportsPage() {
   const [tab, setTab] = useState('overview');
   const [data, setData] = useState<ReportData | null>(null);
@@ -83,16 +49,6 @@ export default function ReportsPage() {
       .catch(err => { console.error('Error fetching reports:', err); setErr('Rapor verileri yüklenemedi. Lütfen daha sonra tekrar deneyin.'); setLoading(false); });
   }, []);
 
-  const handleExport = () => {
-    if (!data) return;
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `crm-rapor-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
 
   if (err) {
     return (
@@ -125,6 +81,7 @@ export default function ReportsPage() {
   const { summary } = data;
   const totalProj = data.projectStatus.active + data.projectStatus.completed + data.projectStatus.on_hold;
   const maxClientRevenue = Math.max(1, ...data.topClients.map(c => c.revenue));
+  const months = data.monthly.map(m => m.month);
 
   return (
     <div>
@@ -134,7 +91,7 @@ export default function ReportsPage() {
           <p className="page-subtitle">Detaylı analizler ve raporlar</p>
         </div>
         <div className="page-header-actions">
-          <button className="btn btn-ghost" onClick={handleExport}>📤 Dışa Aktar</button>
+          <ReportExport />
         </div>
       </div>
 
@@ -162,19 +119,26 @@ export default function ReportsPage() {
           <div className="grid-2">
             <div className="card">
               <h3 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Aylık Gelir</h3>
-              <BarChart data={data.monthly.map(m => ({ label: m.month, value: m.revenue }))} />
+              <StackedBar
+                categories={months}
+                series={[{ name: 'Gelir', color: 'var(--primary)', values: data.monthly.map(m => m.revenue) }]}
+                formatValue={formatTry}
+                formatAxis={formatCompact}
+                height={220}
+              />
             </div>
 
             <div className="card">
               <h3 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Proje Durumu</h3>
               <Donut
-                total={totalProj}
-                items={[
-                  { l: 'Aktif', v: data.projectStatus.active, c: '#6c5ce7' },
-                  { l: 'Tamamlanan', v: data.projectStatus.completed, c: '#00b894' },
-                  { l: 'Bekleyen', v: data.projectStatus.on_hold, c: '#fdcb6e' },
+                centerLabel="Proje"
+                segments={[
+                  { label: 'Aktif', value: data.projectStatus.active, color: 'var(--primary)' },
+                  { label: 'Tamamlanan', value: data.projectStatus.completed, color: 'var(--success)' },
+                  { label: 'Bekleyen', value: data.projectStatus.on_hold, color: 'var(--warning)' },
                 ]}
               />
+              <div className="text-muted" style={{ fontSize: 'var(--text-xs)', marginTop: 'var(--space-3)', textAlign: 'center' }}>Toplam {totalProj} proje</div>
             </div>
           </div>
 
@@ -222,24 +186,42 @@ export default function ReportsPage() {
           </div>
           <div className="grid-2">
             <div className="card">
-              <h3 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Aylık Gelir</h3>
-              <BarChart data={data.monthly.map(m => ({ label: m.month, value: m.revenue }))} />
+              <h3 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Gelir vs Gider</h3>
+              <StackedBar
+                categories={months}
+                stacked={false}
+                formatValue={formatTry}
+                formatAxis={formatCompact}
+                height={230}
+                series={[
+                  { name: 'Gelir', color: 'var(--success)', values: data.monthly.map(m => m.revenue) },
+                  { name: 'Gider', color: 'var(--error)', values: data.monthly.map(m => m.expense) },
+                ]}
+              />
             </div>
             <div className="card">
-              <h3 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Aylık Gider</h3>
-              <BarChart data={data.monthly.map(m => ({ label: m.month, value: m.expense }))} color="accent" />
+              <h3 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Nakit Akışı</h3>
+              <LineChart
+                formatValue={formatTry}
+                formatAxis={formatCompact}
+                height={230}
+                series={[
+                  { name: 'Gelir', color: 'var(--success)', points: data.monthly.map(m => ({ x: m.month, y: m.revenue })) },
+                  { name: 'Gider', color: 'var(--error)', points: data.monthly.map(m => ({ x: m.month, y: m.expense })) },
+                ]}
+              />
             </div>
           </div>
           <div className="grid-2" style={{ marginTop: 'var(--space-6)' }}>
             <div className="card">
-              <h3 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Fatura Durumu</h3>
+              <h3 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Tahsilat Durumu (yaşlandırma)</h3>
               <Donut
-                total={data.invoiceStatus.paid + data.invoiceStatus.unpaid + data.invoiceStatus.overdue + data.invoiceStatus.cancelled}
-                items={[
-                  { l: 'Ödendi', v: data.invoiceStatus.paid, c: '#00b894' },
-                  { l: 'Ödenmedi', v: data.invoiceStatus.unpaid, c: '#fdcb6e' },
-                  { l: 'Gecikmiş', v: data.invoiceStatus.overdue, c: '#ff7675' },
-                  { l: 'İptal', v: data.invoiceStatus.cancelled, c: '#636e72' },
+                centerLabel="Fatura"
+                segments={[
+                  { label: 'Ödendi', value: data.invoiceStatus.paid, color: 'var(--success)' },
+                  { label: 'Ödenmedi', value: data.invoiceStatus.unpaid, color: 'var(--warning)' },
+                  { label: 'Gecikmiş', value: data.invoiceStatus.overdue, color: 'var(--error)' },
+                  { label: 'İptal', value: data.invoiceStatus.cancelled, color: 'var(--text-muted)' },
                 ]}
               />
             </div>
@@ -301,13 +283,13 @@ export default function ReportsPage() {
             <div className="card">
               <h3 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Lead Hunisi</h3>
               <Donut
-                total={data.leadStatus.new + data.leadStatus.contacted + data.leadStatus.proposal + data.leadStatus.won + data.leadStatus.lost}
-                items={[
-                  { l: 'Yeni', v: data.leadStatus.new, c: '#6c5ce7' },
-                  { l: 'İletişimde', v: data.leadStatus.contacted, c: '#74b9ff' },
-                  { l: 'Teklif', v: data.leadStatus.proposal, c: '#fdcb6e' },
-                  { l: 'Kazanıldı', v: data.leadStatus.won, c: '#00b894' },
-                  { l: 'Kaybedildi', v: data.leadStatus.lost, c: '#ff7675' },
+                centerLabel="Lead"
+                segments={[
+                  { label: 'Yeni', value: data.leadStatus.new, color: 'var(--primary)' },
+                  { label: 'İletişimde', value: data.leadStatus.contacted, color: 'var(--info)' },
+                  { label: 'Teklif', value: data.leadStatus.proposal, color: 'var(--warning)' },
+                  { label: 'Kazanıldı', value: data.leadStatus.won, color: 'var(--success)' },
+                  { label: 'Kaybedildi', value: data.leadStatus.lost, color: 'var(--error)' },
                 ]}
               />
             </div>
@@ -381,13 +363,13 @@ export default function ReportsPage() {
           <div className="card">
             <h3 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>İhbar Durum Dağılımı</h3>
             <Donut
-              total={data.totalTips}
-              items={[
-                { l: 'Yeni', v: data.tipStatus.new, c: '#6c5ce7' },
-                { l: 'İnceleniyor', v: data.tipStatus.investigating, c: '#00cec9' },
-                { l: 'Doğrulandı', v: data.tipStatus.verified, c: '#74b9ff' },
-                { l: 'Habere Dönüştü', v: data.tipStatus.converted, c: '#00b894' },
-                { l: 'Reddedildi', v: data.tipStatus.rejected, c: '#ff7675' },
+              centerLabel="İhbar"
+              segments={[
+                { label: 'Yeni', value: data.tipStatus.new, color: 'var(--primary)' },
+                { label: 'İnceleniyor', value: data.tipStatus.investigating, color: 'var(--accent)' },
+                { label: 'Doğrulandı', value: data.tipStatus.verified, color: 'var(--info)' },
+                { label: 'Habere Dönüştü', value: data.tipStatus.converted, color: 'var(--success)' },
+                { label: 'Reddedildi', value: data.tipStatus.rejected, color: 'var(--error)' },
               ]}
             />
           </div>

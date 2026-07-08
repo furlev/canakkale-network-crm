@@ -368,6 +368,7 @@ export default function AiNewsPage() {
         </div>
         <div className="page-header-actions">
           <Link href="/ai-news/kaynaklar" className="btn btn-ghost">📡 Kaynaklar</Link>
+          <Link href="/ai-news/maliyet" className="btn btn-ghost">💸 Maliyet</Link>
         </div>
       </div>
 

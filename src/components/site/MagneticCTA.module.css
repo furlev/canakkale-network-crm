@@ -1,0 +1,25 @@
+/* Manyetik buton — davranış katmanı (görsel stil className ile gelir, ör. s-btn). */
+.magnetic {
+  --mag-x: 0px;
+  --mag-y: 0px;
+  transform: translate3d(var(--mag-x), var(--mag-y), 0);
+  transition: transform 0.45s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+  will-change: transform;
+}
+
+/* İç etiket bir tık daha fazla kayar → derinlik hissi (parallax). */
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transform: translate3d(calc(var(--mag-x) * 0.35), calc(var(--mag-y) * 0.35), 0);
+  transition: transform 0.45s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .magnetic,
+  .label {
+    transform: none;
+    transition: none;
+  }
+}

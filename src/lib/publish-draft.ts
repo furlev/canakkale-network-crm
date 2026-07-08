@@ -56,6 +56,7 @@ type DraftLike = {
   seoTitle: string | null;
   metaDescription: string | null;
   sources: string | null;
+  socialPost?: string | null;
   reviewerId?: string | null;
   reviewerName?: string | null;
 };
@@ -114,6 +115,13 @@ export async function publishDraftToSite(draft: DraftLike, actor: PublishActor) 
       where: { id: draft.id },
       data: { articleId: created.id },
     });
+
+    // Sosyal metin varsa çoklu-kanal kuyruğa düşür (insan sonradan /social'dan paylaşır).
+    if (draft.socialPost && draft.socialPost.trim()) {
+      await tx.socialPost.create({
+        data: { articleId: created.id, platform: 'instagram', text: draft.socialPost.trim(), status: 'queued' },
+      });
+    }
 
     return { article: created, updated: updatedDraft };
   });

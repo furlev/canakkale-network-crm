@@ -1,0 +1,135 @@
+/* Namaz vakitleri kartı — tema-duyarlı (site.css --* token'ları). */
+
+.card {
+  width: min(560px, 100%);
+  margin: 0 auto;
+  background: var(--bg-elevated, #0c1526);
+  border: 1px solid var(--line, rgba(159, 176, 200, 0.14));
+  border-radius: var(--radius, 14px);
+  box-shadow: var(--card-shadow, 0 10px 40px rgba(0, 0, 0, 0.45));
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: clamp(1.1rem, 3vw, 1.6rem);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent, #e23140) 16%, transparent), transparent);
+  border-bottom: 1px solid var(--line, rgba(159, 176, 200, 0.14));
+}
+
+.kicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint, #64758e);
+}
+
+.nextName {
+  font-family: var(--font-display, system-ui), sans-serif;
+  font-size: clamp(1.6rem, 5vw, 2.2rem);
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--ink, #eef2f8);
+}
+
+.countdownWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.countdown {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-display, system-ui), sans-serif;
+  font-size: clamp(1.4rem, 4.5vw, 2rem);
+  font-weight: 800;
+  color: var(--accent, #e23140);
+  line-height: 1;
+}
+
+.countdownHint {
+  font-size: 0.72rem;
+  color: var(--ink-faint, #64758e);
+  margin-top: 0.2rem;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0.4rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: var(--radius-sm, 8px);
+  transition: background 0.2s var(--ease-out, ease);
+}
+
+.row + .row {
+  border-top: 1px solid var(--line, rgba(159, 176, 200, 0.1));
+}
+
+.rowCurrent {
+  background: color-mix(in srgb, var(--ink, #eef2f8) 5%, transparent);
+}
+
+.rowNext {
+  background: color-mix(in srgb, var(--accent, #e23140) 12%, transparent);
+}
+
+.rowIcon {
+  font-size: 1.1rem;
+}
+
+.rowLabel {
+  font-weight: 600;
+  color: var(--ink, #eef2f8);
+}
+
+.rowTime {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-display, system-ui), sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--ink, #eef2f8);
+}
+
+.tag,
+.tagCurrent {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+}
+
+.tag {
+  background: var(--accent, #e23140);
+  color: var(--accent-ink, #fff);
+}
+
+.tagCurrent {
+  background: transparent;
+  border: 1px solid var(--line, rgba(159, 176, 200, 0.2));
+  color: var(--ink-soft, #9fb0c8);
+}
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.8rem clamp(1.1rem, 3vw, 1.6rem);
+  border-top: 1px solid var(--line, rgba(159, 176, 200, 0.14));
+  font-size: 0.78rem;
+  color: var(--ink-faint, #64758e);
+}

@@ -83,6 +83,22 @@ export type PharmacyMeta = {
   lastError: string | null;
 };
 
+export type PrayerTimes = {
+  imsak: string; // "HH:MM" (Europe/Istanbul)
+  gunes: string;
+  ogle: string;
+  ikindi: string;
+  aksam: string;
+  yatsi: string;
+};
+
+export type PrayerData = {
+  date: string; // YYYY-MM-DD (temsil edilen gün, TR)
+  hijri: string | null; // okunur hicri tarih (varsa)
+  timings: PrayerTimes;
+  fetchedAt: string; // ISO — bizim çekim anımız
+};
+
 // ─────────────────────────────────────────────────────────────
 // Setting JSON cache yardımcıları
 // ─────────────────────────────────────────────────────────────
@@ -112,6 +128,8 @@ export const getWeather = () => readJson<WeatherData>('weather');
 export const setWeather = (d: WeatherData) => writeJson('weather', d);
 export const getPharmacy = () => readJson<PharmacyMeta>('pharmacy');
 export const setPharmacy = (d: PharmacyMeta) => writeJson('pharmacy', d);
+export const getPrayer = () => readJson<PrayerData>('prayer');
+export const setPrayer = (d: PrayerData) => writeJson('prayer', d);
 
 // ─────────────────────────────────────────────────────────────
 // Tarih yardımcıları (Türkiye sabit UTC+3, yaz saati yok)
@@ -346,6 +364,60 @@ export async function fetchAllWeather(): Promise<WeatherData> {
     if (r.status === 'fulfilled') districts.push(r.value);
   }
   return { fetchedAt: new Date().toISOString(), districts };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Namaz vakitleri (Aladhan API) çekme — sunucu tarafı
+// ─────────────────────────────────────────────────────────────
+
+type AladhanResponse = {
+  data?: {
+    timings?: Record<string, string>;
+    date?: {
+      readable?: string;
+      hijri?: { date?: string; month?: { en?: string; ar?: string }; year?: string };
+    };
+  };
+};
+
+/** "05:41 (+03)" / "05:41" → "05:41" (parantezli TZ eki ve boşluk temizlenir). */
+function cleanTime(raw: string | undefined): string {
+  if (!raw) return '';
+  const m = /(\d{1,2}):(\d{2})/.exec(raw);
+  if (!m) return '';
+  return `${m[1].padStart(2, '0')}:${m[2]}`;
+}
+
+/**
+ * Çanakkale namaz vakitlerini Aladhan'dan çeker (method=13 = Diyanet İşleri Türkiye).
+ * ÜCRETSİZ, key'siz. Sonuç Europe/Istanbul yerel saatindedir.
+ */
+export async function fetchPrayer(): Promise<PrayerData> {
+  const url =
+    'https://api.aladhan.com/v1/timingsByCity?city=Canakkale&country=Turkey&method=13';
+  const json = await fetchJson<AladhanResponse>(url);
+  const t = json.data?.timings || {};
+  const timings: PrayerTimes = {
+    imsak: cleanTime(t.Fajr || t.Imsak),
+    gunes: cleanTime(t.Sunrise),
+    ogle: cleanTime(t.Dhuhr),
+    ikindi: cleanTime(t.Asr),
+    aksam: cleanTime(t.Maghrib),
+    yatsi: cleanTime(t.Isha),
+  };
+  if (!timings.ogle) throw new Error('Namaz vakitleri ayrıştırılamadı');
+
+  const h = json.data?.date?.hijri;
+  const hijri = h?.date
+    ? `${h.date}${h.month?.ar ? ` (${h.month.ar})` : ''}`.trim()
+    : json.data?.date?.readable || null;
+
+  return {
+    date: trDateStr(),
+    hijri,
+    timings,
+    fetchedAt: new Date().toISOString(),
+  };
 }
 
 // Not: districtName re-export — tüketiciler tek yerden alsın diye.

@@ -60,6 +60,7 @@ const navSections: NavSection[] = [
       { label: 'Reklam Kampanyaları', href: '/campaigns', icon: '🎬' },
       { label: 'Aboneler', href: '/subscribers', icon: '👤' },
       { label: 'Bülten', href: '/newsletters', icon: '📧' },
+      { label: 'Sosyal Kuyruk', href: '/social', icon: '📣' },
     ],
   },
   {
@@ -123,6 +124,8 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [newTipCount, setNewTipCount] = useState(0);
   const [user, setUser] = useState<{ name: string; role: string } | null>(null);
 
@@ -164,6 +167,12 @@ export default function DashboardLayout({
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 60000);
     return () => clearInterval(interval);
+  }, [pathname]);
+
+  /* Rota değişince mobil çekmece/aramayı kapat */
+  useEffect(() => {
+    setMobileNavOpen(false);
+    setMobileSearchOpen(false);
   }, [pathname]);
 
   const markAllRead = async () => {
@@ -238,6 +247,8 @@ export default function DashboardLayout({
         setSearchOpen(false);
         setNotifOpen(false);
         setPaletteOpen(false);
+        setMobileNavOpen(false);
+        setMobileSearchOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -337,7 +348,11 @@ export default function DashboardLayout({
   return (
     <div className="app-layout">
       {/* ════════════ SIDEBAR ════════════ */}
-      <aside className={`sidebar${sidebarCollapsed ? ' collapsed' : ''}`}>
+      {/* Mobil çekmece arka planı */}
+      {mobileNavOpen && (
+        <div className="sidebar-backdrop" onClick={() => setMobileNavOpen(false)} />
+      )}
+      <aside className={`sidebar${sidebarCollapsed ? ' collapsed' : ''}${mobileNavOpen ? ' mobile-open' : ''}`}>
         {/* Brand header */}
         <div className="sidebar-header">
           <div className="sidebar-logo">Ç</div>
@@ -401,6 +416,15 @@ export default function DashboardLayout({
         {/* ──── TOP BAR ──── */}
         <header className={`topbar${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
           <div className="topbar-left">
+            {/* Mobil menü (hamburger) */}
+            <button
+              className="topbar-hamburger"
+              aria-label="Menüyü aç"
+              onClick={() => setMobileNavOpen((v) => !v)}
+            >
+              ☰
+            </button>
+
             {/* Search */}
             <div className="topbar-search" style={{ position: 'relative' }}>
               <span className="topbar-search-icon">🔍</span>
@@ -445,6 +469,15 @@ export default function DashboardLayout({
           </div>
 
           <div className="topbar-right">
+            {/* Mobil tam-ekran arama */}
+            <button
+              className="topbar-mobile-search"
+              aria-label="Ara"
+              onClick={() => setMobileSearchOpen(true)}
+            >
+              🔍
+            </button>
+
             {/* Global arama paleti (Ctrl+K) */}
             <button className="topbar-btn" title="Global arama (Ctrl+K)" onClick={() => setPaletteOpen(true)}>
               🔍
@@ -565,6 +598,70 @@ export default function DashboardLayout({
           )}
         </main>
       </div>
+
+      {/* ════════════ MOBİL TAM-EKRAN ARAMA ════════════ */}
+      {mobileSearchOpen && (
+        <div className="mobile-search-overlay">
+          <div className="mobile-search-bar">
+            <input
+              autoFocus
+              type="text"
+              placeholder="Ara..."
+              value={searchQ}
+              onChange={(e) => handleSearchInput(e.target.value)}
+            />
+            <button className="btn btn-ghost btn-sm" onClick={() => { setMobileSearchOpen(false); setSearchQ(''); setSearchResults([]); }}>İptal</button>
+          </div>
+          <div className="mobile-search-results">
+            {searchQ.trim().length < 2 ? (
+              <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+                Aramak için en az 2 karakter yazın.
+              </div>
+            ) : searchResults.length === 0 ? (
+              <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+                Sonuç bulunamadı
+              </div>
+            ) : (
+              searchResults.map((r, i) => (
+                <div
+                  key={i}
+                  onClick={() => { setMobileSearchOpen(false); goToResult(r.link); }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--border-subtle)' }}
+                >
+                  <span style={{ fontSize: '1.1rem' }}>{r.icon}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</div>
+                    {r.subtitle && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{r.subtitle}</div>}
+                  </div>
+                  <span className="badge badge-primary" style={{ flexShrink: 0 }}>{r.type}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ════════════ MOBİL ALT TAB BAR ════════════ */}
+      <nav className="mobile-tabbar">
+        {[
+          { label: 'Panel', href: '/', icon: '📊' },
+          { label: 'Görevler', href: '/tasks', icon: '✅' },
+          { label: 'İhbar', href: '/tips', icon: '🔔', badge: newTipCount > 0 ? (newTipCount > 9 ? '9+' : String(newTipCount)) : undefined },
+          { label: 'Bildirim', href: '/notifications', icon: '🛎️', badge: notifUnread > 0 ? (notifUnread > 9 ? '9+' : String(notifUnread)) : undefined },
+        ]
+          .filter((t) => isHrefAllowed(t.href))
+          .map((t) => (
+            <Link key={t.href} href={t.href} className={`mobile-tab${isLinkActive(pathname, t.href) ? ' active' : ''}`}>
+              <span className="mobile-tab-icon">{t.icon}</span>
+              {t.label}
+              {t.badge && <span className="mobile-tab-badge">{t.badge}</span>}
+            </Link>
+          ))}
+        <button className="mobile-tab" onClick={() => setMobileNavOpen(true)}>
+          <span className="mobile-tab-icon">☰</span>
+          Menü
+        </button>
+      </nav>
 
       {/* SSE canlı bildirimler + tarayıcı bildirimi izni */}
       <NotificationStream onNotification={handleLiveNotification} />

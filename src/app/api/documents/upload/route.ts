@@ -50,7 +50,8 @@ export async function POST(request: Request) {
 
     const mime = file.type || 'application/octet-stream';
     const buffer = Buffer.from(await file.arrayBuffer());
-    const uploaded = await driveUpload(file.name, mime, buffer);
+    // Klasörün eşlenik Drive klasörü varsa oraya yükle; yoksa köke (driveUpload varsayılanı)
+    const uploaded = await driveUpload(file.name, mime, buffer, folder?.driveFolderId || undefined);
 
     const created = await prisma.document.create({
       data: {

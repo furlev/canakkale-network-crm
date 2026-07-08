@@ -1,5 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
+import DataTable, { type Column } from '@/components/DataTable';
+import EmptyState from '@/components/EmptyState';
 
 type Lead = {
   id: string;
@@ -19,6 +21,10 @@ const columns = [
   {key:'lost',title:'Kaybedildi',color:'var(--error)'},
 ];
 
+const statusLabel: Record<string, string> = {
+  new: 'Yeni Aday', contacted: 'İletişim Kuruldu', proposal: 'Teklif Verildi', won: 'Kazanıldı', lost: 'Kaybedildi',
+};
+
 const priorityMap: Record<string,{label:string;cls:string}> = {
   urgent:{label:'Acil',cls:'badge-error'},
   high:{label:'Yüksek',cls:'badge-warning'},
@@ -27,6 +33,7 @@ const priorityMap: Record<string,{label:string;cls:string}> = {
 };
 
 export default function LeadsPage() {
+  const [view, setView] = useState<'board'|'table'>('board');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -84,6 +91,18 @@ export default function LeadsPage() {
     }
   };
 
+  const bulkUpdateStatus = async (rows: Lead[], newStatus: string) => {
+    const ids = new Set(rows.map(r => r.id));
+    try {
+      await Promise.all(rows.map(r => fetch(`/api/leads/${r.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }),
+      })));
+      setLeads(prev => prev.map(l => ids.has(l.id) ? { ...l, status: newStatus } : l));
+    } catch (error) {
+      console.error('Error bulk updating leads:', error);
+    }
+  };
+
   const handleUpdateLead = async () => {
     if (!editing || !editing.name) return;
     setEditErr('');
@@ -118,6 +137,51 @@ export default function LeadsPage() {
     }
   };
 
+  const handleBulkDelete = async (rows: Lead[]) => {
+    if (!confirm(`${rows.length} adayı silmek istediğinize emin misiniz?`)) return;
+    const ids = new Set(rows.map(r => r.id));
+    try {
+      await Promise.all(rows.map(r => fetch(`/api/leads/${r.id}`, { method: 'DELETE' })));
+      setLeads(prev => prev.filter(l => !ids.has(l.id)));
+    } catch (error) {
+      console.error('Error bulk deleting leads:', error);
+    }
+  };
+
+  const tableColumns: Column<Lead>[] = [
+    { key: 'name', header: 'Aday', filterable: true, render: (l) => <span style={{ fontWeight: 500 }}>{l.name}</span> },
+    { key: 'company', header: 'Şirket', accessor: (l) => l.company || '', filterable: true, render: (l) => l.company || '-' },
+    { key: 'value', header: 'Değer', accessor: (l) => l.value, numeric: true, render: (l) => <span className="dt-num" style={{ color: 'var(--accent)', fontWeight: 600 }}>₺{l.value.toLocaleString('tr-TR')}</span> },
+    {
+      key: 'priority', header: 'Öncelik', accessor: (l) => priorityMap[l.priority]?.label || l.priority, filterable: true,
+      render: (l) => <span className={`badge ${priorityMap[l.priority]?.cls || 'badge-primary'}`}>{priorityMap[l.priority]?.label || l.priority}</span>,
+    },
+    {
+      key: 'status', header: 'Durum', accessor: (l) => statusLabel[l.status] || l.status, filterable: true,
+      render: (l) => (
+        <select className="form-select" style={{ padding: '4px 24px 4px 8px', fontSize: 'var(--text-xs)' }} value={l.status} onClick={(e) => e.stopPropagation()} onChange={(e) => updateLeadStatus(l.id, e.target.value)}>
+          {columns.map(c => <option key={c.key} value={c.key}>{c.title}</option>)}
+        </select>
+      ),
+    },
+    {
+      key: 'actions', header: 'İşlemler', sortable: false, hideable: false, csv: false, align: 'right',
+      render: (l) => (
+        <div onClick={(e) => e.stopPropagation()}>
+          <button className="btn btn-ghost btn-sm" onClick={() => { setEditErr(''); setEditing(l); }}>✏️</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(l.id)}>🗑️</button>
+        </div>
+      ),
+    },
+  ];
+
+  const viewToggle = (
+    <div className="tabs" style={{ marginBottom: 0 }}>
+      <button className={`tab ${view === 'board' ? 'active' : ''}`} onClick={() => setView('board')}>Kanban</button>
+      <button className={`tab ${view === 'table' ? 'active' : ''}`} onClick={() => setView('table')}>Tablo</button>
+    </div>
+  );
+
   return (
     <div>
       <div className="page-header">
@@ -126,12 +190,31 @@ export default function LeadsPage() {
           <p className="page-subtitle">Satış fırsatları ve potansiyel müşteriler</p>
         </div>
         <div className="page-header-actions">
+          {view === 'board' && viewToggle}
           <button className="btn btn-primary" onClick={() => setIsAdding(true)}>+ Yeni Aday</button>
         </div>
       </div>
 
-      {loading ? (
-        <div style={{textAlign:'center', padding:'var(--space-8)'}}>Yükleniyor...</div>
+      {view === 'table' ? (
+        <DataTable<Lead>
+          columns={tableColumns}
+          rows={leads}
+          rowKey={(l) => l.id}
+          loading={loading}
+          searchPlaceholder="Aday veya şirket ara..."
+          csvFileName="adaylar"
+          selectable
+          initialSort={{ key: 'value', dir: 'desc' }}
+          toolbarExtra={viewToggle}
+          bulkActions={[
+            { label: 'Kazanıldı', icon: '🏆', variant: 'primary', onClick: (r) => bulkUpdateStatus(r, 'won') },
+            { label: 'Kaybedildi', icon: '✖', onClick: (r) => bulkUpdateStatus(r, 'lost') },
+            { label: 'Sil', icon: '🗑️', variant: 'danger', onClick: handleBulkDelete },
+          ]}
+          emptyState={<EmptyState icon="🎯" title="Henüz aday yok" description="İlk müşteri adayınızı ekleyin." actionLabel="+ Yeni Aday" onAction={() => setIsAdding(true)} />}
+        />
+      ) : loading ? (
+        <div style={{textAlign:'center', padding:'var(--space-8)', color:'var(--text-muted)'}}>Yükleniyor...</div>
       ) : (
         <div className="kanban-board">
           {columns.map(col => {
@@ -161,16 +244,16 @@ export default function LeadsPage() {
                       </div>
                       <div className="kanban-card-title">{lead.name}</div>
                       <div className="kanban-card-desc">{lead.company}</div>
-                      
+
                       <div style={{fontSize:'var(--text-sm)', fontWeight:600, color:'var(--accent)', marginTop:'var(--space-3)'}}>
                         ₺{lead.value.toLocaleString('tr-TR')}
                       </div>
-                      
+
                       <div style={{marginTop:'var(--space-3)'}}>
-                        <select 
-                          className="form-select" 
-                          style={{padding:'4px 8px', fontSize:'var(--text-xs)'}} 
-                          value={lead.status} 
+                        <select
+                          className="form-select"
+                          style={{padding:'4px 8px', fontSize:'var(--text-xs)'}}
+                          value={lead.status}
                           onChange={(e) => updateLeadStatus(lead.id, e.target.value)}
                         >
                           <option value="new">Yeni Aday</option>

@@ -4,7 +4,7 @@ import prisma from '@/lib/prisma';
 import { parseBody, handleApiError, requireLevel, ApiError } from '@/lib/api';
 import { levelOf, hasLevel } from '@/lib/permissions';
 import { audit } from '@/lib/audit';
-import { isDriveConfigured } from '@/lib/drive';
+import { isDriveConfigured, driveCreateFolder } from '@/lib/drive';
 import {
   folderCreate,
   canSeeFolder,
@@ -144,19 +144,32 @@ export async function POST(request: Request) {
       throw new ApiError(403, 'Kendi seviyenizden yüksek bir erişim seviyesi belirleyemezsiniz');
     }
 
+    let parent: { driveFolderId: string | null } | null = null;
     if (body.parentId) {
-      const parent = await prisma.folder.findFirst({
+      const found = await prisma.folder.findFirst({
         where: { id: body.parentId, deletedAt: null },
         include: { access: { select: { userId: true, canWrite: true } } },
       });
-      if (!parent) throw new ApiError(404, 'Üst klasör bulunamadı');
-      if (!canSeeFolder(session, parent, parent.access)) {
+      if (!found) throw new ApiError(404, 'Üst klasör bulunamadı');
+      if (!canSeeFolder(session, found, found.access)) {
         throw new ApiError(403, 'Üst klasöre erişim yetkiniz yok');
       }
+      parent = found;
     }
 
     const entries = normalizeAccessEntries(body.userIds);
     await assertGrantableUsers(session, entries.map((e) => e.userId));
+
+    // Drive bağlıysa eşlenik bir Drive klasörü oluştur (parent'ın Drive klasörü altına).
+    // Başarısız olursa klasör oluşturmayı engellemez (additive; sonraki yüklemeler köke gider).
+    let driveFolderId: string | null = null;
+    if (isDriveConfigured()) {
+      try {
+        driveFolderId = await driveCreateFolder(body.name, parent?.driveFolderId || undefined);
+      } catch (e) {
+        console.error('[folders] Drive klasörü oluşturulamadı:', e);
+      }
+    }
 
     const created = await prisma.folder.create({
       data: {
@@ -165,6 +178,7 @@ export async function POST(request: Request) {
         minLevel,
         restricted: body.restricted ?? false,
         passwordHash: body.password ? await bcrypt.hash(body.password, 10) : null,
+        driveFolderId,
         createdById: session.sub,
         access: entries.length
           ? { create: entries.map((e) => ({ userId: e.userId, canWrite: e.canWrite })) }

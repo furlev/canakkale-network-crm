@@ -39,13 +39,30 @@ export default function Reveal() {
       );
     }
 
+    // Kademeli (stagger) yardımcısı: [data-reveal-stagger] kabındaki doğrudan
+    // .s-reveal çocuklarına sıra numarasına göre --reveal-delay atar (yalnızca
+    // açıkça ayarlanmamışsa). ArticleCard gibi delay'i kendi veren öğeler korunur.
+    const applyStagger = (root: ParentNode = document) => {
+      root.querySelectorAll<HTMLElement>('[data-reveal-stagger]').forEach(group => {
+        const step = parseInt(group.getAttribute('data-reveal-stagger') || '', 10) || 80;
+        group
+          .querySelectorAll<HTMLElement>(':scope > .s-reveal')
+          .forEach((kid, i) => {
+            if (!kid.style.getPropertyValue('--reveal-delay')) {
+              kid.style.setProperty('--reveal-delay', `${i * step}ms`);
+            }
+          });
+      });
+    };
+
     // Tek öğe: zaten görünürse anında aç, değilse gözle.
     const process = (el: HTMLElement) => {
       if (el.classList.contains('is-visible')) return;
       if (!revealIfInView(el) && io) io.observe(el);
     };
 
-    // İlk geçiş: mevcut tüm .s-reveal öğelerini işle.
+    // İlk geçiş: önce stagger delay'lerini yaz, sonra tüm .s-reveal öğelerini işle.
+    applyStagger();
     document
       .querySelectorAll<HTMLElement>('.s-reveal:not(.is-visible)')
       .forEach(process);
@@ -81,6 +98,7 @@ export default function Reveal() {
       moScheduled = false;
       const batch = Array.from(pending);
       pending.clear();
+      applyStagger();
       batch.forEach(process);
     };
     const mo = new MutationObserver(records => {

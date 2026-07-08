@@ -30,8 +30,13 @@ export default function NewsletterCTA({ adsNotice }: { adsNotice?: string }) {
         body: JSON.stringify({ email: value }),
       });
       if (res.ok) {
+        const data = await res.json().catch(() => null);
         setStatus('ok');
-        setMessage('Kaydın alındı! Şehrin gündemi artık her hafta kutunda. 🎉');
+        // Çift-onay: sunucu "onay e-postanı kontrol et" mesajı döner; onu göster.
+        setMessage(
+          (data && typeof data.message === 'string' && data.message) ||
+            'Talebin alındı! Onay e-postanı kontrol et — bağlantıya tıklayınca aboneliğin tamamlanır. 💌'
+        );
         setEmail('');
       } else {
         const data = await res.json().catch(() => null);

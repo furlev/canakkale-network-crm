@@ -17,7 +17,31 @@ export async function GET(request: Request) {
       prisma.newsletter.findMany({ orderBy: { createdAt: 'desc' }, ...(pagination ?? {}) }),
       pagination ? prisma.newsletter.count() : Promise.resolve(undefined),
     ]);
-    return listResponse(items, total);
+
+    // Açılma/tık istatistikleri: yalnız listelenen bültenler için gruplu sayım (ucuz).
+    const ids = items.map(i => i.id);
+    const [opened, clicked] = ids.length
+      ? await Promise.all([
+          prisma.newsletterRecipient.groupBy({
+            by: ['newsletterId'],
+            where: { newsletterId: { in: ids }, openedAt: { not: null } },
+            _count: { _all: true },
+          }),
+          prisma.newsletterRecipient.groupBy({
+            by: ['newsletterId'],
+            where: { newsletterId: { in: ids }, clickedAt: { not: null } },
+            _count: { _all: true },
+          }),
+        ])
+      : [[], []];
+    const openMap = new Map(opened.map(r => [r.newsletterId, r._count._all]));
+    const clickMap = new Map(clicked.map(r => [r.newsletterId, r._count._all]));
+
+    const withStats = items.map(i => ({
+      ...i,
+      stats: { total: i.recipients, opened: openMap.get(i.id) ?? 0, clicked: clickMap.get(i.id) ?? 0 },
+    }));
+    return listResponse(withStats, total);
   } catch (error) {
     return handleApiError(error, 'Bültenler alınamadı');
   }

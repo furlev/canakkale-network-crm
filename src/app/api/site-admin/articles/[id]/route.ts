@@ -28,6 +28,7 @@ const articleUpdate = z.object({
   imageIsAi: z.boolean().optional(),
   videoUrl: z.string().optional().nullable(),
   authorName: z.string().optional().nullable(),
+  authorSlug: z.string().optional().nullable(), // yazar hub bağı (Author.slug)
   status: z.enum(['draft', 'published', 'archived']).optional(),
   newsType: z.enum(['breaking', 'daily', 'weekly', 'manual']).optional(),
   isBreaking: z.boolean().optional(),
@@ -133,6 +134,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         ...(body.imageIsAi !== undefined ? { imageIsAi: body.imageIsAi } : {}),
         ...(body.videoUrl !== undefined ? { videoUrl: body.videoUrl || null } : {}),
         ...(body.authorName !== undefined ? { authorName: body.authorName || 'Çanakkale Network' } : {}),
+        ...(body.authorSlug !== undefined ? { authorSlug: body.authorSlug?.trim() || null } : {}),
         ...(body.status !== undefined ? { status: body.status } : {}),
         ...(body.newsType !== undefined ? { newsType: body.newsType } : {}),
         ...(body.isBreaking !== undefined ? { isBreaking: body.isBreaking } : {}),

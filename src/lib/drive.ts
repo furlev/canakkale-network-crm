@@ -148,6 +148,56 @@ export async function driveDownload(fileId: string): Promise<Response> {
 }
 
 /**
+ * Byte-serving stream: gelen HTTP Range başlığını Drive'a iletir; video gibi büyük
+ * dosyaların tarayıcıda oynatılması (seek/partial content) için gereklidir.
+ * Drive Range varsa 206 Partial Content, yoksa 200 döndürür; çağıran header'ları aktarır.
+ * Range geçersizse (416) yanıt olduğu gibi döndürülür (çağıran 416'yı forward eder).
+ */
+export async function driveStream(fileId: string, range?: string | null): Promise<Response> {
+  const token = await getAccessToken();
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  if (range) headers['Range'] = range;
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`,
+    { headers }
+  );
+  // 200 (tam) ve 206 (kısmi) başarı; 416 (Range Not Satisfiable) çağırana iletilir.
+  if (!res.ok && res.status !== 416) {
+    const detail = (await res.text().catch(() => '')).slice(0, 300);
+    throw new Error(`Google Drive akışı başarısız (HTTP ${res.status}): ${detail}`);
+  }
+  return res;
+}
+
+/**
+ * Drive'da bir klasör oluşturur ve id'sini döndürür. parentFolderId verilmezse
+ * GOOGLE_DRIVE_ROOT_FOLDER_ID (varsa) altında oluşturulur. CRM klasör ağacını
+ * Drive klasör ağacıyla eşlemek için kullanılır (Folder.driveFolderId).
+ */
+export async function driveCreateFolder(name: string, parentFolderId?: string): Promise<string> {
+  const token = await getAccessToken();
+  const parent = parentFolderId || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || null;
+  const metadata: { name: string; mimeType: string; parents?: string[] } = {
+    name,
+    mimeType: 'application/vnd.google-apps.folder',
+  };
+  if (parent) metadata.parents = [parent];
+
+  const res = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(metadata),
+  });
+  if (!res.ok) {
+    const detail = (await res.text().catch(() => '')).slice(0, 300);
+    throw new Error(`Google Drive klasörü oluşturulamadı (HTTP ${res.status}): ${detail}`);
+  }
+  const data = (await res.json()) as { id?: string };
+  if (!data.id) throw new Error('Google Drive klasör yanıtında id yok');
+  return data.id;
+}
+
+/**
  * Drive dosyasını siler (hard-delete akışı için — henüz bağlanmadı, ileride kullanılacak).
  * Dosya zaten yoksa (404) sessizce geçer.
  */

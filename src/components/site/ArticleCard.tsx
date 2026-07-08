@@ -1,5 +1,7 @@
+'use client';
+
 import Link from 'next/link';
-import { formatDateTr } from '@/lib/site';
+import { useTilt } from '@/hooks/useTilt';
 
 /** Kart bileşeninin beklediği hafif makale özeti (SiteArticle alt kümesi). */
 export type ArticleCardData = {
@@ -17,9 +19,21 @@ export type ArticleCardData = {
   authorName?: string | null;
 };
 
+// İstemci-güvenli tarih biçimlendirici. @/lib/site (prisma import eder → sunucuya bağlı)
+// bu istemci bileşenine sızmasın diye formatDateTr burada birebir tekrar edilir.
+const MONTHS_TR = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+function formatDateTr(d: Date | string | null | undefined): string {
+  if (!d) return '';
+  const date = typeof d === 'string' ? new Date(d) : d;
+  if (Number.isNaN(date.getTime())) return '';
+  return `${date.getDate()} ${MONTHS_TR[date.getMonth()]} ${date.getFullYear()}`;
+}
+
 /**
  * Site genelinde ortak haber kartı.
  * variant: 'default' dikey kart, 'row' kompakt yatay kart (yan sütunlar).
+ * Hover'da 3B tilt + görsel parallax + gloss (yalnız pointer:fine + motion tier full;
+ * useTilt bu koşulları kendi içinde uygular, aksi halde kart klasik hover ile çalışır).
  */
 export default function ArticleCard({
   article,
@@ -31,10 +45,12 @@ export default function ArticleCard({
   revealDelay?: number;
 }) {
   const a = article;
+  const tiltRef = useTilt<HTMLAnchorElement>({ max: 4 });
   return (
     <Link
+      ref={tiltRef}
       href={`/haber/${a.slug}`}
-      className={`s-card s-reveal ${variant === 'row' ? 's-card-row' : ''}`}
+      className={`s-card s-reveal s-tilt ${variant === 'row' ? 's-card-row' : ''}`}
       style={revealDelay ? ({ '--reveal-delay': `${revealDelay}ms` } as React.CSSProperties) : undefined}
     >
       <div className="s-card-media">
@@ -67,6 +83,8 @@ export default function ArticleCard({
           )}
         </div>
       </div>
+      {/* Tilt gloss (işaretçi konumuna göre parlama); yalnız tilt aktifken görünür */}
+      <span className="s-card-gloss" aria-hidden="true" />
     </Link>
   );
 }

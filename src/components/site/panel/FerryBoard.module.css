@@ -1,0 +1,128 @@
+/* Feribot tarife panosu — tema-duyarlı (site.css --* token'ları). */
+
+.board {
+  display: grid;
+  gap: 1rem;
+}
+
+.sea {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.8rem 1rem;
+  background: linear-gradient(135deg, color-mix(in srgb, #2f7db9 18%, transparent), transparent);
+  border: 1px solid var(--line, rgba(159, 176, 200, 0.14));
+  border-radius: var(--radius, 14px);
+}
+
+.seaIcon { font-size: 1.2rem; }
+
+.seaLabel {
+  font-weight: 700;
+  color: var(--ink, #eef2f8);
+  font-size: 0.9rem;
+}
+
+.seaVals {
+  margin-left: auto;
+  display: flex;
+  gap: 0.9rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft, #9fb0c8);
+  font-variant-numeric: tabular-nums;
+}
+
+.routes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.route {
+  background: var(--bg-elevated, #0c1526);
+  border: 1px solid var(--line, rgba(159, 176, 200, 0.14));
+  border-radius: var(--radius, 14px);
+  box-shadow: var(--card-shadow, 0 10px 40px rgba(0, 0, 0, 0.35));
+  overflow: hidden;
+}
+
+.routeHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid var(--line, rgba(159, 176, 200, 0.14));
+}
+
+.routeName {
+  font-family: var(--font-display, system-ui), sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink, #eef2f8);
+  line-height: 1.2;
+}
+
+.operator {
+  font-size: 0.74rem;
+  color: var(--ink-faint, #64758e);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.next {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.nextTime {
+  font-family: var(--font-display, system-ui), sans-serif;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--accent, #e23140);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.nextHint {
+  font-size: 0.72rem;
+  color: var(--ink-faint, #64758e);
+  margin-top: 0.2rem;
+}
+
+.times {
+  list-style: none;
+  margin: 0;
+  padding: 0.7rem 1.1rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.time {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--line, rgba(159, 176, 200, 0.14));
+  background: color-mix(in srgb, var(--ink, #eef2f8) 4%, transparent);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink, #eef2f8);
+}
+
+.dayTag {
+  font-style: normal;
+  font-size: 0.66rem;
+  color: var(--ink-faint, #64758e);
+}
+
+.empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--ink-faint, #64758e);
+}

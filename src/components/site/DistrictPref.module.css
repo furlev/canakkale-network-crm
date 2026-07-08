@@ -1,0 +1,65 @@
+/* "Benim İlçem" seçici — tema-duyarlı (site.css --* token'ları). Header/anasayfa. */
+
+.wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.6rem;
+  border: 1px solid var(--line, rgba(159, 176, 200, 0.14));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink, #eef2f8) 4%, transparent);
+  cursor: pointer;
+  transition: border-color 0.2s var(--ease-out, ease);
+}
+
+.wrap:hover {
+  border-color: var(--accent, #e23140);
+}
+
+.icon {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-soft, #9fb0c8);
+  white-space: nowrap;
+}
+
+.select {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--ink, #eef2f8);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.1rem 1.1rem 0.1rem 0.3rem;
+  /* basit ok işareti */
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 0.35rem center, right 0.1rem center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--accent, #e23140);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* option'lar bazı tarayıcılarda sistem renginde açılır; okunur kalsın */
+.select option {
+  color: #111;
+  background: #fff;
+}
+
+@media (max-width: 640px) {
+  .label {
+    display: none;
+  }
+}
