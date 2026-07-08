@@ -5,6 +5,8 @@ import prisma from '@/lib/prisma';
 import ArticleCard, { type ArticleCardData } from '@/components/site/ArticleCard';
 import Pagination from '@/components/site/pages/Pagination';
 import RevealInit from '@/components/site/pages/RevealInit';
+import DistrictFilter from '@/components/site/DistrictFilter';
+import { DISTRICTS, normalizeDistrict } from '@/lib/districts';
 import '@/app/(public)/pages.css';
 
 export const revalidate = 120;
@@ -45,9 +47,12 @@ export default async function CategoryPage(context: {
 
   const pageParam = Array.isArray(sp.sayfa) ? sp.sayfa[0] : sp.sayfa;
   const page = Math.max(1, parseInt(pageParam || '1', 10) || 1);
+  const ilceParam = Array.isArray(sp.ilce) ? sp.ilce[0] : sp.ilce;
+  const ilce = normalizeDistrict(ilceParam); // slug | null
 
-  const where = { status: 'published', deletedAt: null, categorySlug: category.slug };
-  const [total, articles] = await Promise.all([
+  const baseWhere = { status: 'published', deletedAt: null, categorySlug: category.slug };
+  const where = { ...baseWhere, ...(ilce ? { district: ilce } : {}) };
+  const [total, articles, districtGroups] = await Promise.all([
     prisma.siteArticle.count({ where }),
     prisma.siteArticle.findMany({
       where,
@@ -70,8 +75,17 @@ export default async function CategoryPage(context: {
         authorName: true,
       },
     }),
+    // İlçe pil sayaçları — bu kategori bağlamında, ilçe filtresi hariç
+    prisma.siteArticle.groupBy({ by: ['district'], where: baseWhere, _count: { _all: true } }),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const districtCounts: Record<string, number> = {};
+  let districtTotal = 0;
+  for (const g of districtGroups) {
+    districtTotal += g._count._all;
+    if (g.district) districtCounts[g.district] = g._count._all;
+  }
 
   const cards: ArticleCardData[] = articles.map(a => ({
     id: a.id,
@@ -110,6 +124,13 @@ export default async function CategoryPage(context: {
               ? `Bu kategoride ${total.toLocaleString('tr-TR')} haber var.`
               : 'Bu kategoride henüz haber yayınlanmadı.'}
           </p>
+
+          <DistrictFilter
+            districts={DISTRICTS}
+            active={ilce || ''}
+            counts={districtCounts}
+            total={districtTotal}
+          />
         </div>
       </header>
 
@@ -122,7 +143,12 @@ export default async function CategoryPage(context: {
                   <ArticleCard key={a.slug} article={a} revealDelay={(i % 4) * 90} />
                 ))}
               </div>
-              <Pagination current={page} totalPages={totalPages} basePath={`/kategori/${category.slug}`} />
+              <Pagination
+                current={page}
+                totalPages={totalPages}
+                basePath={`/kategori/${category.slug}`}
+                query={ilce ? { ilce } : {}}
+              />
             </>
           ) : (
             <div className="p-empty">

@@ -46,6 +46,7 @@ model Tip {
 
   reporterId String?
   reporter   User?   @relation("TipReporter", fields: [reporterId], references: [id])
+  draftId    String? // site ihbarından üretilen AiDraft bağı
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -139,17 +140,41 @@ model Lead {
 model Invoice {
   id             String    @id @default(uuid())
   invoiceNo      String    @unique
-  amount         Float
+  amount         Float // genel toplam (KDV dahil) — kalemlerden hesaplanır
+  currency       String    @default("TRY")
+  subtotal       Float? // ara toplam (KDV hariç)
+  vatTotal       Float? // toplam KDV
+  discount       Float? // indirim tutarı
   status         String    @default("unpaid") // unpaid, paid, overdue, cancelled
   dueDate        DateTime?
   lastReminderAt DateTime? // son gecikme hatırlatması
+  reminderCount  Int       @default(0)
+  sentAt         DateTime? // müşteriye e-posta ile gönderildi
+  pdfUrl         String? // üretilen PDF (object storage/data)
+  notes          String?
+  advertiserId   String? // reklam faturaları (Advertiser bağı)
 
   clientId  String?
   client    Client?   @relation(fields: [clientId], references: [id])
+  items     InvoiceItem[]
   deletedAt DateTime? // soft delete
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Fatura satır kalemi (Finans 2.0 — kalemli fatura + KDV).
+model InvoiceItem {
+  id          String  @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Float   @default(1)
+  unitPrice   Float   @default(0)
+  vatRate     Float   @default(20) // KDV oranı %
+  order       Int     @default(0)
+
+  @@index([invoiceId])
 }
 
 model Estimate {
@@ -437,12 +462,29 @@ model AdCampaign {
   budget      Float     @default(0)
   impressions Int       @default(0)
   clicks      Int       @default(0)
+  creativeUrl String? // reklam görseli (URL)
+  targetUrl   String? // tıklama hedefi
+  weight      Int       @default(1) // rotasyon ağırlığı
+  districts   String? // JSON: ilçe hedefleme
 
   advertiserId String?
   advertiser   Advertiser? @relation(fields: [advertiserId], references: [id])
+  events       AdEvent[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Reklam gösterim/tık olayı (gerçek envanter ölçümü).
+model AdEvent {
+  id         String     @id @default(uuid())
+  campaignId String
+  campaign   AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  type       String // impression | click
+  ipHash     String?
+  createdAt  DateTime   @default(now())
+
+  @@index([campaignId, createdAt])
 }
 
 // ── RBAC: kullanıcı uyarıları (warn sistemi) ──
@@ -501,7 +543,12 @@ model NewsSource {
   type          String    @default("rss") // rss | google_news
   enabled       Boolean   @default(true)
   needsUA       Boolean   @default(false) // WAF: tarayıcı User-Agent gerekir
+  trustScore    Int       @default(50) // 0-100 kaynak güveni (ağırlıklı konu seçimi)
+  sourceType    String    @default("local") // official | local | aggregator | social
+  district      String? // kaynağın coğrafi kapsamı (ilçe)
   lastFetchedAt DateTime?
+  lastItemCount Int? // son koşuda çekilen öğe sayısı (sağlık)
+  lastError     String? // son çekim hatası (sağlık)
   notes         String?
   createdAt     DateTime  @default(now())
 
@@ -521,8 +568,15 @@ model FeedItem {
   pubDate     DateTime?
   fetchedAt   DateTime    @default(now())
   usedInDraft Boolean     @default(false)
+  district    String? // sözlük/AI ile çıkarılan ilçe
+  isLocal     Boolean     @default(true) // Çanakkale-dışı gürültü filtresi
+  embedding   String? // JSON float[] — kümeleme (çoklu-kaynak teyidi)
+  clusterId   String? // aynı olayı anlatan öğelerin kümesi
+  importance  Float? // yenilik/önem skoru
+  mediaUrl    String? // kaynak medya (gerçek foto sourcing)
 
   @@index([fetchedAt])
+  @@index([clusterId])
 }
 
 // AI üretilen haber taslağı — onay kuyruğunun kalbi (taslak→onay→yayın).
@@ -545,10 +599,19 @@ model AiDraft {
   wpId            Int? // yayınlanınca WP post id
   articleId       String? // yayınlanınca site makalesi (SiteArticle) id
   newsType        String   @default("daily") // breaking | daily | weekly
+  district        String? // AI'ın çıkardığı Çanakkale ilçesi
+  qualityScore    Float? // 0-100: güven + özgünlük + kaynak sayısı + doluluk
+  originalityScore Float? // kaynağa benzerlik (düşük = kopya riski)
+  sourceCount     Int? // fact-check bağımsız kaynak sayısı
+  hasContradiction Boolean @default(false) // kaynaklar arası çelişki bayrağı
+  editorNote      String? // redaksiyon notu (editörden editöre)
+  scheduledAt     DateTime? // planlı yayın zamanı
+  igAssets        String? // JSON: üretilen Instagram görsel referansları
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@index([status])
+  @@index([scheduledAt])
 }
 
 /// Denetim kaydı: hassas işlemlerin (ödeme, ayar, ekip, uyarı, yayın...) kim/ne/ne zaman izi.
@@ -595,14 +658,23 @@ model SiteArticle {
   metaDescription String?
   sourceDraftId   String? // köken AiDraft id
   sourceLinks     String? // JSON: kaynak atıf linkleri
+  district        String? // Çanakkale ilçesi (Merkez/Biga/Çan...) — ilçe filtreleme ekseni
+  gallery         String? // JSON [{url,alt}] — foto galeri (harici URL)
+  correctionNote  String? // yayın sonrası düzeltme metni (basın hukuku)
+  correctedAt     DateTime?
+  retractedAt     DateTime? // geri çekme (retraction)
+  retractionNote  String?
   wpId            Int?          @unique // WP'den içe aktarılan haberler
   deletedAt       DateTime?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
+  events          ArticleEvent[]
+
   @@index([status, publishedAt])
   @@index([categorySlug])
   @@index([categorySlug, publishedAt])
+  @@index([district, publishedAt])
   @@index([isBreaking, publishedAt])
 }
 
@@ -642,4 +714,40 @@ model JoinApplication {
   updatedAt DateTime @updatedAt
 
   @@index([status, createdAt])
+}
+
+// Site analitik olay tablosu (görüntülenme/okuma/paylaşım) — first-party, KVKK-dostu.
+model ArticleEvent {
+  id           String      @id @default(uuid())
+  articleId    String
+  article      SiteArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  slug         String
+  type         String // view | read_complete | share | outbound_click
+  referrerHost String?
+  deviceType   String? // mobile | desktop | tablet
+  district     String?
+  sessionHash  String? // anonim oturum (KVKK: kişisel veri değil)
+  createdAt    DateTime    @default(now())
+
+  @@index([articleId, createdAt])
+  @@index([createdAt])
+  @@index([type, createdAt])
+}
+
+// Nöbetçi eczane (il + 11 ilçe, günlük) — yerel kamu-hizmet verisi.
+model NobetciEczane {
+  id        String   @id @default(uuid())
+  date      DateTime @db.Date
+  district  String // Merkez, Biga, Çan...
+  name      String
+  address   String?
+  phone     String?
+  lat       Float?
+  lng       Float?
+  mapsUrl   String?
+  source    String   @default("api") // api | scrape | manual
+  createdAt DateTime @default(now())
+
+  @@unique([date, district, name])
+  @@index([date, district])
 }

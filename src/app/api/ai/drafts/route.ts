@@ -19,7 +19,7 @@ export async function GET(request: Request) {
 
     // imageUrl base64 data-URI olabilir (satır başına MB'lar) → listede TAŞIMA.
     // Hafif alanları seç; görsel varlığını ayrı ucuz bir sorguyla hasImage bayrağına çevir.
-    const [items, withImage] = await Promise.all([
+    const [items, withImage, withIg] = await Promise.all([
       prisma.aiDraft.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -27,16 +27,23 @@ export async function GET(request: Request) {
           id: true, topic: true, title: true, body: true, category: true, tags: true,
           seoTitle: true, metaDescription: true, socialPost: true, sources: true,
           confidence: true, status: true, reviewerId: true, reviewerName: true,
-          wpId: true, createdAt: true, updatedAt: true,
+          wpId: true, articleId: true, newsType: true, createdAt: true, updatedAt: true,
+          district: true, qualityScore: true, originalityScore: true, sourceCount: true,
+          hasContradiction: true, editorNote: true, scheduledAt: true,
         },
       }),
       prisma.aiDraft.findMany({
         where: { ...(where || {}), imageUrl: { not: null } },
         select: { id: true },
       }),
+      prisma.aiDraft.findMany({
+        where: { ...(where || {}), igAssets: { not: null } },
+        select: { id: true },
+      }),
     ]);
     const imageIds = new Set(withImage.map((r) => r.id));
-    return NextResponse.json(items.map((i) => ({ ...i, hasImage: imageIds.has(i.id) })));
+    const igIds = new Set(withIg.map((r) => r.id));
+    return NextResponse.json(items.map((i) => ({ ...i, hasImage: imageIds.has(i.id), hasIgAssets: igIds.has(i.id) })));
   } catch (error) {
     return handleApiError(error, 'Taslaklar alınamadı');
   }

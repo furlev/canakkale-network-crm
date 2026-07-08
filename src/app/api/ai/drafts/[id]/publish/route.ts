@@ -5,7 +5,7 @@ import { getSession } from '@/lib/auth';
 import { isLeaderOrAdmin } from '@/lib/permissions';
 import { getWpConfig, wpFetch } from '@/lib/wordpress';
 import { audit } from '@/lib/audit';
-import { slugifyTr, stripHtml } from '@/lib/site';
+import { publishDraftToSite } from '@/lib/publish-draft';
 
 type WpCategory = { id: number; name: string; slug: string };
 type WpCreatedPost = { id: number; thumbnail: string | null };
@@ -69,37 +69,6 @@ function buildSourcesHtml(raw: string | null): string {
   return `<hr /><p><strong>Kaynaklar:</strong></p><ul>${lis}</ul>`;
 }
 
-/** Benzersiz site slug'ı: çakışmada -2, -3... eki dener. */
-async function uniqueSiteSlug(base: string): Promise<string> {
-  const root = slugifyTr(base) || 'haber';
-  let slug = root;
-  for (let i = 2; ; i++) {
-    const existing = await prisma.siteArticle.findUnique({ where: { slug }, select: { id: true } });
-    if (!existing) return slug;
-    slug = `${root}-${i}`;
-  }
-}
-
-/** Taslağın kategori metnini mevcut SiteCategory'lerle eşler (ad/slug benzerliği).
- *  Eşleşme yoksa 'genel' varsa onu, o da yoksa null döner. */
-async function matchSiteCategory(draftCategory: string | null): Promise<string | null> {
-  const categories = await prisma.siteCategory.findMany({ select: { slug: true, name: true } });
-  if (draftCategory && draftCategory.trim()) {
-    const wantedSlug = slugifyTr(draftCategory);
-    const wantedName = draftCategory.trim().toLocaleLowerCase('tr-TR');
-    const exact = categories.find(
-      (c) => c.slug === wantedSlug || slugifyTr(c.name) === wantedSlug || c.name.trim().toLocaleLowerCase('tr-TR') === wantedName
-    );
-    if (exact) return exact.slug;
-    // Gevşek benzerlik: biri diğerini kapsıyorsa (ör. "spor" ↔ "spor-haberleri")
-    const partial = categories.find(
-      (c) => wantedSlug.length >= 4 && (c.slug.includes(wantedSlug) || wantedSlug.includes(c.slug))
-    );
-    if (partial) return partial.slug;
-  }
-  return categories.find((c) => c.slug === 'genel')?.slug ?? null;
-}
-
 /**
  * Taslağı yayınlar. Varsayılan hedef SİTE (canakkale.network);
  * body {target: 'wordpress'} ile eski WordPress akışı korunur.
@@ -132,62 +101,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!draft.body || !draft.body.trim()) {
       throw new ApiError(400, 'Taslak gövdesi boş — yayınlanamaz');
     }
-    // TS daralması transaction closure'ına taşınmadığı için gövdeyi burada sabitle.
-    const draftBody: string = draft.body;
 
     // ─── Varsayılan yol: SİTE (canakkale.network) ───
     if (target === 'site') {
-      const slug = await uniqueSiteSlug(draft.title || draft.topic);
-      const categorySlug = await matchSiteCategory(draft.category);
-
-      // Atomik claim + oluşturma tek transaction'da: çift tıklama / iki sekme
-      // yarışında yalnızca bir istek taslağı 'published'a çevirebilir; diğeri
-      // updateMany count===0 ile 409 alır → tek bir SiteArticle oluşur.
-      const { article, updated } = await prisma.$transaction(async (tx) => {
-        const claim = await tx.aiDraft.updateMany({
-          where: { id: draft.id, status: { not: 'published' } },
-          data: {
-            status: 'published',
-            reviewerId: session?.sub ?? null,
-            reviewerName: session?.name ?? null,
-          },
-        });
-        if (claim.count === 0) {
-          throw new ApiError(409, 'Bu taslak zaten yayınlanmış');
-        }
-
-        const created = await tx.siteArticle.create({
-          data: {
-            slug,
-            title: draft.title || draft.topic,
-            summary: draft.metaDescription || stripHtml(draftBody, 180),
-            body: draftBody,
-            categorySlug,
-            tags: draft.tags,
-            imageUrl: draft.imageUrl,
-            imageAlt: draft.title ? `${draft.title} (temsili görsel)` : null,
-            imageIsAi: !!draft.imageUrl && draft.imageUrl.startsWith('data:'),
-            authorName: session?.name || 'Çanakkale Network',
-            authorId: session?.sub ?? null,
-            status: 'published',
-            newsType: draft.newsType,
-            isBreaking: draft.newsType === 'breaking',
-            publishedAt: new Date(),
-            seoTitle: draft.seoTitle,
-            metaDescription: draft.metaDescription,
-            sourceDraftId: draft.id,
-            sourceLinks: draft.sources,
-          },
-        });
-
-        const updatedDraft = await tx.aiDraft.update({
-          where: { id: draft.id },
-          data: { articleId: created.id },
-        });
-
-        return { article: created, updated: updatedDraft };
-      });
-
+      const { article, updated } = await publishDraftToSite(draft, { sub: session?.sub, name: session?.name });
       const siteUrl = `https://canakkale.network/haber/${article.slug}`;
       await audit(session, 'published', 'aiDraft', draft.id, `AI taslağı siteye yayınlandı (${article.slug}): ${article.title}`);
       return NextResponse.json({ ok: true, target: 'site', articleId: article.id, slug: article.slug, siteUrl, draft: updated });

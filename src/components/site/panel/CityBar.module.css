@@ -1,0 +1,119 @@
+/* Header altı kompakt şehir şeridi — site.css tokenlarını kullanır. Tema-duyarlı. */
+
+.bar {
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  font-size: 13px;
+}
+
+.animate {
+  animation: citybar-in 0.5s var(--ease-out, ease-out) both;
+}
+
+@keyframes citybar-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.inner::-webkit-scrollbar {
+  display: none;
+}
+
+.item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-soft);
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: color 0.18s;
+}
+
+.item:hover {
+  color: var(--ink);
+}
+
+.emoji {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.val {
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.lbl {
+  color: var(--ink-soft);
+}
+
+.lbl b {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.up {
+  color: #2fb96b;
+  font-size: 11px;
+}
+
+.down {
+  color: var(--cn-red-bright, #e23140);
+  font-size: 11px;
+}
+
+.sep {
+  width: 1px;
+  height: 18px;
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+.pharm {
+  min-width: 0;
+}
+
+.pharm .lbl {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 46vw;
+}
+
+@media (max-width: 640px) {
+  .hideSm {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate {
+    animation: none;
+  }
+}

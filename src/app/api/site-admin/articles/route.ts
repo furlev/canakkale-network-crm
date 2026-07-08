@@ -4,6 +4,13 @@ import prisma from '@/lib/prisma';
 import { parseBody, handleApiError, requireLevel, getPagination } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { slugifyTr, stripHtml } from '@/lib/site';
+import { normalizeDistrict } from '@/lib/districts';
+
+/** Foto galeri öğesi ({url, alt}) — JSON dizi olarak saklanır. */
+const galleryItem = z.object({
+  url: z.string().min(1),
+  alt: z.string().optional().nullable(),
+});
 
 /** Site haberi oluşturma şeması (site-admin modülüne özel — schemas.ts'e dokunulmaz). */
 const articleCreate = z.object({
@@ -12,7 +19,10 @@ const articleCreate = z.object({
   summary: z.string().optional().nullable(),
   body: z.string().min(1),
   categorySlug: z.string().optional().nullable(),
+  // İlçe: serbest metin/slug kabul edilir, handler normalizeDistrict ile slug'a indirger (tanınmazsa null).
+  district: z.string().optional().nullable(),
   tags: z.array(z.string()).optional(),
+  gallery: z.array(galleryItem).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
   imageAlt: z.string().optional().nullable(),
   imageIsAi: z.boolean().optional(),
@@ -25,6 +35,12 @@ const articleCreate = z.object({
   isEditorPick: z.boolean().optional(),
   seoTitle: z.string().optional().nullable(),
   metaDescription: z.string().optional().nullable(),
+  // Basın hukuku: düzeltme/geri çekme notları. Tarih damgaları (correctedAt/
+  // retractedAt) SUNUCU tarafından atılır — istemci değeri güvenilmezdir.
+  correctionNote: z.string().optional().nullable(),
+  correctedAt: z.string().optional().nullable(),
+  retractionNote: z.string().optional().nullable(),
+  retractedAt: z.string().optional().nullable(),
 });
 
 /** Benzersiz slug üretir: çakışmada -2, -3... eki dener. */
@@ -108,6 +124,10 @@ export async function POST(request: Request) {
     const slug = await uniqueSlug(body.slug || body.title);
     const status = body.status || 'draft';
 
+    // Düzeltme/geri çekme: not doluysa tarihi sunucu damgalar
+    const correctionNote = body.correctionNote?.trim() || null;
+    const retractionNote = body.retractionNote?.trim() || null;
+
     const created = await prisma.siteArticle.create({
       data: {
         slug,
@@ -115,7 +135,9 @@ export async function POST(request: Request) {
         summary: body.summary || stripHtml(body.body, 180),
         body: body.body,
         categorySlug: await safeCategorySlug(body.categorySlug),
+        district: normalizeDistrict(body.district),
         tags: body.tags ? JSON.stringify(body.tags) : null,
+        gallery: body.gallery && body.gallery.length ? JSON.stringify(body.gallery) : null,
         imageUrl: body.imageUrl || null,
         imageAlt: body.imageAlt || null,
         imageIsAi: body.imageIsAi ?? false,
@@ -130,6 +152,10 @@ export async function POST(request: Request) {
         publishedAt: status === 'published' ? new Date() : null,
         seoTitle: body.seoTitle || null,
         metaDescription: body.metaDescription || null,
+        correctionNote,
+        correctedAt: correctionNote ? new Date() : null,
+        retractionNote,
+        retractedAt: retractionNote ? new Date() : null,
       },
     });
 

@@ -101,6 +101,28 @@ export default function TipsPage() {
     }
   };
 
+  // İhbardan onay kuyruğuna (AiDraft, status=pending) haber taslağı üretir → /ai-news
+  const createAiDraft = async (tip: Tip) => {
+    setAiBusy(true);
+    setActionMsg('');
+    try {
+      const res = await fetch(`/api/ai/drafts/from-tip/${tip.id}`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setActionMsg('✅ AI taslağı oluşturuldu — onay için /ai-news kuyruğuna düştü');
+        // İhbar 'converted' olur (sunucu tarafında da işlenir)
+        setTips(prev => prev.map(t => (t.id === tip.id ? { ...t, status: 'converted' } : t)));
+        if (selected?.id === tip.id) setSelected({ ...tip, status: 'converted' });
+      } else {
+        setActionMsg(`❌ ${data.error || 'Taslak üretilemedi'}`);
+      }
+    } catch {
+      setActionMsg('❌ Sunucuya ulaşılamadı');
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
   const applyAiPriority = async () => {
     if (!aiAnalysis || !selected) return;
     try {
@@ -375,6 +397,9 @@ export default function TipsPage() {
               <div style={{display:'flex',gap:'var(--space-2)',flexWrap:'wrap'}}>
                 <button className="btn btn-accent btn-sm" disabled={aiBusy} onClick={()=>runAiAnalysis(selected)}>🤖 {aiBusy ? 'Çalışıyor...' : 'AI Analiz'}</button>
                 <button className="btn btn-ghost btn-sm" disabled={aiBusy} onClick={()=>generateDraft(selected)}>✨ Haber Taslağı Üret</button>
+                {canManage && (
+                  <button className="btn btn-primary btn-sm" disabled={aiBusy || selected.status === 'converted'} onClick={()=>createAiDraft(selected)}>📝 AI Taslağı Oluştur</button>
+                )}
               </div>
               {aiAnalysis && (
                 <div style={{marginTop:'var(--space-3)',padding:'var(--space-3) var(--space-4)',background:'var(--surface-2)',borderRadius:'var(--border-radius)',border:'1px solid var(--border-subtle)'}}>

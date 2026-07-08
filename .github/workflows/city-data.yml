@@ -1,0 +1,50 @@
+# ŞEHİR PANOSU veri zamanlayıcısı (ücretsiz, GitHub Actions):
+#   - market  : 15 dakikada bir  → döviz/altın (truncgil)
+#   - weather : saatlik          → Open-Meteo (11 ilçe + deniz dalga)
+#   - pharmacy: günlük 04:30 UTC (TR 07:30) → nöbetçi eczane
+# Kurulum (repo Settings → Secrets and variables → Actions):
+#   - Secret  CRON_SECRET : .env'deki CRON_SECRET ile aynı değer
+#   - Variable CRM_URL    : https://panel.canakkale.network (sondaki / olmadan)
+# Not: workflow_dispatch elle tetiklemesinde ÜÇ iş de koşar (test için).
+name: Şehir Panosu Verisi
+
+on:
+  schedule:
+    - cron: '*/15 * * * *' # market
+    - cron: '0 * * * *' # weather (saatlik)
+    - cron: '30 4 * * *' # pharmacy (TR 07:30)
+  workflow_dispatch: {}
+
+jobs:
+  market:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '*/15 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Piyasa (döviz/altın) güncelle
+        run: |
+          curl -fsS -X POST \
+            --max-time 30 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/market" || echo "market atlandı/başarısız"
+
+  weather:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hava durumu güncelle
+        run: |
+          curl -fsS -X POST \
+            --max-time 90 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/weather" || echo "weather atlandı/başarısız"
+
+  pharmacy:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 4 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Nöbetçi eczane güncelle
+        run: |
+          curl -fsS -X POST \
+            --max-time 90 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/pharmacy" || echo "pharmacy atlandı/başarısız"

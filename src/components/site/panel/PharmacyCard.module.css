@@ -1,0 +1,128 @@
+/* Nöbetçi eczane kartı — site.css tokenlarını kullanır. Tema-duyarlı. */
+
+.tabsWrap {
+  overflow-x: auto;
+  margin: 0 -18px 12px;
+  padding: 0 18px 4px;
+  scrollbar-width: thin;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  width: max-content;
+}
+
+.tab {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
+  white-space: nowrap;
+}
+
+.tab:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, #2fb96b 45%, var(--line));
+}
+
+.tabActive {
+  background: color-mix(in srgb, #2fb96b 20%, transparent);
+  border-color: #2fb96b;
+  color: var(--ink);
+}
+
+.list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+
+.entry {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-2) 45%, transparent);
+}
+
+.entryHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pin {
+  font-size: 15px;
+}
+
+.name {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.dist {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #2fb96b;
+  background: color-mix(in srgb, #2fb96b 14%, transparent);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.addr {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin: 6px 0 0;
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.act {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  transition: border-color 0.18s, color 0.18s;
+}
+
+.act:hover {
+  border-color: #2fb96b;
+  color: #2fb96b;
+}
+
+.empty {
+  color: var(--ink-soft);
+  font-size: 14px;
+  padding: 6px 0 4px;
+  line-height: 1.5;
+}

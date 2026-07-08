@@ -6,6 +6,9 @@ import prisma from '@/lib/prisma';
 import { formatDateTr, readingMinutes, stripHtml } from '@/lib/site';
 import { sanitizeHtml, youtubeEmbedUrl } from '@/lib/sanitize';
 import ArticleCard, { type ArticleCardData } from '@/components/site/ArticleCard';
+import CorrectionBanner from '@/components/site/CorrectionBanner';
+import AdSlot from '@/components/site/AdSlot';
+import { districtName } from '@/lib/districts';
 import ReadingProgress from '@/components/site/pages/ReadingProgress';
 import ViewBeacon from '@/components/site/pages/ViewBeacon';
 import ShareBar from '@/components/site/pages/ShareBar';
@@ -201,6 +204,11 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
                 {article.category.name}
               </Link>
             ) : null}
+            {article.district && districtName(article.district) && (
+              <Link href={`/ilce/${article.district}`} className="s-badge s-badge-cat">
+                📍 {districtName(article.district)}
+              </Link>
+            )}
             <h1 className="p-hero-title">{article.title}</h1>
             <div className="p-hero-meta">
               <span className="author">{article.authorName}</span>
@@ -225,6 +233,12 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
 
       {/* ── Gövde ── */}
       <div className="p-article">
+        <CorrectionBanner
+          correctionNote={article.correctionNote}
+          correctedAt={article.correctedAt}
+          retractedAt={article.retractedAt}
+          retractionNote={article.retractionNote}
+        />
         {article.summary && <p className="p-article-summary">{article.summary}</p>}
 
         {embedUrl && (
@@ -242,6 +256,8 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
         <div className="prose" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
 
         <ShareBar url={canonical} title={article.title} />
+
+        <AdSlot placement="native" district={article.district} />
 
         {tags.length > 0 && (
           <nav className="p-tags" aria-label="Etiketler">

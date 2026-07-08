@@ -64,13 +64,26 @@ export const taskCreate = z.object({
 });
 export const taskUpdate = taskCreate.partial();
 
-/* ── Invoice ── */
+/* ── Invoice (Finans 2.0 — kalemli fatura + KDV) ── */
+// Fatura satır kalemi girdisi; toplamlar SUNUCUDA hesaplanır (istemci değerine güvenilmez).
+export const invoiceItemInput = z.object({
+  description: z.string().min(1),
+  quantity: z.coerce.number().min(0).default(1),
+  unitPrice: z.coerce.number().min(0).default(0),
+  vatRate: z.coerce.number().min(0).max(100).default(20), // KDV oranı %
+});
 export const invoiceCreate = z.object({
   invoiceNo: z.string().optional(),
-  amount: z.coerce.number().min(0),
+  // amount opsiyonel: kalem varsa sunucu hesaplar, yoksa (geriye dönük) elle girilir.
+  amount: z.coerce.number().min(0).optional(),
+  currency: z.enum(['TRY', 'USD', 'EUR', 'GBP']).optional(),
   status: z.enum(['unpaid', 'paid', 'overdue', 'cancelled']).optional(),
   clientId: idString.optional(),
+  advertiserId: idString.optional(),
   dueDate: dateString.optional(),
+  discount: z.coerce.number().min(0).optional(),
+  notes: z.string().optional().nullable(),
+  items: z.array(invoiceItemInput).optional(),
 });
 export const invoiceUpdate = invoiceCreate.partial();
 

@@ -12,6 +12,9 @@ import SiteHeader, { type NavCategory } from '@/components/site/SiteHeader';
 import SiteFooter from '@/components/site/SiteFooter';
 import BreakingTicker, { type TickerItem } from '@/components/site/BreakingTicker';
 import Reveal from '@/components/site/Reveal';
+import MotionProvider from '@/components/site/motion/MotionProvider';
+import CityBar from '@/components/site/panel/CityBar';
+import CookieConsent from '@/components/site/CookieConsent';
 import './site.css';
 import './home.css'; // header/footer/kabuk stilleri tum site rotalarinda gecerli
 
@@ -91,12 +94,13 @@ async function getLayoutData(): Promise<LayoutData> {
         },
         orderBy: { publishedAt: 'desc' },
         take: 10,
-        select: { slug: true, title: true, publishedAt: true },
+        select: { slug: true, title: true, publishedAt: true, category: { select: { color: true } } },
       });
       ticker = breaking.map(b => ({
         slug: b.slug,
         title: b.title,
         timeAgo: b.publishedAt ? timeAgoTr(b.publishedAt) : '',
+        color: b.category?.color ?? undefined,
       }));
     }
 
@@ -130,14 +134,18 @@ export default async function PublicSiteLayout({ children }: { children: React.R
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body className="site-body s-grain">
-        <Reveal />
-        <a href="#icerik" className="skip-link">
-          İçeriğe atla
-        </a>
-        {ticker.length > 0 && <BreakingTicker items={ticker} />}
-        <SiteHeader categories={navCategories} />
-        <main id="icerik">{children}</main>
-        <SiteFooter settings={settings} />
+        <MotionProvider>
+          <Reveal />
+          <a href="#icerik" className="skip-link">
+            İçeriğe atla
+          </a>
+          {settings.tickerEnabled && <BreakingTicker items={ticker} />}
+          <SiteHeader categories={navCategories} />
+          <CityBar />
+          <main id="icerik">{children}</main>
+          <SiteFooter settings={settings} />
+          <CookieConsent />
+        </MotionProvider>
       </body>
     </html>
   );

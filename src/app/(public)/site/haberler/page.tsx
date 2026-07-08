@@ -4,6 +4,8 @@ import prisma from '@/lib/prisma';
 import ArticleCard, { type ArticleCardData } from '@/components/site/ArticleCard';
 import Pagination from '@/components/site/pages/Pagination';
 import RevealInit from '@/components/site/pages/RevealInit';
+import DistrictFilter from '@/components/site/DistrictFilter';
+import { DISTRICTS, normalizeDistrict } from '@/lib/districts';
 import '@/app/(public)/pages.css';
 
 export const revalidate = 120;
@@ -35,9 +37,11 @@ export default async function ArchivePage(context: {
   const sp = await context.searchParams;
   const q = first(sp.q).trim().slice(0, 120);
   const kategori = first(sp.kategori).trim();
+  const ilce = normalizeDistrict(first(sp.ilce)); // slug | null
   const page = Math.max(1, parseInt(first(sp.sayfa) || '1', 10) || 1);
 
-  const where = {
+  // İlçe dışındaki temel filtre — ilçe pil sayaçları bu bağlamda hesaplanır
+  const baseWhere = {
     status: 'published',
     deletedAt: null,
     ...(kategori ? { categorySlug: kategori } : {}),
@@ -51,8 +55,9 @@ export default async function ArchivePage(context: {
         }
       : {}),
   };
+  const where = { ...baseWhere, ...(ilce ? { district: ilce } : {}) };
 
-  const [total, articles, categories] = await Promise.all([
+  const [total, articles, categories, districtGroups] = await Promise.all([
     prisma.siteArticle.count({ where }),
     prisma.siteArticle.findMany({
       where,
@@ -77,8 +82,18 @@ export default async function ArchivePage(context: {
       },
     }),
     prisma.siteCategory.findMany({ orderBy: { order: 'asc' } }),
+    // İlçe pil sayaçları — ilçe filtresi HARİÇ mevcut bağlamda (q/kategori)
+    prisma.siteArticle.groupBy({ by: ['district'], where: baseWhere, _count: { _all: true } }),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // İlçe başına sayaç + "Tümü" toplamı (ilçe filtresinden bağımsız)
+  const districtCounts: Record<string, number> = {};
+  let districtTotal = 0;
+  for (const g of districtGroups) {
+    districtTotal += g._count._all;
+    if (g.district) districtCounts[g.district] = g._count._all;
+  }
 
   const cards: ArticleCardData[] = articles.map(a => ({
     id: a.id,
@@ -99,11 +114,13 @@ export default async function ArchivePage(context: {
   const baseQuery: Record<string, string> = {};
   if (q) baseQuery.q = q;
   if (kategori) baseQuery.kategori = kategori;
+  if (ilce) baseQuery.ilce = ilce;
 
   const chipHref = (catSlug: string | null) => {
     const params = new URLSearchParams();
     if (q) params.set('q', q);
     if (catSlug) params.set('kategori', catSlug);
+    if (ilce) params.set('ilce', ilce);
     const qs = params.toString();
     return qs ? `/haberler?${qs}` : '/haberler';
   };
@@ -121,6 +138,7 @@ export default async function ArchivePage(context: {
 
           <form className="p-search" action="/haberler" method="get" role="search">
             {kategori && <input type="hidden" name="kategori" value={kategori} />}
+            {ilce && <input type="hidden" name="ilce" value={ilce} />}
             <input
               type="search"
               name="q"
@@ -151,6 +169,13 @@ export default async function ArchivePage(context: {
               ))}
             </nav>
           )}
+
+          <DistrictFilter
+            districts={DISTRICTS}
+            active={ilce || ''}
+            counts={districtCounts}
+            total={districtTotal}
+          />
         </div>
       </header>
 

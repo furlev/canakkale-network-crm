@@ -4,6 +4,13 @@ import prisma from '@/lib/prisma';
 import { parseBody, handleApiError, requireLevel, ApiError } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { slugifyTr } from '@/lib/site';
+import { normalizeDistrict } from '@/lib/districts';
+
+/** Foto galeri öğesi ({url, alt}) — JSON dizi olarak saklanır. */
+const galleryItem = z.object({
+  url: z.string().min(1),
+  alt: z.string().optional().nullable(),
+});
 
 /** Site haberi güncelleme şeması — tüm alanlar opsiyonel (kısmi güncelleme / toggle). */
 const articleUpdate = z.object({
@@ -12,7 +19,10 @@ const articleUpdate = z.object({
   summary: z.string().optional().nullable(),
   body: z.string().min(1).optional(),
   categorySlug: z.string().optional().nullable(),
+  // İlçe: serbest metin/slug — handler normalizeDistrict ile slug'a indirger.
+  district: z.string().optional().nullable(),
   tags: z.array(z.string()).optional(),
+  gallery: z.array(galleryItem).optional().nullable(),
   imageUrl: z.string().optional().nullable(),
   imageAlt: z.string().optional().nullable(),
   imageIsAi: z.boolean().optional(),
@@ -25,6 +35,12 @@ const articleUpdate = z.object({
   isEditorPick: z.boolean().optional(),
   seoTitle: z.string().optional().nullable(),
   metaDescription: z.string().optional().nullable(),
+  // Basın hukuku: düzeltme/geri çekme notları. Tarih damgaları SUNUCU
+  // tarafından atılır (correctedAt/retractedAt istemciden okunmaz).
+  correctionNote: z.string().optional().nullable(),
+  correctedAt: z.string().optional().nullable(),
+  retractionNote: z.string().optional().nullable(),
+  retractedAt: z.string().optional().nullable(),
 });
 
 /** Benzersiz slug (kendisi hariç): çakışmada -2, -3... eki dener. */
@@ -80,6 +96,25 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     // Yayına alınırken publishedAt yoksa şimdi ata
     const goingPublished = body.status === 'published' && !existing.publishedAt;
 
+    // Düzeltme/geri çekme: not doluysa tarihi damgala (varsa koru), boşsa temizle.
+    // Tarih daima sunucu tarafından üretilir — istemcinin correctedAt/retractedAt'ı yok sayılır.
+    const pressData: {
+      correctionNote?: string | null;
+      correctedAt?: Date | null;
+      retractionNote?: string | null;
+      retractedAt?: Date | null;
+    } = {};
+    if (body.correctionNote !== undefined) {
+      const note = body.correctionNote?.trim() || null;
+      pressData.correctionNote = note;
+      pressData.correctedAt = note ? (existing.correctedAt ?? new Date()) : null;
+    }
+    if (body.retractionNote !== undefined) {
+      const note = body.retractionNote?.trim() || null;
+      pressData.retractionNote = note;
+      pressData.retractedAt = note ? (existing.retractedAt ?? new Date()) : null;
+    }
+
     const updated = await prisma.siteArticle.update({
       where: { id },
       data: {
@@ -88,6 +123,10 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         ...(body.summary !== undefined ? { summary: body.summary || null } : {}),
         ...(body.body !== undefined ? { body: body.body } : {}),
         ...(categorySlug !== undefined ? { categorySlug } : {}),
+        ...(body.district !== undefined ? { district: normalizeDistrict(body.district) } : {}),
+        ...(body.gallery !== undefined
+          ? { gallery: body.gallery && body.gallery.length ? JSON.stringify(body.gallery) : null }
+          : {}),
         ...(body.tags !== undefined ? { tags: JSON.stringify(body.tags) } : {}),
         ...(body.imageUrl !== undefined ? { imageUrl: body.imageUrl || null } : {}),
         ...(body.imageAlt !== undefined ? { imageAlt: body.imageAlt || null } : {}),
@@ -101,6 +140,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         ...(body.isEditorPick !== undefined ? { isEditorPick: body.isEditorPick } : {}),
         ...(body.seoTitle !== undefined ? { seoTitle: body.seoTitle || null } : {}),
         ...(body.metaDescription !== undefined ? { metaDescription: body.metaDescription || null } : {}),
+        ...pressData,
         ...(goingPublished ? { publishedAt: new Date() } : {}),
       },
     });

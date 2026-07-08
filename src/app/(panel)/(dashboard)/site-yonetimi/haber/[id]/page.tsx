@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import { DISTRICTS } from '@/lib/districts';
 
 /* NOT: slugifyTr, src/lib/site.ts'te de var; o dosya prisma import ettiği için
    client bundle'a alınamaz — aynı kural burada yerel kopya olarak durur. */
@@ -28,6 +29,7 @@ type FormState = {
   summary: string;
   body: string;
   categorySlug: string;
+  district: string;          // ilçe slug'ı ('' = ilçe seçilmedi)
   tags: string;              // virgülle ayrılmış kullanıcı girişi
   imageUrl: string;
   imageAlt: string;
@@ -42,13 +44,18 @@ type FormState = {
   seoTitle: string;
   metaDescription: string;
   publishedAt: string | null;
+  correctionNote: string;    // yayın sonrası düzeltme metni
+  correctedAt: string | null; // sunucu damgası (salt-okunur gösterim)
+  retractionNote: string;    // geri çekme gerekçesi
+  retractedAt: string | null; // sunucu damgası (salt-okunur gösterim)
 };
 
 const EMPTY: FormState = {
-  title: '', slug: '', summary: '', body: '', categorySlug: '', tags: '',
+  title: '', slug: '', summary: '', body: '', categorySlug: '', district: '', tags: '',
   imageUrl: '', imageAlt: '', imageIsAi: false, videoUrl: '', authorName: '',
   status: 'draft', newsType: 'manual', isBreaking: false, isFeatured: false,
   isEditorPick: false, seoTitle: '', metaDescription: '', publishedAt: null,
+  correctionNote: '', correctedAt: null, retractionNote: '', retractedAt: null,
 };
 
 /** API yanıtındaki makaleyi form state'ine çevirir. */
@@ -64,6 +71,7 @@ function toForm(a: Record<string, unknown>): FormState {
     summary: (a.summary as string) || '',
     body: (a.body as string) || '',
     categorySlug: (a.categorySlug as string) || '',
+    district: (a.district as string) || '',
     tags,
     imageUrl: (a.imageUrl as string) || '',
     imageAlt: (a.imageAlt as string) || '',
@@ -78,6 +86,10 @@ function toForm(a: Record<string, unknown>): FormState {
     seoTitle: (a.seoTitle as string) || '',
     metaDescription: (a.metaDescription as string) || '',
     publishedAt: (a.publishedAt as string) || null,
+    correctionNote: (a.correctionNote as string) || '',
+    correctedAt: (a.correctedAt as string) || null,
+    retractionNote: (a.retractionNote as string) || '',
+    retractedAt: (a.retractedAt as string) || null,
   };
 }
 
@@ -140,6 +152,7 @@ export default function HaberEditorPage() {
       summary: form.summary || null,
       body: form.body,
       categorySlug: form.categorySlug || null,
+      district: form.district || null,
       tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
       imageUrl: form.imageUrl || null,
       imageAlt: form.imageAlt || null,
@@ -153,6 +166,8 @@ export default function HaberEditorPage() {
       isEditorPick: form.isEditorPick,
       seoTitle: form.seoTitle || null,
       metaDescription: form.metaDescription || null,
+      correctionNote: form.correctionNote || null,
+      retractionNote: form.retractionNote || null,
     };
 
     try {
@@ -317,6 +332,13 @@ export default function HaberEditorPage() {
               </select>
             </div>
             <div className="form-group">
+              <label className="form-label">İlçe</label>
+              <select className="form-select" value={form.district} onChange={(e) => setField('district', e.target.value)}>
+                <option value="">İlçe seçilmedi</option>
+                {DISTRICTS.map((d) => <option key={d.slug} value={d.slug}>{d.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
               <label className="form-label">Etiketler (virgülle ayırın)</label>
               <input className="form-input" value={form.tags} onChange={(e) => setField('tags', e.target.value)} placeholder="çanakkale, üniversite" />
             </div>
@@ -362,6 +384,47 @@ export default function HaberEditorPage() {
               <label className="form-label">Video URL (YouTube vb.)</label>
               <input className="form-input" value={form.videoUrl} onChange={(e) => setField('videoUrl', e.target.value)} placeholder="https://youtube.com/..." />
             </div>
+          </div>
+
+          {/* Düzeltme & Geri Çekme (basın hukuku) — kaydedince tarih damgalanır */}
+          <div className="card" style={{ padding: 'var(--space-4)' }}>
+            <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', marginBottom: 'var(--space-3)' }}>⚖️ Düzeltme &amp; Geri Çekme</div>
+
+            <div className="form-group">
+              <label className="form-label">Düzeltme Notu (tekzip / düzeltme)</label>
+              <textarea
+                className="form-textarea"
+                rows={3}
+                value={form.correctionNote}
+                onChange={(e) => setField('correctionNote', e.target.value)}
+                placeholder="Yayınlanan haberde yapılan düzeltmenin açıklaması (okurlara gösterilir)"
+              />
+              {form.correctedAt && (
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 4 }}>
+                  Düzeltme yayınlandı: {new Date(form.correctedAt).toLocaleString('tr-TR')}
+                </div>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Geri Çekme Notu (retraction)</label>
+              <textarea
+                className="form-textarea"
+                rows={3}
+                value={form.retractionNote}
+                onChange={(e) => setField('retractionNote', e.target.value)}
+                placeholder="Haber neden geri çekildi? (boş bırakılırsa geri çekme kaldırılır)"
+              />
+              {form.retractedAt && (
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--error)', marginTop: 4 }}>
+                  🚫 Geri çekildi: {new Date(form.retractedAt).toLocaleString('tr-TR')}
+                </div>
+              )}
+            </div>
+
+            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', margin: 0 }}>
+              Not kaydedildiğinde tarih otomatik damgalanır; notu boşaltıp kaydetmek damgayı kaldırır.
+            </p>
           </div>
 
           {/* Canlı site linki */}

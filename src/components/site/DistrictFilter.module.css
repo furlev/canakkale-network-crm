@@ -1,0 +1,111 @@
+/* İlçe filtre şeridi — segmented pill + kaydıran accent gösterge.
+   site.css tasarım tokenlarını (var(--...)) kullanır; onları DEĞİŞTİRMEZ.
+   Token'lar tema-duyarlıdır (data-site-theme değişince renkler döner). */
+
+.wrap {
+  margin-top: 18px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none; /* Firefox */
+  -webkit-overflow-scrolling: touch;
+}
+
+.wrap::-webkit-scrollbar {
+  display: none;
+}
+
+.track {
+  position: relative;
+  display: inline-flex;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  backdrop-filter: blur(6px);
+  min-width: max-content;
+}
+
+/* Kaydıran vurgu göstergesi — aktif pilin ardında yumuşakça hareket eder */
+.indicator {
+  position: absolute;
+  top: 5px;
+  left: 0;
+  bottom: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: var(--glow);
+  transition:
+    transform 0.42s var(--ease-spring),
+    width 0.42s var(--ease-spring),
+    opacity 0.25s var(--ease-out);
+  will-change: transform, width;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.pill {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 15px;
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.25s var(--ease-out);
+}
+
+.pill:hover {
+  color: var(--ink);
+}
+
+.pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.pillActive {
+  color: var(--accent-ink);
+}
+
+.pillActive:hover {
+  color: var(--accent-ink);
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  color: var(--ink-soft);
+}
+
+.pillActive .count {
+  background: color-mix(in srgb, #ffffff 24%, transparent);
+  color: var(--accent-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .indicator {
+    transition: opacity 0.2s linear;
+  }
+  .pill {
+    transition: none;
+  }
+}

@@ -79,10 +79,11 @@ export default async function proxy(request: NextRequest) {
   if (pathname.startsWith('/api/site/')) {
     const ip = clientIp(request.headers);
     let limitOk: boolean;
-    if (pathname === '/api/site/view') {
-      // Görüntülenme beacon'u düşük-riskli ve sık; paylaşımlı IP (CGNAT/kurumsal
-      // NAT) arkasındaki gerçek okuyucuları 429'lamamak için ayrı, cömert kova.
-      limitOk = rateLimitOk(`pv:${ip}`, 300, 60_000);
+    if (pathname === '/api/site/view' || pathname === '/api/site/event' || pathname === '/api/site/ad/impression') {
+      // Görüntülenme/analitik/reklam-gösterim beacon'ları düşük-riskli ve sık; paylaşımlı
+      // IP (CGNAT/kurumsal NAT) arkasındaki gerçek okuyucuları 429'lamamak için ayrı, cömert
+      // kova (sunucu tarafı dedup zaten şişirmeyi engelliyor).
+      limitOk = rateLimitOk(`pv:${ip}`, 400, 60_000);
     } else if (MUTATION_METHODS.has(request.method)) {
       limitOk = rateLimitOk(`pw:${ip}`, 30, 60_000); // abone/başvuru yazma
     } else {
@@ -103,6 +104,12 @@ export default async function proxy(request: NextRequest) {
       const target = pathname === '/rss' || pathname === '/feed' ? '/feed.xml' : pathname;
       const url = request.nextUrl.clone();
       url.pathname = `/site${target}`;
+      return NextResponse.rewrite(url);
+    }
+    // İç içe route dosyaları (ör. /ilce/biga/feed.xml) statik değil → /site altına rewrite (query korunur)
+    if (pathname.endsWith('/feed.xml') || pathname.endsWith('/sitemap.xml')) {
+      const url = request.nextUrl.clone();
+      url.pathname = `/site${pathname}`;
       return NextResponse.rewrite(url);
     }
     // Uzantılı yollar (public/ dosyaları: /site/logo-light.png, /site/brand.mp4...) olduğu gibi geçer

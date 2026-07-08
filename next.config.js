@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  experimental: {
+    viewTransition: true, // haber sitesinde sinematik sayfa geçişleri (shared-element)
+  },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'canakkale.network' },

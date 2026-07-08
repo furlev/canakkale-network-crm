@@ -34,6 +34,12 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "${{ vars.CRM_URL }}/api/cron/campaign-expiry" || echo "campaign-expiry atlandı/başarısız"
 
+      - name: Planlı AI yayınları
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/publish-scheduled" || echo "publish-scheduled atlandı/başarısız"
+
   cleanup:
     # Günde bir (03:00 UTC): eski feed öğeleri + taslak görselleri + reddedilmiş taslak temizliği
     if: github.event_name != 'schedule' || github.event.schedule == '0 3 * * *'

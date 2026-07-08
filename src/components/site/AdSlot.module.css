@@ -1,0 +1,86 @@
+/* Reklam yuvası — site.css tasarım tokenlarını kullanır (onları DEĞİŞTİRMEZ). */
+
+.slot {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.link {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--card-shadow);
+  transition: transform 0.25s var(--ease-out), box-shadow 0.25s var(--ease-out);
+}
+
+.link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.28);
+}
+
+.badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 3px 8px;
+  font-family: var(--font-display, system-ui), sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+
+.creative {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+
+/* ── Yerleşim varyantları ── */
+
+/* Banner: geniş, yatay şerit */
+.banner {
+  max-width: var(--container);
+}
+.banner .creative {
+  aspect-ratio: 8 / 1;
+  min-height: 90px;
+}
+
+/* Sidebar: dikey/kare kolon kutusu */
+.sidebar {
+  max-width: 360px;
+}
+.sidebar .creative {
+  aspect-ratio: 4 / 5;
+}
+
+/* Native: içerik akışına gömülü kart (metin akışıyla uyumlu) */
+.native {
+  max-width: 100%;
+}
+.native .link {
+  border-style: dashed;
+}
+.native .creative {
+  aspect-ratio: 16 / 9;
+}
+
+@media (max-width: 640px) {
+  .banner .creative {
+    aspect-ratio: 4 / 1;
+    min-height: 64px;
+  }
+}

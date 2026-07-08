@@ -1,0 +1,130 @@
+/* Piyasa kartı — site.css tokenlarını kullanır. Tema-duyarlı. */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-2) 50%, transparent);
+  transition: background 0.5s ease;
+}
+
+.tileTop {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.tileIcon {
+  font-size: 15px;
+}
+
+.tileLabel {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+}
+
+.price {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.priceVal {
+  font-size: clamp(1.5rem, 1.2rem + 1.2vw, 1.9rem);
+  font-weight: 800;
+  line-height: 1.05;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.priceCur {
+  font-size: 14px;
+  color: var(--ink-faint);
+  font-weight: 700;
+}
+
+.tileBottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.change {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.c_up {
+  color: #2fb96b;
+}
+
+.c_down {
+  color: var(--cn-red-bright, #e23140);
+}
+
+.c_flat {
+  color: var(--ink-faint);
+}
+
+.buying {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.trend {
+  flex-shrink: 0;
+}
+
+.trendUp {
+  stroke: #2fb96b;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.trendDown {
+  stroke: var(--cn-red-bright, #e23140);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+/* Değer güncellendiğinde flash */
+.flash_up {
+  background: color-mix(in srgb, #2fb96b 22%, transparent);
+}
+
+.flash_down {
+  background: color-mix(in srgb, var(--cn-red-bright, #e23140) 20%, transparent);
+}
+
+.empty {
+  color: var(--ink-soft);
+  font-size: 14px;
+  padding: 6px 0 4px;
+}
+
+@media (max-width: 420px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile {
+    transition: none;
+  }
+}

@@ -1,0 +1,65 @@
+/* Düzeltme / geri çekme bilgi kutusu (basın hukuku — Basın Kanunu m.14 tekzip/düzeltme).
+   Tema-duyarlı: renkler site.css --* token'larından; fallback koyu (network) temaya göre. */
+
+.stack {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.4rem 0;
+}
+
+.box {
+  border: 1px solid var(--line, rgba(159, 176, 200, 0.14));
+  border-left-width: 4px;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--surface, #101b2e);
+  padding: 1rem 1.15rem;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-display, system-ui), sans-serif;
+  font-weight: 700;
+  font-size: 0.98rem;
+  line-height: 1.2;
+  margin-bottom: 0.35rem;
+}
+
+.icon {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.note {
+  color: var(--ink-soft, #9fb0c8);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.date {
+  display: block;
+  margin-top: 0.5rem;
+  color: var(--ink-faint, #64758e);
+  font-size: 0.8rem;
+}
+
+/* Geri çekme — en yüksek önem: marka kırmızısı vurgu */
+.retracted {
+  border-left-color: var(--accent, #e23140);
+  background: color-mix(in srgb, var(--accent, #e23140) 8%, var(--surface, #101b2e));
+}
+
+.retracted .head {
+  color: var(--accent, #e23140);
+}
+
+/* Düzeltme — altın/uyarı tonu */
+.correction {
+  border-left-color: var(--cn-gold, #b98a2f);
+  background: color-mix(in srgb, var(--cn-gold, #b98a2f) 8%, var(--surface, #101b2e));
+}
+
+.correction .head {
+  color: var(--cn-gold, #b98a2f);
+}

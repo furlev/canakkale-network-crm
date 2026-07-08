@@ -1,0 +1,21 @@
+# Vadesi geçmiş faturalar için günlük ödeme hatırlatması.
+# Her gün 06:00 UTC (TR 09:00) → /api/cron/invoice-reminders
+# Kurulum (repo Settings → Secrets and variables → Actions):
+#   - Secret  CRON_SECRET : .env'deki CRON_SECRET ile aynı değer
+#   - Variable CRM_URL    : https://panel.canakkale.network (sondaki / olmadan)
+name: Fatura Hatırlatmaları
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Vadesi geçmiş fatura hatırlatmaları
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/invoice-reminders" || echo "invoice-reminders atlandı/başarısız"

@@ -4,10 +4,12 @@ import { handleApiError, ApiError } from '@/lib/api';
 import { getSession } from '@/lib/auth';
 import { isLeaderOrAdmin } from '@/lib/permissions';
 import { safeEqual } from '@/lib/secure';
-import { ingestAllSources, recentUnusedItems } from '@/lib/newsfeed';
+import { ingestAllSources, recentUnusedItems, clusterRecentItems, SOURCE_TRUST_SELECT } from '@/lib/newsfeed';
 import {
   discoverTopics, factCheckTopic, writeArticleFromTopic, generateArticleImage, analyzeArticle, aiEnabled, writeWeeklyRoundup,
 } from '@/lib/ai';
+import { computeQualityScore } from '@/lib/draft-quality';
+import { normalizeDistrict } from '@/lib/districts';
 
 export const maxDuration = 300; // boru hattı uzun sürebilir
 
@@ -56,19 +58,38 @@ let generateRunning = false;
 type FeedItems = Awaited<ReturnType<typeof recentUnusedItems>>;
 type DraftStats = {
   topicsFound: number;
-  created: { id: string; title: string; confidence: number }[];
+  created: { id: string; title: string; confidence: number; quality: number }[];
   skipped: { topic: string; reason: string }[];
 };
 
-/** Ortak taslak üretim hattı: konu bul → fact-check → yaz → SEO → (ops.) görsel → pending taslak. */
+/** Ortak taslak üretim hattı: konu bul → (yerel filtre) → fact-check → yaz → SEO →
+ *  (ops.) görsel → kalite skoru → pending taslak. Kaynak güveni + çoklu-kaynak teyidi
+ *  konu seçimine, fact-check v2 + kalite skoru taslağa işlenir. */
 async function produceDrafts(
   items: FeedItems,
   opts: { maxDrafts: number; maxTopics: number; minConfidence: number; withImage: boolean; newsType: 'breaking' | 'daily'; discoverInstruction?: string },
 ): Promise<DraftStats> {
+  // Çoklu-kaynak teyidi: aynı kümedeki (aynı olay) FARKLI kaynak sayısını hesapla
+  const clusterSources = new Map<string, Set<string>>();
+  for (const i of items) {
+    if (!i.clusterId) continue;
+    const set = clusterSources.get(i.clusterId) ?? new Set<string>();
+    if (i.sourceId) set.add(i.sourceId);
+    clusterSources.set(i.clusterId, set);
+  }
+  const confirmedOf = (i: FeedItems[number]) => (i.clusterId ? (clusterSources.get(i.clusterId)?.size ?? 1) : 1);
+
   // konu bul + puanla (tek AI çağrısı — hata olursa tüm istek 500 olmasın, ingest korunsun)
+  // Her öğeye kaynak güven bağlamı (güven skoru/türü + teyit sayısı) geçir.
   let topics: Awaited<ReturnType<typeof discoverTopics>> = [];
   try {
-    topics = await discoverTopics(items.map((i) => ({ title: i.title, link: i.link })), opts.maxTopics, opts.discoverInstruction);
+    topics = await discoverTopics(items.map((i) => ({
+      title: i.title,
+      link: i.link,
+      trust: i.source?.trustScore,
+      sourceType: i.source?.sourceType,
+      confirmed: confirmedOf(i),
+    })), opts.maxTopics, opts.discoverInstruction);
   } catch (e) {
     return { topicsFound: 0, created: [], skipped: [{ topic: '(konu bulma)', reason: e instanceof Error ? e.message : 'hata' }] };
   }
@@ -78,6 +99,11 @@ async function produceDrafts(
 
   for (const t of topics) {
     if (created.length >= opts.maxDrafts) break;
+    // Çanakkale-dışı (yerel değil) konuları fact-check'e GİRMEDEN ele → boşa maliyet önle
+    if (t.isLocal === false) {
+      skipped.push({ topic: t.topic, reason: 'Çanakkale-dışı (yerel değil)' });
+      continue;
+    }
     try {
       // doğruluk kontrolü (grounding) — son dakikada da eşik DÜŞÜRÜLMEZ (yanlış alarm en pahalı hatadır)
       const fc = await factCheckTopic(t.topic, t.headline);
@@ -92,7 +118,24 @@ async function produceDrafts(
       try { seo = await analyzeArticle(article.title, article.body); } catch { seo = null; }
       // "temsili" görsel (breaking'de atlanır: editör görselsiz de yayınlar)
       const imageUrl = opts.withImage ? await generateArticleImage(t.headline) : null;
-      // onay kuyruğuna taslak
+
+      // Güven katmanı: ilçe (AI makale > konu), çelişki bayrağı, kalite skoru
+      const district = normalizeDistrict(seo?.district) || normalizeDistrict(t.district) || null;
+      const hasContradiction = fc.contradictions.length > 0;
+      const fields = [
+        !!article.title, !!article.body, !!(seo?.category || t.category),
+        !!(seo?.tags && seo.tags.length), !!seo?.seoTitle, !!seo?.metaDescription,
+        !!seo?.socialPost, !!imageUrl,
+      ];
+      const fieldFullness = fields.filter(Boolean).length / fields.length;
+      const qualityScore = computeQualityScore({
+        confidence: fc.confidence,
+        sourceCount: fc.sourceCount,
+        hasContradiction,
+        fieldFullness,
+      });
+
+      // onay kuyruğuna taslak (ASLA otomatik yayın YOK — status pending)
       const draft = await prisma.aiDraft.create({
         data: {
           topic: t.topic,
@@ -108,9 +151,13 @@ async function produceDrafts(
           confidence: fc.confidence,
           status: 'pending',
           newsType: opts.newsType,
+          district,
+          sourceCount: fc.sourceCount,
+          hasContradiction,
+          qualityScore,
         },
       });
-      created.push({ id: draft.id, title: draft.title || t.headline, confidence: fc.confidence });
+      created.push({ id: draft.id, title: draft.title || t.headline, confidence: fc.confidence, quality: qualityScore });
     } catch (e) {
       skipped.push({ topic: t.topic, reason: e instanceof Error ? e.message : 'hata' });
     }
@@ -210,19 +257,22 @@ export async function POST(request: Request) {
 
     // ── BREAKING / DAILY: önce kaynakları topla ──
     const ingest = await ingestAllSources();
+    // Çoklu-kaynak teyidi için embedding kümeleme (hata-toleranslı; patlarsa atlanır)
+    const cluster = await clusterRecentItems();
 
     if (mode === 'breaking') {
-      // Son 90 dakikada yayınlanan (pubDate), kullanılmamış öğeler
+      // Son 90 dakikada yayınlanan (pubDate), kullanılmamış öğeler (kaynak güveni join'li)
       const since = new Date(Date.now() - 90 * 60 * 1000);
       const fresh = await prisma.feedItem.findMany({
         where: { usedInDraft: false, pubDate: { gte: since } },
         orderBy: { pubDate: 'desc' },
         take: 60,
+        include: { source: SOURCE_TRUST_SELECT },
       });
       // Ucuz keyword ön-filtresi — eşleşme yoksa AI çağrısı YAPMADAN dön (maliyet ~0)
       const matched = fresh.filter((i) => isBreakingTitle(i.title));
       if (matched.length === 0) {
-        return NextResponse.json({ ok: true, mode, ingest, scanned: fresh.length, found: 0, created: [], skipped: [] });
+        return NextResponse.json({ ok: true, mode, ingest, cluster, scanned: fresh.length, found: 0, created: [], skipped: [] });
       }
       const stats = await produceDrafts(matched, {
         maxDrafts: 2,
@@ -233,13 +283,13 @@ export async function POST(request: Request) {
         discoverInstruction:
           'Bu bir SON DAKİKA radarıdır: yalnızca GERÇEKTEN acil/son-dakika değeri taşıyan olayları seç (yangın, kaza, afet, asayiş olayı, can kaybı vb.). Magazin, rutin duyuru, etkinlik takvimi, açılış/ziyaret haberlerini ELE.',
       });
-      return NextResponse.json({ ok: true, mode, ingest, scanned: fresh.length, found: matched.length, ...stats });
+      return NextResponse.json({ ok: true, mode, ingest, cluster, scanned: fresh.length, found: matched.length, ...stats });
     }
 
     // ── DAILY: mevcut günlük davranış ──
     const items = await recentUnusedItems(3, 120);
     if (items.length === 0) {
-      return NextResponse.json({ ok: true, mode, message: 'İşlenecek yeni haber yok', ingest, created: [] });
+      return NextResponse.json({ ok: true, mode, message: 'İşlenecek yeni haber yok', ingest, cluster, created: [] });
     }
     const stats = await produceDrafts(items, {
       maxDrafts,
@@ -248,7 +298,7 @@ export async function POST(request: Request) {
       withImage,
       newsType: 'daily',
     });
-    return NextResponse.json({ ok: true, mode, ingest, ...stats });
+    return NextResponse.json({ ok: true, mode, ingest, cluster, ...stats });
   } catch (error) {
     return handleApiError(error, 'AI taslak üretimi başarısız');
   } finally {

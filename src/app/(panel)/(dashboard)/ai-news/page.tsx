@@ -1,7 +1,10 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
+import { districtName } from '@/lib/districts';
+import InstagramStudio from '@/components/InstagramStudio';
 
-/* API sözleşmesi: /api/ai/drafts GET/PUT/DELETE + /publish (bkz. src/app/api/ai/drafts) */
+/* API sözleşmesi: /api/ai/drafts GET/PUT/DELETE + /publish + /bulk + /[id]/instagram */
 type AiDraft = {
   id: string;
   topic: string;
@@ -21,6 +24,12 @@ type AiDraft = {
   reviewerName: string | null;
   wpId: number | null;
   articleId?: string | null;       // sitede yayınlanınca SiteArticle id (publish yanıtında gelir)
+  // ── editoryal v2 alanları (liste yanıtı içermiyorsa güvenle yoksayılır) ──
+  qualityScore?: number | null;    // 0-100
+  hasContradiction?: boolean;      // kaynaklar arası çelişki bayrağı
+  district?: string | null;        // ilçe slug'ı
+  editorNote?: string | null;      // redaksiyon notu
+  scheduledAt?: string | null;     // planlı yayın (ISO)
   createdAt: string;
   updatedAt: string;
 };
@@ -62,6 +71,24 @@ function confidenceBadge(confidence: number | null): { cls: string; text: string
   return { cls: 'badge-error', text: `Güven ${pct}` };
 }
 
+/** Kalite skoru rozeti (0-100): düşükse kırmızı. */
+function qualityBadge(score: number | null | undefined): { cls: string; text: string } | null {
+  if (score === null || score === undefined) return null;
+  const r = Math.round(score);
+  if (score >= 70) return { cls: 'badge-success', text: `Kalite ${r}` };
+  if (score >= 50) return { cls: 'badge-warning', text: `Kalite ${r}` };
+  return { cls: 'badge-error', text: `Kalite ${r}` };
+}
+
+/** ISO → datetime-local input değeri (yerel saat). */
+function isoToLocalInput(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /* Düzenlenebilir alanlar — modal state'i */
 type EditState = {
   id: string;
@@ -71,6 +98,8 @@ type EditState = {
   tags: string;            // virgülle ayrılmış (kullanıcı girişi)
   seoTitle: string;
   metaDescription: string;
+  editorNote: string;      // redaksiyon notu (bulk 'note' ile kaydedilir)
+  scheduledAt: string;     // datetime-local (bulk 'schedule'/'note' ile kaydedilir)
 };
 
 export default function AiNewsPage() {
@@ -82,6 +111,14 @@ export default function AiNewsPage() {
   const [edit, setEdit] = useState<EditState | null>(null);
   const [busy, setBusy] = useState(false);
   const [modalMsg, setModalMsg] = useState<{ kind: 'error' | 'success'; text: string; link?: string } | null>(null);
+
+  // Çoklu seçim + toplu işlem
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkScheduleAt, setBulkScheduleAt] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  // Instagram stüdyosu
+  const [igDraftId, setIgDraftId] = useState<string | null>(null);
 
   const fetchDrafts = useCallback(async (status: StatusKey) => {
     setLoading(true);
@@ -98,6 +135,7 @@ export default function AiNewsPage() {
 
   useEffect(() => {
     fetchDrafts(tab);
+    setSelectedIds(new Set()); // sekme değişince seçimi sıfırla
   }, [tab, fetchDrafts]);
 
   const openDraft = (d: AiDraft) => {
@@ -111,6 +149,8 @@ export default function AiNewsPage() {
       tags: parseJsonArray(d.tags).join(', '),
       seoTitle: d.seoTitle || '',
       metaDescription: d.metaDescription || '',
+      editorNote: d.editorNote || '',
+      scheduledAt: isoToLocalInput(d.scheduledAt),
     });
   };
 
@@ -229,6 +269,94 @@ export default function AiNewsPage() {
     }
   };
 
+  /* 💾 Redaksiyon notu + planı kaydet (durum değişmez) — bulk 'note' */
+  const handleSaveNote = async () => {
+    if (!edit) return;
+    setBusy(true);
+    setModalMsg(null);
+    try {
+      const res = await fetch('/api/ai/drafts/bulk', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [edit.id], action: 'note', editorNote: edit.editorNote, scheduledAt: edit.scheduledAt || null }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) throw new Error((data && data.error) || 'Kaydedilemedi.');
+      setSelected(prev => prev ? { ...prev, editorNote: edit.editorNote, scheduledAt: edit.scheduledAt ? new Date(edit.scheduledAt).toISOString() : null } : prev);
+      setModalMsg({ kind: 'success', text: 'Not / plan kaydedildi ✓' });
+    } catch (e) {
+      setModalMsg({ kind: 'error', text: e instanceof Error ? e.message : 'Kaydedilemedi.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /* 🗓 Planla & Onayla — bulk 'schedule' (status→approved + scheduledAt) */
+  const handleSchedule = async () => {
+    if (!edit || !edit.scheduledAt) return;
+    setBusy(true);
+    setModalMsg(null);
+    try {
+      await saveEdits(); // içerik düzenlemelerini kalıcılaştır
+      const res = await fetch('/api/ai/drafts/bulk', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [edit.id], action: 'schedule', scheduledAt: edit.scheduledAt, editorNote: edit.editorNote || null }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) throw new Error((data && data.error) || 'Planlama başarısız oldu.');
+      setModalMsg({ kind: 'success', text: `Planlandı ✓ (${new Date(edit.scheduledAt).toLocaleString('tr-TR')})` });
+      // status 'approved' oldu → bekleyen/reddedilen sekmesindeyse listeden düş
+      setDrafts(prev => (tab === 'pending' || tab === 'rejected') ? prev.filter(d => d.id !== edit.id) : prev.map(d => d.id === edit.id ? { ...d, status: 'approved' } : d));
+      setTimeout(() => { setSelected(null); setEdit(null); setModalMsg(null); }, 1400);
+    } catch (e) {
+      setModalMsg({ kind: 'error', text: e instanceof Error ? e.message : 'Planlama başarısız oldu.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /* ── Çoklu seçim ── */
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const allSelected = drafts.length > 0 && drafts.every(d => selectedIds.has(d.id));
+  const toggleAll = () => {
+    setSelectedIds(prev => {
+      if (drafts.length > 0 && drafts.every(d => prev.has(d.id))) return new Set();
+      return new Set(drafts.map(d => d.id));
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+
+  /* Toplu işlem → /api/ai/drafts/bulk */
+  const runBulk = async (action: 'approve' | 'reject' | 'delete' | 'schedule', scheduledAt?: string) => {
+    if (selectedIds.size === 0) return;
+    if (action === 'delete' && !confirm(`${selectedIds.size} taslağı silmek istediğinize emin misiniz?`)) return;
+    if (action === 'schedule' && !scheduledAt) return;
+    setBulkBusy(true);
+    try {
+      const res = await fetch('/api/ai/drafts/bulk', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [...selectedIds], action, ...(scheduledAt ? { scheduledAt } : {}) }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) throw new Error((data && data.error) || 'Toplu işlem başarısız oldu.');
+      clearSelection();
+      setBulkScheduleAt('');
+      fetchDrafts(tab);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Toplu işlem başarısız oldu.');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   const selectedSources = selected ? parseJsonArray(selected.sources) : [];
 
   return (
@@ -237,6 +365,9 @@ export default function AiNewsPage() {
         <div className="page-header-left">
           <h1 className="page-title">🤖 AI Haber Kuyruğu</h1>
           <p className="page-subtitle">Yapay zekânın hazırladığı haber taslaklarını inceleyip yayınlayın</p>
+        </div>
+        <div className="page-header-actions">
+          <Link href="/ai-news/kaynaklar" className="btn btn-ghost">📡 Kaynaklar</Link>
         </div>
       </div>
 
@@ -253,6 +384,27 @@ export default function AiNewsPage() {
         ))}
       </div>
 
+      {/* Toplu seçim araç çubuğu */}
+      {!loading && drafts.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-4)', padding: 'var(--space-2) var(--space-3)', background: 'var(--surface-2, rgba(255,255,255,0.02))', borderRadius: 'var(--border-radius)', border: '1px solid var(--border-subtle)' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+            Tümünü seç
+          </label>
+          {selectedIds.size > 0 && (
+            <>
+              <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)' }}>{selectedIds.size} seçili</span>
+              <button className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={() => runBulk('approve')}>✓ Onayla</button>
+              <button className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={() => runBulk('reject')}>Reddet</button>
+              <input type="datetime-local" className="form-input" style={{ maxWidth: 210, padding: '4px 8px', fontSize: 'var(--text-xs)' }} value={bulkScheduleAt} onChange={(e) => setBulkScheduleAt(e.target.value)} />
+              <button className="btn btn-ghost btn-sm" disabled={bulkBusy || !bulkScheduleAt} onClick={() => runBulk('schedule', bulkScheduleAt)}>🗓 Planla</button>
+              <button className="btn btn-danger btn-sm" disabled={bulkBusy} onClick={() => runBulk('delete')}>Sil</button>
+              <button className="btn btn-ghost btn-sm" disabled={bulkBusy} onClick={clearSelection}>Temizle</button>
+            </>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <div style={{ padding: 'var(--space-8)', textAlign: 'center', color: 'var(--text-muted)' }}>Yükleniyor...</div>
       ) : drafts.length === 0 ? (
@@ -265,15 +417,26 @@ export default function AiNewsPage() {
         <div className="cards-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 'var(--space-4)' }}>
           {drafts.map(d => {
             const conf = confidenceBadge(d.confidence);
+            const qual = qualityBadge(d.qualityScore);
             const st = STATUS_BADGE[d.status] || { cls: 'badge-primary', label: d.status };
             const sourceCount = parseJsonArray(d.sources).length;
+            const dist = districtName(d.district);
+            const isSel = selectedIds.has(d.id);
             return (
               <div
                 key={d.id}
                 className="card"
                 onClick={() => openDraft(d)}
-                style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-4)' }}
+                style={{ cursor: 'pointer', position: 'relative', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-4)', outline: isSel ? '2px solid var(--primary)' : 'none' }}
               >
+                {/* Seçim kutusu (modalı açmaz) */}
+                <label
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ position: 'absolute', top: 8, left: 8, zIndex: 2, background: 'var(--bg-secondary, rgba(0,0,0,0.4))', borderRadius: 6, padding: '3px 5px', display: 'flex', cursor: 'pointer' }}
+                >
+                  <input type="checkbox" checked={isSel} onChange={() => toggleSelect(d.id)} />
+                </label>
+
                 {d.hasImage && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -285,13 +448,16 @@ export default function AiNewsPage() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', alignItems: 'center' }}>
                   <span className={`badge ${st.cls}`}>{st.label}</span>
                   {d.category && <span className="badge badge-info">{d.category}</span>}
+                  {dist && <span className="badge badge-accent">📍 {dist}</span>}
+                  {qual && <span className={`badge ${qual.cls}`}>{qual.text}</span>}
                   {conf && <span className={`badge ${conf.cls}`}>{conf.text}</span>}
+                  {d.hasContradiction && <span className="badge badge-error" title="Kaynaklar arası çelişki tespit edildi">⚠ Çelişki</span>}
                 </div>
                 <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', lineHeight: 1.4 }}>
                   {d.title || d.topic}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
-                  <span>📎 {sourceCount} kaynak</span>
+                  <span>📎 {sourceCount} kaynak{d.scheduledAt ? ' · 🗓 planlı' : ''}</span>
                   <span>{new Date(d.createdAt).toLocaleDateString('tr-TR')}</span>
                 </div>
               </div>
@@ -335,9 +501,15 @@ export default function AiNewsPage() {
                   return <span className={`badge ${st.cls}`}>{st.label}</span>;
                 })()}
                 {(() => {
+                  const qual = qualityBadge(selected.qualityScore);
+                  return qual ? <span className={`badge ${qual.cls}`}>{qual.text}</span> : null;
+                })()}
+                {(() => {
                   const conf = confidenceBadge(selected.confidence);
                   return conf ? <span className={`badge ${conf.cls}`}>{conf.text}</span> : null;
                 })()}
+                {districtName(selected.district) && <span className="badge badge-accent">📍 {districtName(selected.district)}</span>}
+                {selected.hasContradiction && <span className="badge badge-error">⚠ Kaynak çelişkisi</span>}
                 {selected.wpId && <span className="badge badge-success">WP #{selected.wpId}</span>}
                 {selected.articleId && <span className="badge badge-success">🌐 Sitede</span>}
               </div>
@@ -381,6 +553,22 @@ export default function AiNewsPage() {
                 <textarea className="form-textarea" rows={2} value={edit.metaDescription} onChange={e => setEdit({ ...edit, metaDescription: e.target.value })} />
               </div>
 
+              {/* Redaksiyon notu */}
+              <div className="form-group">
+                <label className="form-label">📝 Redaksiyon Notu (editörden editöre)</label>
+                <textarea className="form-textarea" rows={2} value={edit.editorNote} onChange={e => setEdit({ ...edit, editorNote: e.target.value })} placeholder="Yayın öncesi dikkat / kaynak notu (yayına çıkmaz)" />
+              </div>
+
+              {/* Planlı yayın */}
+              <div className="form-group">
+                <label className="form-label">🗓 Planlı Yayın</label>
+                <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input type="datetime-local" className="form-input" style={{ maxWidth: 240 }} value={edit.scheduledAt} onChange={e => setEdit({ ...edit, scheduledAt: e.target.value })} />
+                  <button className="btn btn-ghost btn-sm" disabled={busy || !edit.scheduledAt || selected.status === 'published'} onClick={handleSchedule}>Planla & Onayla</button>
+                  {selected.scheduledAt && <span className="badge badge-info">Planlı: {new Date(selected.scheduledAt).toLocaleString('tr-TR')}</span>}
+                </div>
+              </div>
+
               {selectedSources.length > 0 && (
                 <div className="form-group">
                   <label className="form-label">Kaynaklar ({selectedSources.length})</label>
@@ -396,7 +584,9 @@ export default function AiNewsPage() {
             </div>
             <div className="modal-footer" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
               <button className="btn btn-danger btn-sm" disabled={busy} onClick={handleDelete}>Sil</button>
-              <button className="btn btn-ghost" disabled={busy} onClick={handleReject}>Reddet</button>
+              <button className="btn btn-ghost btn-sm" disabled={busy} onClick={handleReject}>Reddet</button>
+              <button className="btn btn-ghost btn-sm" disabled={busy} onClick={handleSaveNote}>💾 Notu Kaydet</button>
+              <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setIgDraftId(edit.id)} title="Taslaktan Instagram postu üret">📸 Instagram</button>
               <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleApproveAndPublish('wordpress')} style={{ marginLeft: 'auto' }} title="Eski WordPress sitesine yayınla">
                 WP&apos;ye Yayınla
               </button>
@@ -407,6 +597,9 @@ export default function AiNewsPage() {
           </div>
         </>
       )}
+
+      {/* Instagram Post Stüdyosu */}
+      {igDraftId && <InstagramStudio draftId={igDraftId} onClose={() => setIgDraftId(null)} />}
     </div>
   );
 }

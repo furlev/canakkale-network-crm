@@ -10,6 +10,9 @@ import { decryptSecret } from '@/lib/secure';
 
 export const AI_MODEL = 'gemini-3.5-flash';
 
+/** Metin gömme (embedding) modeli — çoklu-kaynak teyidi için kümeleme. Vertex + AI Studio ortak. */
+export const EMBED_MODEL = process.env.AI_EMBED_MODEL || 'text-embedding-004';
+
 /** Vertex AI modu: GCP projesi + bölge env'de tanımlıysa, ADC (servis hesabı)
  *  ile Cloud faturalı (kredi geçerli) Vertex kullanılır. Aksi halde GEMINI_API_KEY
  *  ya da Ayarlar'daki anahtarla AI Studio (Developer API) kullanılır. */
@@ -223,6 +226,8 @@ export type ArticleAnalysis = {
   category: string;
   tags: string[];
   socialPost: string;
+  /** Haberin geçtiği Çanakkale ilçesi (ad ya da boş) — taslağa taşınır */
+  district?: string;
 };
 
 export async function analyzeArticle(title: string, content: string): Promise<ArticleAnalysis> {
@@ -246,8 +251,9 @@ export async function analyzeArticle(title: string, content: string): Promise<Ar
           category: { type: Type.STRING, description: 'Önerilen kategori (Gündem, Asayiş, Spor, Sağlık, Ekonomi, Eğitim, Kültür-Sanat vb.)' },
           tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: '5-8 anahtar etiket' },
           socialPost: { type: Type.STRING, description: 'Sosyal medya için kısa, dikkat çekici paylaşım metni (1-2 emoji ile)' },
+          district: { type: Type.STRING, description: 'Haberin geçtiği Çanakkale ilçesi (Merkez, Ayvacık, Bayramiç, Biga, Çan, Eceabat, Ezine, Gelibolu, Gökçeada, Lapseki, Yenice) — belirsizse boş bırak' },
         },
-        required: ['summary', 'metaDescription', 'seoTitle', 'category', 'tags', 'socialPost'],
+        required: ['summary', 'metaDescription', 'seoTitle', 'category', 'tags', 'socialPost', 'district'],
       },
     },
   }));
@@ -279,27 +285,60 @@ export async function summarizeText(prompt: string, system?: string): Promise<st
 
 export const IMAGE_MODEL = process.env.GOOGLE_IMAGE_MODEL || 'imagen-3.0-generate-002';
 
-export type DiscoveredTopic = { topic: string; headline: string; newsworthiness: number; category: string; sourceLinks: string[] };
+export type DiscoveredTopic = {
+  topic: string;
+  headline: string;
+  newsworthiness: number;
+  category: string;
+  sourceLinks: string[];
+  /** AI'ın çıkardığı Çanakkale ilçesi (ad ya da boş) — güven katmanı v1 */
+  district?: string;
+  /** Konu Çanakkale ile ilgili mi? false ise gürültü → fact-check'e girmeden atlanır */
+  isLocal?: boolean;
+};
+
+/** Kaynak türünü prompt etiketine çevirir (güven bağlamı). */
+function sourceTypeLabel(t?: string): string {
+  switch (t) {
+    case 'official': return 'resmi';
+    case 'aggregator': return 'agregatör';
+    case 'social': return 'sosyal';
+    case 'local': return 'yerel';
+    default: return '';
+  }
+}
 
 /** Ham haber öğelerinden aday konular çıkar + haber değeri puanla (grounding gerekmez).
+ *  Öğe başına opsiyonel güven bağlamı (kaynak güven skoru / türü / çoklu-kaynak teyidi)
+ *  prompt'a `[güven:85, resmi, teyit:2]` etiketiyle geçer; AI düşük güvenli tek kaynağı
+ *  yüksek puanlamaz, teyitli/resmi olayları öne çıkarır.
  *  `extraInstruction` ile çağıran, seçim kriterine mod-özel yönerge ekleyebilir
  *  (ör. son dakika radarında "yalnızca gerçekten acil olayları seç"). */
 export async function discoverTopics(
-  items: { title: string; link: string }[],
+  items: { title: string; link: string; trust?: number; sourceType?: string; confirmed?: number }[],
   maxTopics = 5,
   extraInstruction?: string,
 ): Promise<DiscoveredTopic[]> {
   const ai = await getClient();
-  // Feed başlıkları dış kaynaklı (güvenilmez) metin → prompt'a gömmeden önce temizle
+  // Feed başlıkları dış kaynaklı (güvenilmez) metin → prompt'a gömmeden önce temizle.
+  // Güven bağlamı varsa (kaynak güveni/türü/teyit) başlığa köşeli etiket ekle.
   const list = items.slice(0, 120)
-    .map((i, n) => `${n + 1}. ${sanitizeForPrompt(i.title, 300)} — ${sanitizeForPrompt(i.link, 500)}`)
+    .map((i, n) => {
+      const parts: string[] = [];
+      if (typeof i.trust === 'number') parts.push(`güven:${Math.round(i.trust)}`);
+      const label = sourceTypeLabel(i.sourceType);
+      if (label) parts.push(label);
+      if (typeof i.confirmed === 'number' && i.confirmed >= 2) parts.push(`teyit:${i.confirmed}`);
+      const tag = parts.length ? ` [${parts.join(', ')}]` : '';
+      return `${n + 1}. ${sanitizeForPrompt(i.title, 300)}${tag} — ${sanitizeForPrompt(i.link, 500)}`;
+    })
     .join('\n');
   const extra = extraInstruction ? `\n\nEK YÖNERGE: ${extraInstruction}` : '';
   const res = await withRetry(() => ai.models.generateContent({
     model: AI_MODEL,
-    contents: `Aşağıda Çanakkale yerel haber başlıkları var. Benzer olanları kümeleyip en fazla ${maxTopics} AYRI, güncel ve haber değeri yüksek KONU çıkar. Aynı olayın farklı kaynaklardaki tekrarlarını TEK konuda birleştir. Reklam/ilan/spam olanları ele.${extra}\n\n${list}`,
+    contents: `Aşağıda Çanakkale yerel haber başlıkları var; bazılarında köşeli parantezde kaynak güven bağlamı (güven puanı 0-100, kaynak türü, "teyit:N" = N ayrı kaynakça doğrulanmış) yer alır. Benzer olanları kümeleyip en fazla ${maxTopics} AYRI, güncel ve haber değeri yüksek KONU çıkar. Aynı olayın farklı kaynaklardaki tekrarlarını TEK konuda birleştir. Reklam/ilan/spam olanları ele. Her konu için hangi Çanakkale ilçesiyle ilgili olduğunu (district) ve konunun Çanakkale ile ilgili olup olmadığını (isLocal) belirt.${extra}\n\n${list}`,
     config: {
-      systemInstruction: 'Sen Çanakkale Network haber ajansının editörüsün. Haber akışından günün en önemli, özgün konularını seçersin. Türkçe.',
+      systemInstruction: 'Sen Çanakkale Network haber ajansının editörüsün. Haber akışından günün en önemli, özgün konularını seçersin. Kaynak güvenini dikkate al: DÜŞÜK güvenli TEK kaynaktan gelen doğrulanmamış iddiaları yüksek puanlama; birden çok kaynakça teyit edilen (teyit:2+) ya da resmi kaynaklı olayları öne çıkar. Çanakkale ile ilgisi olmayan (ulusal/alakasız) konuları isLocal=false işaretle. Türkçe.',
       thinkingConfig: { thinkingBudget: 0 },
       responseMimeType: 'application/json',
       responseSchema: {
@@ -311,9 +350,11 @@ export async function discoverTopics(
             headline: { type: Type.STRING, description: 'önerilen haber başlığı' },
             newsworthiness: { type: Type.NUMBER, description: '0-100 haber değeri' },
             category: { type: Type.STRING, description: 'Gündem, Asayiş, Spor, Eğitim, Ekonomi, Kültür-Sanat vb.' },
+            district: { type: Type.STRING, description: 'İlgili Çanakkale ilçesi (Merkez, Ayvacık, Bayramiç, Biga, Çan, Eceabat, Ezine, Gelibolu, Gökçeada, Lapseki, Yenice) — belirsizse boş' },
+            isLocal: { type: Type.BOOLEAN, description: 'Konu Çanakkale ili ile ilgili mi? Ulusal/alakasızsa false' },
             sourceLinks: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'konuyu destekleyen kaynak linkleri' },
           },
-          required: ['topic', 'headline', 'newsworthiness', 'category', 'sourceLinks'],
+          required: ['topic', 'headline', 'newsworthiness', 'category', 'district', 'isLocal', 'sourceLinks'],
         },
       },
     },
@@ -322,38 +363,105 @@ export async function discoverTopics(
   return arr.sort((a, b) => b.newsworthiness - a.newsworthiness).slice(0, maxTopics);
 }
 
-export type FactCheck = { confidence: number; verifiedSummary: string; caveats: string; groundingLinks: string[] };
+/** Metinleri Vertex/AI Studio embedding modeliyle vektöre çevirir (çoklu-kaynak kümeleme için).
+ *  Batch destekli; hata TOLERANSLI değildir (çağıran try/catch ile sarıp kümelemeyi atlar).
+ *  Dönüş: her metin için number[] (başarısız/boş öğe için []). */
+export async function embedText(texts: string[], taskType = 'SEMANTIC_SIMILARITY'): Promise<number[][]> {
+  if (!Array.isArray(texts) || texts.length === 0) return [];
+  const ai = await getClient();
+  const out: number[][] = [];
+  const CHUNK = 100; // model başına instance sınırına karşı güvenli parça boyutu
+  for (let i = 0; i < texts.length; i += CHUNK) {
+    const batch = texts.slice(i, i + CHUNK).map((t) => sanitizeForPrompt(t, 2000) || ' ');
+    const res = await withRetry(() => ai.models.embedContent({
+      model: EMBED_MODEL,
+      contents: batch,
+      config: { taskType },
+    }));
+    const embs = res.embeddings ?? [];
+    for (let j = 0; j < batch.length; j++) {
+      const v = embs[j]?.values;
+      out.push(Array.isArray(v) ? v : []);
+    }
+  }
+  return out;
+}
 
-/** Konuyu Google Search grounding ile doğrula → güven skoru + doğrulanmış özet. */
+export type FactCheck = {
+  confidence: number;
+  verifiedSummary: string;
+  caveats: string;
+  groundingLinks: string[];
+  /** Bağımsız (farklı domain) kaynak sayısı — çoklu-kaynak teyidi göstergesi */
+  sourceCount: number;
+  /** Kaynaklar arası çelişkiler (varsa) */
+  contradictions: string[];
+};
+
+/** Grounding uri/domain'inden gerçek bağımsız domain'i çıkarır; yönlendirme (redirect)
+ *  ve genel Google barındırma domain'lerini eler (hepsi tek "kaynak" gibi sayılmasın). */
+function independentDomain(uri: string | undefined): string | null {
+  if (!uri) return null;
+  try {
+    const h = new URL(uri).hostname.replace(/^www\./, '').toLowerCase();
+    // Vertex grounding redirect'i + Google genel barındırma → gerçek kaynak değil
+    if (/(^|\.)vertexaisearch\.cloud\.google\.com$/.test(h)) return null;
+    if (/(^|\.)googleusercontent\.com$/.test(h)) return null;
+    if (/(^|\.)google\.com$/.test(h) && /grounding|redirect/.test(uri)) return null;
+    return h;
+  } catch {
+    return null;
+  }
+}
+
+/** Konuyu Google Search grounding ile doğrula → güven skoru + doğrulanmış özet + bağımsız
+ *  kaynak sayısı + çelişkiler. <2 bağımsız domain teyit edebiliyorsa güven tavanı 0.5'e
+ *  çekilir (tek kaynaklı iddia yüksek güven alamaz). */
 export async function factCheckTopic(topic: string, headline: string): Promise<FactCheck> {
   const ai = await getClient();
   const res = await withRetry(() => ai.models.generateContent({
     model: AI_MODEL,
-    contents: `Şu Çanakkale haber konusunu güncel web kaynaklarıyla DOĞRULA:\nKonu: ${topic}\nBaşlık: ${headline}\n\nBirden çok güvenilir kaynağı karşılaştır. SADECE şu JSON'u döndür (başka metin yok):\n{"confidence": 0 ile 1 arası sayı, "verifiedSummary": "doğrulanmış kısa özet", "caveats": "çelişki/şüphe ya da boş"}`,
+    contents: `Şu Çanakkale haber konusunu güncel web kaynaklarıyla DOĞRULA:\nKonu: ${topic}\nBaşlık: ${headline}\n\nBirden çok BAĞIMSIZ kaynağı karşılaştır. Kaynaklar arasında çelişki varsa açıkça yaz ve güveni düşür. SADECE şu JSON'u döndür (başka metin yok):\n{"confidence": 0 ile 1 arası sayı, "verifiedSummary": "doğrulanmış kısa özet", "caveats": "şüphe/uyarı ya da boş", "sourceCount": doğrulayan bağımsız kaynak sayısı (tam sayı), "contradictions": ["kaynaklar arası çelişki maddeleri; yoksa boş dizi"]}`,
     config: {
-      systemInstruction: 'Sen titiz bir haber doğrulama editörüsün. Yalnızca kaynaklarca desteklenen bilgiyi doğrularsın. Türkçe.',
+      systemInstruction: 'Sen titiz bir haber doğrulama editörüsün. Yalnızca kaynaklarca desteklenen bilgiyi doğrularsın; farklı bağımsız kaynakları karşılaştırır, çeliştiklerinde contradictions listesine yazar ve güveni düşürürsün. Türkçe.',
       tools: [{ googleSearch: {} }],
     },
   }));
   const text = res.text ?? '';
   const links: string[] = [];
+  const domains = new Set<string>();
   const chunks = res.candidates?.[0]?.groundingMetadata?.groundingChunks;
   if (Array.isArray(chunks)) {
     for (const c of chunks) {
       const uri = c?.web?.uri;
       if (typeof uri === 'string') links.push(uri);
+      // Vertex domain alanı (varsa) en güvenilir; yoksa uri host'undan çıkar
+      const dom = (typeof c?.web?.domain === 'string' && c.web.domain) ? c.web.domain.replace(/^www\./, '').toLowerCase() : independentDomain(uri);
+      if (dom) domains.add(dom);
     }
   }
-  let parsed: { confidence?: number; verifiedSummary?: string; caveats?: string } = {};
+  let parsed: { confidence?: number; verifiedSummary?: string; caveats?: string; sourceCount?: number; contradictions?: unknown } = {};
   const jm = text.match(/\{[\s\S]*\}/);
   if (jm) { try { parsed = JSON.parse(jm[0]); } catch { /* metin JSON değil */ } }
   // Ayrıştırma başarısız/eksikse güven=0 (0.5 DEĞİL) → doğrulanmamış konu yazıma geçmesin; 0-1'e clamp
   const rawConf = typeof parsed.confidence === 'number' && !Number.isNaN(parsed.confidence) ? parsed.confidence : 0;
+  let confidence = Math.min(1, Math.max(0, rawConf));
+  // Bağımsız domain sayısı: gerçek domain sinyali VARSA ve <2 ise güven tavanı 0.5
+  // (domain sinyali hiç yoksa — ör. redirect-only — mevcut davranışı bozmadan geç).
+  const domainCount = domains.size;
+  if (domainCount >= 1 && domainCount < 2) confidence = Math.min(confidence, 0.5);
+  const modelCount = typeof parsed.sourceCount === 'number' && parsed.sourceCount >= 0 ? Math.floor(parsed.sourceCount) : undefined;
+  const sourceCount = domainCount > 0 ? domainCount : (modelCount ?? (links.length > 0 ? 1 : 0));
+  const contradictions = Array.isArray(parsed.contradictions)
+    ? parsed.contradictions.filter((c): c is string => typeof c === 'string' && c.trim().length > 0).map((c) => c.trim()).slice(0, 5)
+    : [];
   return {
-    confidence: Math.min(1, Math.max(0, rawConf)),
+    confidence,
     verifiedSummary: parsed.verifiedSummary || text.slice(0, 500),
     caveats: parsed.caveats || '',
     groundingLinks: links,
+    sourceCount,
+    contradictions,
   };
 }
 
@@ -364,7 +472,7 @@ export async function writeArticleFromTopic(headline: string, verifiedSummary: s
     model: AI_MODEL,
     contents: `Aşağıdaki doğrulanmış bilgiden yayına hazır, ÖZGÜN (kopya değil) bir haber metni yaz.\nBaşlık fikri: ${headline}\nKategori: ${category}\nDoğrulanmış bilgi:\n${verifiedSummary}`,
     config: {
-      systemInstruction: 'Sen Çanakkale Network muhabirisin. Nesnel, doğrulanabilir, abartısız gazetecilik diliyle 3-5 paragraf haber yazarsın. Asılsız iddiaları kesin sunmaz, "iddia edildi/bildirildi" gibi ifadeler kullanırsın. Türkçe.',
+      systemInstruction: 'Sen Çanakkale Network muhabirisin. Nesnel, doğrulanabilir, abartısız gazetecilik diliyle 3-5 paragraf haber yazarsın. Asılsız iddiaları kesin sunmaz, "iddia edildi/bildirildi" gibi ifadeler kullanırsın. Gövde metninde EN AZ BİR kaynağa açık atıf yap (ör. "yetkililerin açıklamasına göre", "... kaynaklara göre"). Türkçe.',
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,

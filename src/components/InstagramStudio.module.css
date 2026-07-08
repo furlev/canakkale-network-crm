@@ -1,0 +1,151 @@
+/* Instagram Post Stüdyosu — taslak modalının üstünde açılır tam-ekran katman.
+   Panel CSS değişkenlerini (koyu/açık tema uyumlu) kullanır. 1080px "capture"
+   düğümleri satır-içi stillerle boyutlandırılır; burası yalnız kabuk + önizleme. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(4, 8, 16, 0.72);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: var(--space-6, 24px);
+}
+
+.modal {
+  width: 100%;
+  max-width: 1100px;
+  background: var(--bg-secondary, #101828);
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.1));
+  border-radius: var(--border-radius-lg, 16px);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  margin: auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4, 16px) var(--space-5, 20px);
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  position: sticky;
+  top: 0;
+  background: var(--bg-secondary, #101828);
+  border-radius: var(--border-radius-lg, 16px) var(--border-radius-lg, 16px) 0 0;
+  z-index: 2;
+}
+
+.title {
+  font-size: var(--text-lg, 1.125rem);
+  font-weight: 700;
+  margin: 0;
+}
+
+.close {
+  background: none;
+  border: none;
+  color: var(--text-muted, #94a3b8);
+  font-size: 1.25rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+.close:hover { background: var(--surface-3, rgba(255, 255, 255, 0.06)); }
+
+.body { padding: var(--space-5, 20px); }
+
+.section { margin-bottom: var(--space-6, 24px); }
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2, 8px);
+  margin-bottom: var(--space-3, 12px);
+}
+.sectionTitle {
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary, #cbd5e1);
+}
+.sectionHint { font-size: var(--text-xs, 0.75rem); color: var(--text-muted, #94a3b8); }
+
+.thumbRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4, 16px);
+  align-items: flex-start;
+}
+
+.thumbCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  align-items: center;
+}
+
+/* Ölçekli 1080px düğümü barındıran kırpma kutusu (boyutu satır-içi verilir). */
+.thumb {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  background: #0b1426;
+  flex-shrink: 0;
+}
+
+.thumbBtn {
+  font-size: var(--text-xs, 0.75rem);
+  padding: 4px 10px;
+}
+
+/* Ekranda görünmeyen ama html2canvas'ın ölçtüğü gerçek-boyut (1080) sahne. */
+.stage {
+  position: fixed;
+  left: -100000px;
+  top: 0;
+  pointer-events: none;
+  opacity: 1;
+}
+
+.caption {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  font: inherit;
+  font-size: var(--text-sm, 0.875rem);
+  line-height: 1.5;
+  padding: var(--space-3, 12px);
+  border-radius: var(--border-radius, 10px);
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.12));
+  background: var(--surface-2, rgba(255, 255, 255, 0.03));
+  color: var(--text-primary, #e2e8f0);
+}
+
+.footer {
+  display: flex;
+  gap: var(--space-2, 8px);
+  flex-wrap: wrap;
+  align-items: center;
+  padding: var(--space-4, 16px) var(--space-5, 20px);
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-secondary, #101828);
+  border-radius: 0 0 var(--border-radius-lg, 16px) var(--border-radius-lg, 16px);
+}
+
+.msg { font-size: var(--text-sm, 0.875rem); }
+.msgOk { color: var(--success, #22c55e); }
+.msgErr { color: var(--error, #ef4444); }
+
+.loading {
+  padding: var(--space-8, 40px);
+  text-align: center;
+  color: var(--text-muted, #94a3b8);
+}

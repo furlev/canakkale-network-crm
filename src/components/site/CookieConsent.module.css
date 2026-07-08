@@ -1,0 +1,245 @@
+/* Çerez rıza banner'ı — tema-duyarlı (site.css --* değişkenleri), privacy-first.
+   Renkler global tema token'larından gelir; fallback değerler koyu (network) temaya göre. */
+
+.wrap {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1100; /* header/ticker üstünde kalsın */
+  display: flex;
+  justify-content: center;
+  padding: clamp(0.75rem, 2vw, 1.5rem);
+  padding-bottom: max(clamp(0.75rem, 2vw, 1.5rem), env(safe-area-inset-bottom));
+  pointer-events: none; /* yalnızca kart tıklanabilir; arka plan etkileşimi açık kalır */
+}
+
+.card {
+  pointer-events: auto;
+  width: min(720px, 100%);
+  background: var(--bg-elevated, #0c1526);
+  color: var(--ink, #eef2f8);
+  border: 1px solid var(--line, rgba(159, 176, 200, 0.14));
+  border-radius: var(--radius, 14px);
+  box-shadow: var(--card-shadow, 0 10px 40px rgba(0, 0, 0, 0.45));
+  padding: clamp(1.1rem, 2.5vw, 1.6rem);
+  animation: cn-consent-in 0.4s var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+@keyframes cn-consent-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.title {
+  font-family: var(--font-display, system-ui), sans-serif;
+  font-size: clamp(1.05rem, 2.5vw, 1.25rem);
+  font-weight: 700;
+  line-height: 1.25;
+  margin-bottom: 0.4rem;
+}
+
+.text {
+  color: var(--ink-soft, #9fb0c8);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  margin-bottom: 1rem;
+}
+
+.text a {
+  color: var(--accent, #e23140);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.btn {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 0.62rem 1.1rem;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--line, rgba(159, 176, 200, 0.14));
+  background: var(--surface, #101b2e);
+  color: var(--ink, #eef2f8);
+  transition:
+    transform 0.2s var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    background 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent, #e23140);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent, #e23140);
+  outline-offset: 2px;
+}
+
+/* Privacy-first: "Yalnızca gerekli" vurgulu (varsayılan/önerilen eylem) */
+.btnPrimary {
+  background: var(--accent, #e23140);
+  color: var(--accent-ink, #fff);
+  border-color: var(--accent, #e23140);
+}
+
+.btnPrimary:hover {
+  box-shadow: var(--glow, 0 0 40px rgba(226, 49, 64, 0.25));
+}
+
+/* "Tümünü kabul" ikincil ağırlıkta — bilinçli olarak öne çıkarılmaz */
+.btnSecondary {
+  background: transparent;
+}
+
+/* "Ayarlar" metin bağlantısı gibi */
+.btnLink {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-soft, #9fb0c8);
+  padding-inline: 0.5rem;
+  margin-inline-start: auto; /* sağa yasla */
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.btnLink:hover {
+  transform: none;
+  color: var(--ink, #eef2f8);
+}
+
+/* ── Ayarlar paneli ── */
+.settings {
+  margin: 0.4rem 0 1.1rem;
+  border-top: 1px solid var(--line, rgba(159, 176, 200, 0.14));
+  padding-top: 0.9rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+}
+
+.rowMain {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rowTitle {
+  font-weight: 600;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.rowDesc {
+  color: var(--ink-faint, #64758e);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin-top: 0.15rem;
+}
+
+.always {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-faint, #64758e);
+  border: 1px solid var(--line, rgba(159, 176, 200, 0.14));
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  white-space: nowrap;
+}
+
+/* Erişilebilir anahtar (gerçek checkbox görsel olarak switch'e dönüştürülür) */
+.switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 26px;
+  cursor: pointer;
+}
+
+.switch input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--surface-2, #17263d);
+  border: 1px solid var(--line, rgba(159, 176, 200, 0.14));
+  transition: background 0.2s var(--ease-out, ease);
+}
+
+.thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink-soft, #9fb0c8);
+  transition: transform 0.2s var(--ease-spring, ease), background 0.2s;
+}
+
+.switch input:checked + .track {
+  background: color-mix(in srgb, var(--accent, #e23140) 55%, transparent);
+  border-color: var(--accent, #e23140);
+}
+
+.switch input:checked + .track .thumb {
+  transform: translateX(18px);
+  background: var(--accent-ink, #fff);
+}
+
+.switch input:focus-visible + .track {
+  outline: 2px solid var(--accent, #e23140);
+  outline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+  .actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .btnLink {
+    margin-inline-start: 0;
+    text-align: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    animation: none;
+  }
+  .btn,
+  .track,
+  .thumb {
+    transition: none;
+  }
+}
