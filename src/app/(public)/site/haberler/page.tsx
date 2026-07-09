@@ -65,6 +65,7 @@ export default async function ArchivePage(context: {
   const sp = await context.searchParams;
   const q = first(sp.q).trim().slice(0, 120);
   const kategori = first(sp.kategori).trim();
+  const yazar = first(sp.yazar).trim().slice(0, 160); // yazar facet (authorName tam eşleşme)
   const ilce = normalizeDistrict(first(sp.ilce)); // slug | null
   const page = Math.max(1, parseInt(first(sp.sayfa) || '1', 10) || 1);
 
@@ -77,10 +78,20 @@ export default async function ArchivePage(context: {
     deletedAt: null,
     ...(kategori ? { categorySlug: kategori } : {}),
     ...(qFilter ?? {}),
+    ...(yazar ? { authorName: yazar } : {}),
   };
   const where: Prisma.SiteArticleWhereInput = { ...baseWhere, ...(ilce ? { district: ilce } : {}) };
 
-  const [total, articles, categories, districtGroups] = await Promise.all([
+  // Yazar facet sayaçları — yazar filtresi HARİÇ mevcut bağlamda (q/kategori/ilçe).
+  const authorContextWhere: Prisma.SiteArticleWhereInput = {
+    status: 'published',
+    deletedAt: null,
+    ...(kategori ? { categorySlug: kategori } : {}),
+    ...(qFilter ?? {}),
+    ...(ilce ? { district: ilce } : {}),
+  };
+
+  const [total, articles, categories, districtGroups, authorGroups] = await Promise.all([
     prisma.siteArticle.count({ where }),
     prisma.siteArticle.findMany({
       where,
@@ -107,8 +118,21 @@ export default async function ArchivePage(context: {
     prisma.siteCategory.findMany({ orderBy: { order: 'asc' } }),
     // İlçe pil sayaçları — ilçe filtresi HARİÇ mevcut bağlamda (q/kategori)
     prisma.siteArticle.groupBy({ by: ['district'], where: baseWhere, _count: { _all: true } }),
+    // Yazar facet — en çok haberi olan yazarlar (çip olarak gösterilir)
+    prisma.siteArticle.groupBy({
+      by: ['authorName'],
+      where: authorContextWhere,
+      _count: { _all: true },
+      orderBy: { _count: { authorName: 'desc' } },
+      take: 14,
+    }),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // Yazar çipleri: adı olan + en az bir haberi olan yazarlar (en çok yazandan aza).
+  const authorFacets = authorGroups
+    .filter(g => g.authorName && g.authorName.trim())
+    .map(g => ({ name: g.authorName, count: g._count._all }));
 
   // İlçe başına sayaç + "Tümü" toplamı (ilçe filtresinden bağımsız)
   const districtCounts: Record<string, number> = {};
@@ -138,12 +162,25 @@ export default async function ArchivePage(context: {
   if (q) baseQuery.q = q;
   if (kategori) baseQuery.kategori = kategori;
   if (ilce) baseQuery.ilce = ilce;
+  if (yazar) baseQuery.yazar = yazar;
 
   const chipHref = (catSlug: string | null) => {
     const params = new URLSearchParams();
     if (q) params.set('q', q);
     if (catSlug) params.set('kategori', catSlug);
     if (ilce) params.set('ilce', ilce);
+    if (yazar) params.set('yazar', yazar);
+    const qs = params.toString();
+    return qs ? `/haberler?${qs}` : '/haberler';
+  };
+
+  // Yazar çipi linki — yazarı değiştirir/temizler, diğer filtreleri korur.
+  const authorHref = (name: string | null) => {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (kategori) params.set('kategori', kategori);
+    if (ilce) params.set('ilce', ilce);
+    if (name) params.set('yazar', name);
     const qs = params.toString();
     return qs ? `/haberler?${qs}` : '/haberler';
   };
@@ -162,6 +199,7 @@ export default async function ArchivePage(context: {
           <form className="p-search" action="/haberler" method="get" role="search">
             {kategori && <input type="hidden" name="kategori" value={kategori} />}
             {ilce && <input type="hidden" name="ilce" value={ilce} />}
+            {yazar && <input type="hidden" name="yazar" value={yazar} />}
             <SearchSuggest name="q" defaultValue={q} placeholder="Haberlerde ara… (başlık, özet)" />
             <button type="submit" className="s-btn s-btn-primary">
               Ara
@@ -193,6 +231,30 @@ export default async function ArchivePage(context: {
             counts={districtCounts}
             total={districtTotal}
           />
+
+          {(authorFacets.length > 0 || yazar) && (
+            <nav className="p-chips" aria-label="Yazar filtresi">
+              <Link href={authorHref(null)} className={`p-chip ${!yazar ? 'active' : ''}`}>
+                Tüm yazarlar
+              </Link>
+              {/* Aktif yazar listede yoksa (bağlam dışı) yine de çip olarak göster */}
+              {yazar && !authorFacets.some(a => a.name === yazar) && (
+                <Link href={authorHref(yazar)} className="p-chip active">
+                  {yazar}
+                </Link>
+              )}
+              {authorFacets.map(a => (
+                <Link
+                  key={a.name}
+                  href={authorHref(a.name)}
+                  className={`p-chip ${yazar === a.name ? 'active' : ''}`}
+                >
+                  {a.name}
+                  <span className="count" aria-hidden="true"> · {a.count.toLocaleString('tr-TR')}</span>
+                </Link>
+              ))}
+            </nav>
+          )}
         </div>
       </header>
 
@@ -230,7 +292,7 @@ export default async function ArchivePage(context: {
                   ? 'Farklı bir anahtar kelime dene veya filtreyi kaldırıp tüm arşive göz at.'
                   : 'Henüz yayınlanmış haber yok — çok yakında burası dolacak.'}
               </p>
-              {(q || kategori) && (
+              {(q || kategori || yazar) && (
                 <Link className="s-btn s-btn-primary" href="/haberler">
                   Filtreleri Temizle
                 </Link>

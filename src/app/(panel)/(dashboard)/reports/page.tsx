@@ -26,6 +26,31 @@ type ReportData = {
   invoiceStatus: { paid: number; unpaid: number; overdue: number; cancelled: number };
 };
 
+/** /api/reports/cashflow yanıt sözleşmesi (ileriye dönük projeksiyon). */
+type CashflowData = {
+  horizon: {
+    month: string;
+    expectedInvoices: number;
+    recurring: number;
+    inflow: number;
+    projectedExpense: number;
+    net: number;
+    cumulative: number;
+  }[];
+  summary: {
+    paidToDate: number;
+    outstanding: number;
+    overdueNow: number;
+    monthlyRecurring: number;
+    monthlyExpenseAvg: number;
+    projectedInflow: number;
+    projectedExpense: number;
+    projectedNet: number;
+    totalExpenses: number;
+  };
+  assumptions: { horizonMonths: number; expenseBasis: string; note: string };
+};
+
 const fmt = (n: number) => `₺${n.toLocaleString('tr-TR')}`;
 
 export default function ReportsPage() {
@@ -33,7 +58,11 @@ export default function ReportsPage() {
   const [data, setData] = useState<ReportData | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const tabs = [{ k: 'overview', l: 'Genel Bakış' }, { k: 'revenue', l: 'Gelir' }, { k: 'client', l: 'Müşteri' }, { k: 'project', l: 'Proje' }, { k: 'tips', l: 'İhbar' }];
+  // Nakit akışı projeksiyonu — sekmeye ilk girişte tembel yüklenir (/api/reports/cashflow).
+  const [cashflow, setCashflow] = useState<CashflowData | null>(null);
+  const [cfErr, setCfErr] = useState<string | null>(null);
+  const [cfLoading, setCfLoading] = useState(false);
+  const tabs = [{ k: 'overview', l: 'Genel Bakış' }, { k: 'revenue', l: 'Gelir' }, { k: 'cashflow', l: 'Nakit Akışı' }, { k: 'client', l: 'Müşteri' }, { k: 'project', l: 'Proje' }, { k: 'tips', l: 'İhbar' }];
 
   useEffect(() => {
     fetch('/api/reports')
@@ -48,6 +77,24 @@ export default function ReportsPage() {
       })
       .catch(err => { console.error('Error fetching reports:', err); setErr('Rapor verileri yüklenemedi. Lütfen daha sonra tekrar deneyin.'); setLoading(false); });
   }, []);
+
+  // Nakit akışı sekmesine ilk geçişte projeksiyonu getir (tembel + tek sefer).
+  useEffect(() => {
+    if (tab !== 'cashflow' || cashflow || cfLoading) return;
+    setCfLoading(true);
+    setCfErr(null);
+    fetch('/api/reports/cashflow')
+      .then(async res => {
+        const d = await res.json().catch(() => null);
+        if (!res.ok || !d || !Array.isArray(d.horizon) || !d.summary) {
+          setCfErr('Nakit akışı projeksiyonu yüklenemedi.');
+        } else {
+          setCashflow(d as CashflowData);
+        }
+      })
+      .catch(err => { console.error('Error fetching cashflow:', err); setCfErr('Nakit akışı projeksiyonu yüklenemedi.'); })
+      .finally(() => setCfLoading(false));
+  }, [tab, cashflow, cfLoading]);
 
 
   if (err) {
@@ -245,6 +292,85 @@ export default function ReportsPage() {
               )}
             </div>
           </div>
+        </>
+      )}
+
+      {tab === 'cashflow' && (
+        <>
+          {cfLoading ? (
+            <div className="card" style={{ padding: 'var(--space-8)', textAlign: 'center' }}>Projeksiyon hesaplanıyor...</div>
+          ) : cfErr ? (
+            <div className="card" style={{ padding: 'var(--space-8)', textAlign: 'center', color: 'var(--text-muted)' }}>{cfErr}</div>
+          ) : cashflow ? (
+            <>
+              <div className="stats-grid">
+                {[
+                  { l: 'Beklenen Tahsilat (açık)', v: fmt(cashflow.summary.outstanding), c: 'warning', i: '⏳' },
+                  { l: 'Vadesi Geçmiş (acil)', v: fmt(cashflow.summary.overdueNow), c: 'error', i: '⚠️' },
+                  { l: `Öngörülen Giriş (${cashflow.assumptions.horizonMonths} ay)`, v: fmt(cashflow.summary.projectedInflow), c: 'success', i: '📈' },
+                  { l: `Öngörülen Net (${cashflow.assumptions.horizonMonths} ay)`, v: fmt(cashflow.summary.projectedNet), c: cashflow.summary.projectedNet >= 0 ? 'primary' : 'error', i: '💰' },
+                ].map((s, i) => (
+                  <div key={i} className={`stat-card ${s.c}`}>
+                    <div className="stat-card-top"><div className="stat-card-icon">{s.i}</div></div>
+                    <div className="stat-card-value" style={{ fontSize: 'var(--text-2xl)' }}>{s.v}</div>
+                    <div className="stat-card-label">{s.l}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid-2">
+                <div className="card">
+                  <h3 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Aylık Giriş vs Gider (projeksiyon)</h3>
+                  <StackedBar
+                    categories={cashflow.horizon.map(m => m.month)}
+                    stacked={false}
+                    formatValue={formatTry}
+                    formatAxis={formatCompact}
+                    height={230}
+                    series={[
+                      { name: 'Beklenen Giriş', color: 'var(--success)', values: cashflow.horizon.map(m => m.inflow) },
+                      { name: 'Öngörülen Gider', color: 'var(--error)', values: cashflow.horizon.map(m => m.projectedExpense) },
+                    ]}
+                  />
+                </div>
+                <div className="card">
+                  <h3 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Kümülatif Nakit Pozisyonu</h3>
+                  <LineChart
+                    formatValue={formatTry}
+                    formatAxis={formatCompact}
+                    height={230}
+                    series={[
+                      { name: 'Kümülatif Net', color: 'var(--primary)', points: cashflow.horizon.map(m => ({ x: m.month, y: m.cumulative })) },
+                      { name: 'Aylık Net', color: 'var(--accent)', points: cashflow.horizon.map(m => ({ x: m.month, y: m.net })) },
+                    ]}
+                  />
+                </div>
+              </div>
+
+              <div className="card" style={{ marginTop: 'var(--space-6)' }}>
+                <h3 className="card-title" style={{ marginBottom: 'var(--space-4)' }}>Aylık Projeksiyon Tablosu</h3>
+                <table className="data-table">
+                  <thead><tr><th>Ay</th><th>Açık Fatura</th><th>Tekrarlayan</th><th>Toplam Giriş</th><th>Öngörülen Gider</th><th>Net</th><th>Kümülatif</th></tr></thead>
+                  <tbody>
+                    {cashflow.horizon.map((m, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: 600 }}>{m.month}</td>
+                        <td className="font-mono">{fmt(m.expectedInvoices)}</td>
+                        <td className="font-mono">{fmt(m.recurring)}</td>
+                        <td className="font-mono" style={{ color: 'var(--success)' }}>{fmt(m.inflow)}</td>
+                        <td className="font-mono" style={{ color: 'var(--error)' }}>{fmt(m.projectedExpense)}</td>
+                        <td className="font-mono" style={{ color: m.net >= 0 ? 'var(--success)' : 'var(--error)' }}>{fmt(m.net)}</td>
+                        <td className="font-mono" style={{ fontWeight: 700, color: m.cumulative >= 0 ? 'var(--primary-light)' : 'var(--error)' }}>{fmt(m.cumulative)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="text-muted" style={{ fontSize: 'var(--text-xs)', marginTop: 'var(--space-3)' }}>
+                  Gider tabanı: {cashflow.assumptions.expenseBasis}. {cashflow.assumptions.note}
+                </div>
+              </div>
+            </>
+          ) : null}
         </>
       )}
 

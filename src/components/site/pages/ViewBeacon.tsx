@@ -2,6 +2,15 @@
 
 import { useEffect } from 'react';
 
+/** Küçük deterministik string→pozitif tam sayı hash'i (A/B tohumu için). */
+function hashInt(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
 /**
  * Haber okuma analitiği (first-party, KVKK-dostu).
  *
@@ -16,7 +25,17 @@ import { useEffect } from 'react';
  *
  * Tüm çağrılar sessiz-hata toleranslıdır; analitik hiçbir zaman okuma deneyimini kırmaz.
  */
-export default function ViewBeacon({ slug }: { slug: string }) {
+export default function ViewBeacon({
+  slug,
+  altTitle,
+  articleId,
+}: {
+  slug: string;
+  /** A/B alt başlık (varsa). Ziyaret başına ana/alt başlık dönüşümlü gösterilir. */
+  altTitle?: string | null;
+  /** Deterministik rotasyon tohumu (yoksa slug kullanılır). */
+  articleId?: string | null;
+}) {
   useEffect(() => {
     // document.referrer'dan yalnız dış host (site içi/boş → undefined = doğrudan)
     const refHost = (): string | undefined => {
@@ -49,6 +68,50 @@ export default function ViewBeacon({ slug }: { slug: string }) {
       });
     };
 
+    // ── 0) A/B başlık varyantı (altTitle varsa) ──
+    // Ziyaret başına ana/alt başlık dönüşümlü gösterilir: deterministik id-hash%2
+    // tohumu + küresel ziyaret rotasyonu ile parite hesaplanır. Aynı oturumdaki
+    // tekrar ziyaretlerde seçim sabit kalır (sessionStorage). Seçim /api/site/view'a
+    // `v` (main|alt) olarak raporlanır → Setting('titleAbStats') sayacı.
+    let variant: 'main' | 'alt' = 'main';
+    const hasAlt = !!(altTitle && altTitle.trim());
+    if (hasAlt) {
+      const varKey = `cn-abvar:${slug}`;
+      let stored: string | null = null;
+      try {
+        stored = sessionStorage.getItem(varKey);
+      } catch {
+        /* yoksay */
+      }
+      if (stored === 'main' || stored === 'alt') {
+        variant = stored;
+      } else {
+        const seed = hashInt(articleId || slug);
+        let rot = 0;
+        try {
+          rot = parseInt(localStorage.getItem('cn-ab-rot') || '0', 10) || 0;
+          localStorage.setItem('cn-ab-rot', String((rot + 1) % 1_000_000));
+        } catch {
+          /* localStorage kapalıysa yalnız tohumla belirlenir */
+        }
+        variant = (seed + rot) % 2 === 0 ? 'main' : 'alt';
+        try {
+          sessionStorage.setItem(varKey, variant);
+        } catch {
+          /* yoksay */
+        }
+      }
+      // Alt başlık seçildiyse görünen H1'i güncelle (server ana başlığı render eder).
+      if (variant === 'alt' && altTitle) {
+        try {
+          const h1 = document.querySelector('.p-hero-title');
+          if (h1 && h1.textContent !== altTitle) h1.textContent = altTitle;
+        } catch {
+          /* DOM erişilemezse başlık ana halinde kalır */
+        }
+      }
+    }
+
     // ── 1) Görüntülenme (mevcut davranış + referrerHost) ──
     const viewKey = `cn-viewed:${slug}`;
     let alreadyViewed = false;
@@ -62,7 +125,7 @@ export default function ViewBeacon({ slug }: { slug: string }) {
       fetch('/api/site/view', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug, referrerHost: refHost() }),
+        body: JSON.stringify({ slug, referrerHost: refHost(), ...(hasAlt ? { v: variant } : {}) }),
         keepalive: true,
       }).catch(() => {
         /* sayaç kritik değil — sessiz geç */
@@ -121,7 +184,7 @@ export default function ViewBeacon({ slug }: { slug: string }) {
       window.removeEventListener('scroll', onScroll);
       document.removeEventListener('click', onClick, { capture: true });
     };
-  }, [slug]);
+  }, [slug, altTitle, articleId]);
 
   return null;
 }

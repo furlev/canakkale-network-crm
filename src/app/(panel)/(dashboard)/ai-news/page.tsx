@@ -99,6 +99,22 @@ function qualityBadge(score: number | null | undefined): { cls: string; text: st
   return { cls: 'badge-error', text: `Kalite ${r}` };
 }
 
+/** Verilen hafta ofsetine göre Pazartesi 00:00'ı döndürür (0 = bu hafta). */
+function startOfWeek(offset: number): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  const day = (d.getDay() + 6) % 7; // Pazartesi = 0
+  d.setDate(d.getDate() - day + offset * 7);
+  return d;
+}
+
+const WEEKDAYS_TR = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+
+/** İki tarih aynı takvim gününde mi? */
+function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
 /** ISO → datetime-local input değeri (yerel saat). */
 function isoToLocalInput(iso?: string | null): string {
   if (!iso) return '';
@@ -129,6 +145,8 @@ export default function AiNewsPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<StatusKey>('pending');
   const [districtFilter, setDistrictFilter] = useState<string>('all'); // 'all' | slug | 'none'
+  const [viewMode, setViewMode] = useState<'cards' | 'calendar'>('cards'); // kart / haftalık takvim
+  const [weekOffset, setWeekOffset] = useState(0); // takvimde görüntülenen hafta (0 = bu hafta)
 
   const [selected, setSelected] = useState<AiDraft | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
@@ -349,6 +367,43 @@ export default function AiNewsPage() {
     }
   };
 
+  /* 🔄 AI ile yeniden yaz — POST /api/ai/drafts/[id]/rewrite (konudan yeniden üret) */
+  const handleRewrite = async () => {
+    if (!edit || !selected) return;
+    if (!confirm('Bu taslak AI ile konudan yeniden yazılacak (mevcut metnin üzerine). Devam edilsin mi?')) return;
+    setBusy(true);
+    setModalMsg(null);
+    try {
+      const res = await fetch(`/api/ai/drafts/${edit.id}/rewrite`, { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.id) throw new Error((data && data.error) || 'Yeniden yazma başarısız oldu.');
+      const d = data as AiDraft;
+      applyToList(d);
+      // Modal alanlarını tazele
+      const tv = parseTitleVariants(d.titleVariants);
+      setEdit({
+        id: d.id,
+        title: d.title || '',
+        body: d.body || '',
+        category: d.category || '',
+        tags: parseJsonArray(d.tags).join(', '),
+        seoTitle: d.seoTitle || '',
+        metaDescription: d.metaDescription || '',
+        district: d.district || '',
+        editorNote: d.editorNote || '',
+        scheduledAt: isoToLocalInput(d.scheduledAt),
+        variantOptions: tv.options,
+        altTitle: tv.altTitle,
+      });
+      setSelected(prev => (prev ? { ...prev, ...d } : d));
+      setModalMsg({ kind: 'success', text: 'AI ile yeniden yazıldı ✓ (durum: bekliyor)' });
+    } catch (e) {
+      setModalMsg({ kind: 'error', text: e instanceof Error ? e.message : 'Yeniden yazma başarısız oldu.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   /* ── Çoklu seçim ── */
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -363,6 +418,15 @@ export default function AiNewsPage() {
     : districtFilter === 'none'
       ? drafts.filter(d => !d.district)
       : drafts.filter(d => d.district === districtFilter);
+  // Haftalık takvim: görüntülenen haftanın günleri + o haftaya planlanmış taslaklar
+  const weekStart = startOfWeek(weekOffset);
+  const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 7);
+  const weekDays = Array.from({ length: 7 }, (_, i) => { const d = new Date(weekStart); d.setDate(d.getDate() + i); return d; });
+  const scheduledInWeek = visibleDrafts.filter(d => {
+    if (!d.scheduledAt) return false;
+    const t = new Date(d.scheduledAt);
+    return !Number.isNaN(t.getTime()) && t >= weekStart && t < weekEnd;
+  });
   const allSelected = visibleDrafts.length > 0 && visibleDrafts.every(d => selectedIds.has(d.id));
   const toggleAll = () => {
     setSelectedIds(prev => {
@@ -424,7 +488,12 @@ export default function AiNewsPage() {
             </button>
           ))}
         </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', marginLeft: 'auto' }}>
+        {/* Görünüm: kart / haftalık takvim */}
+        <div style={{ display: 'flex', gap: 'var(--space-1)', marginLeft: 'auto' }}>
+          <button className={`btn btn-sm ${viewMode === 'cards' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('cards')}>🗂 Kart</button>
+          <button className={`btn btn-sm ${viewMode === 'calendar' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setViewMode('calendar')}>🗓 Takvim</button>
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)' }}>
           <span style={{ color: 'var(--text-muted)' }}>📍 İlçe</span>
           <select
             className="form-select"
@@ -464,6 +533,60 @@ export default function AiNewsPage() {
 
       {loading ? (
         <div style={{ padding: 'var(--space-8)', textAlign: 'center', color: 'var(--text-muted)' }}>Yükleniyor...</div>
+      ) : viewMode === 'calendar' ? (
+        <div>
+          {/* Hafta gezinme */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-3)', gap: 'var(--space-2)' }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => setWeekOffset(weekOffset - 1)}>← Önceki hafta</button>
+            <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)' }}>
+              {weekStart.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })} – {new Date(weekEnd.getTime() - 1).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })}
+              {weekOffset !== 0 && <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'var(--space-2)' }} onClick={() => setWeekOffset(0)}>bu hafta</button>}
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setWeekOffset(weekOffset + 1)}>Sonraki hafta →</button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 'var(--space-2)', overflowX: 'auto' }}>
+            {weekDays.map((day, di) => {
+              const isToday = sameDay(day, new Date());
+              const dayDrafts = scheduledInWeek
+                .filter(d => sameDay(new Date(d.scheduledAt as string), day))
+                .sort((a, b) => new Date(a.scheduledAt as string).getTime() - new Date(b.scheduledAt as string).getTime());
+              return (
+                <div key={di} style={{ minWidth: 110, minHeight: 140, border: '1px solid var(--border-subtle)', borderRadius: 'var(--border-radius)', padding: 'var(--space-2)', background: isToday ? 'rgba(108,92,231,0.08)' : 'var(--surface-2, rgba(255,255,255,0.02))' }}>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-2)', fontWeight: 600 }}>
+                    {WEEKDAYS_TR[di]} {day.getDate()}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+                    {dayDrafts.length === 0 ? (
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', opacity: 0.6 }}>—</span>
+                    ) : dayDrafts.map(d => {
+                      const st = STATUS_BADGE[d.status] || { cls: 'badge-primary', label: d.status };
+                      const time = new Date(d.scheduledAt as string).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+                      return (
+                        <button
+                          key={d.id}
+                          onClick={() => openDraft(d)}
+                          title={d.title || d.topic}
+                          style={{ textAlign: 'left', border: 'none', cursor: 'pointer', background: 'var(--bg-secondary, rgba(0,0,0,0.25))', borderRadius: 6, padding: '4px 6px', display: 'flex', flexDirection: 'column', gap: 2 }}
+                        >
+                          <span style={{ fontSize: '10px', color: 'var(--primary-light)', fontWeight: 700 }}>{time}</span>
+                          <span style={{ fontSize: 'var(--text-xs)', lineHeight: 1.25, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            {d.title || d.topic}
+                          </span>
+                          <span className={`badge ${st.cls}`} style={{ fontSize: '9px', alignSelf: 'flex-start' }}>{st.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {scheduledInWeek.length === 0 && (
+            <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--text-sm)' }}>
+              Bu haftaya planlanmış taslak yok. (Planlı yayın tarihi olan taslaklar burada görünür.)
+            </div>
+          )}
+        </div>
       ) : visibleDrafts.length === 0 ? (
         <div className="data-table-container">
           <div style={{ padding: 'var(--space-8)', textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -678,6 +801,7 @@ export default function AiNewsPage() {
               <button className="btn btn-danger btn-sm" disabled={busy} onClick={handleDelete}>Sil</button>
               <button className="btn btn-ghost btn-sm" disabled={busy} onClick={handleReject}>Reddet</button>
               <button className="btn btn-ghost btn-sm" disabled={busy} onClick={handleSaveNote}>💾 Notu Kaydet</button>
+              <button className="btn btn-ghost btn-sm" disabled={busy || selected.status === 'published'} onClick={handleRewrite} title="AI ile konudan yeniden üret">🔄 AI ile yeniden yaz</button>
               <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setIgDraftId(edit.id)} title="Taslaktan Instagram postu üret">📸 Instagram</button>
               <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleApproveAndPublish('wordpress')} style={{ marginLeft: 'auto' }} title="Eski WordPress sitesine yayınla">
                 WP&apos;ye Yayınla

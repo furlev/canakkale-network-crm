@@ -49,6 +49,41 @@ const articleUpdate = z.object({
   retractedAt: z.string().optional().nullable(),
 });
 
+/**
+ * Son dakika haberi yayınlanınca ilçe-hedefli web push'u best-effort tetikler.
+ * `breakingPushedAt` atomik claim'i mükerrer gönderimi engeller. CRON_SECRET yoksa
+ * veya herhangi bir hata olursa sessizce atlanır — haber güncellemesini bozmaz.
+ */
+async function tryBreakingPush(
+  request: Request,
+  article: { id: string; title: string; slug: string; district: string | null },
+): Promise<void> {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return;
+  // Atomik claim — yalnız bir istek push tetikler.
+  const claim = await prisma.siteArticle.updateMany({
+    where: { id: article.id, breakingPushedAt: null },
+    data: { breakingPushedAt: new Date() },
+  });
+  if (claim.count === 0) return; // başka bir yol/istek zaten tetikledi
+  try {
+    const endpoint = new URL('/api/site/push/send', request.url).toString();
+    await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
+      body: JSON.stringify({
+        title: 'Son dakika',
+        body: article.title.slice(0, 300),
+        url: `/haber/${article.slug}`,
+        district: article.district ?? undefined,
+        tag: `breaking-${article.slug}`,
+      }),
+    });
+  } catch {
+    /* push kritik değil — sessiz geç (damga kalır, tekrar denenmez) */
+  }
+}
+
 /** Benzersiz slug (kendisi hariç): çakışmada -2, -3... eki dener. */
 async function uniqueSlug(base: string, excludeId: string): Promise<string> {
   const root = slugifyTr(base) || 'haber';
@@ -179,6 +214,10 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     // Yeni onaya düştüyse B/A'ya bildir (yayın onay kuyruğu)
     if (finalStatus === 'awaiting_approval' && existing.status !== 'awaiting_approval') {
       await notify('site_approval', `Onay bekleyen haber: ${updated.title} (${session.name || 'Editör'})`, `/site-yonetimi/haber/${id}`);
+    }
+    // Son dakika olarak yayınlandıysa web push'u best-effort tetikle (bir kez).
+    if (updated.status === 'published' && updated.isBreaking && !existing.breakingPushedAt) {
+      await tryBreakingPush(request, { id, title: updated.title, slug: updated.slug, district: updated.district });
     }
     return NextResponse.json(updated);
   } catch (error) {

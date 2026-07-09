@@ -696,6 +696,7 @@ model SiteArticle {
   retractionNote  String?
   authorSlug      String? // yazar/köşe hub bağı (Author.slug)
   scheduledAt     DateTime? // planlı yayın (status='scheduled' → cron yayınlar)
+  breakingPushedAt DateTime? // son dakika web push tetiklendi damgası (mükerrer engel)
   wpId            Int?          @unique // WP'den içe aktarılan haberler
   deletedAt       DateTime?
   createdAt       DateTime      @default(now())
@@ -986,10 +987,12 @@ model TimeEntry {
   rate      Float? // saatlik ücret (billable ise)
   note      String?
   date      DateTime @db.Date
+  invoiceId String? // faturalandıysa hedef Invoice id (çift faturalamayı önler) — P2
   createdAt DateTime @default(now())
 
   @@index([userId, date])
   @@index([projectId])
+  @@index([invoiceId])
 }
 
 // Proje şablonu — tekrarlayan iş tipleri için görev iskeleti.

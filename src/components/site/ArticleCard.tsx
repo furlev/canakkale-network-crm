@@ -44,10 +44,13 @@ export default function ArticleCard({
   article,
   variant = 'default',
   revealDelay,
+  reveal,
 }: {
   article: ArticleCardData;
   variant?: 'default' | 'row';
   revealDelay?: number;
+  /** REVEAL v2 (opt-in): yön/efekt (.s-reveal[data-reveal]). Verilmezse klasik yukarı-kayma. */
+  reveal?: 'left' | 'right' | 'scale' | 'clip';
 }) {
   const a = article;
   const tiltRef = useTilt<HTMLAnchorElement>({ max: 4 });
@@ -55,14 +58,25 @@ export default function ArticleCard({
     <Link
       ref={tiltRef}
       href={`/haber/${a.slug}`}
+      prefetch
+      data-reveal={reveal}
       className={`s-card s-reveal s-tilt ${variant === 'row' ? 's-card-row' : ''}`}
       style={revealDelay ? ({ '--reveal-delay': `${revealDelay}ms` } as React.CSSProperties) : undefined}
     >
       <div className="s-card-media">
         {/* Görsel /img/[id] endpoint'inden gelir — data-URI'ler HTML'e gömülmez;
             görsel yoksa endpoint markalı placeholder'a yönlendirir. */}
+        {/* Paylaşılan öğe geçişi (View Transitions): kapak görseline slug'a özgü ad;
+            haber detay hero görseli aynı adı taşır → tıklamada morph. Desteklemeyen
+            tarayıcıda no-op. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`/img/${a.id}`} alt={a.imageAlt || a.title} loading="lazy" decoding="async" />
+        <img
+          src={`/img/${a.id}`}
+          alt={a.imageAlt || a.title}
+          loading="lazy"
+          decoding="async"
+          style={{ viewTransitionName: `photo-${a.slug}` } as React.CSSProperties}
+        />
         {a.isBreaking ? (
           <span className="s-badge s-badge-breaking">Son Dakika</span>
         ) : a.categoryName ? (

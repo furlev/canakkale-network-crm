@@ -6,6 +6,7 @@ import prisma from '@/lib/prisma';
 import { formatDateTr, readingMinutes, stripHtml, slugifyTr } from '@/lib/site';
 import { sanitizeHtml, youtubeEmbedUrl } from '@/lib/sanitize';
 import ArticleCard, { type ArticleCardData } from '@/components/site/ArticleCard';
+import MagneticCTA from '@/components/site/MagneticCTA';
 import CorrectionBanner from '@/components/site/CorrectionBanner';
 import AdSlot from '@/components/site/AdSlot';
 import { districtName } from '@/lib/districts';
@@ -313,7 +314,7 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
   return (
     <article>
       <ReadingProgress />
-      <ViewBeacon slug={article.slug} />
+      <ViewBeacon slug={article.slug} altTitle={article.altTitle} articleId={article.id} />
       <RevealInit />
       <script
         type="application/ld+json"
@@ -336,6 +337,7 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
               alt={article.imageAlt || article.title}
               fetchPriority="high"
               decoding="async"
+              style={{ viewTransitionName: `photo-${article.slug}` } as React.CSSProperties}
             />
           </div>
         )}
@@ -471,7 +473,7 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
       {relatedCards.length > 0 && (
         <section className="s-section">
           <div className="s-container">
-            <div className="s-section-head">
+            <div className="s-section-head s-reveal" data-reveal="left">
               <div>
                 <span className="s-kicker">Devamı Gelsin</span>
                 <h2 className="s-section-title">
@@ -479,10 +481,20 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
                 </h2>
               </div>
             </div>
-            <div className="p-grid">
+            <div className="p-grid" data-reveal-stagger="90">
               {relatedCards.map((r, i) => (
-                <ArticleCard key={r.slug} article={r} revealDelay={i * 90} />
+                <ArticleCard key={r.slug} article={r} revealDelay={i * 90} reveal="scale" />
               ))}
+            </div>
+            {/* Birincil CTA — manyetik (pointer:fine + motion full iken çekim; aksi halde normal buton) */}
+            <div className="s-reveal" data-reveal="scale" style={{ marginTop: 'var(--space-6, 32px)', textAlign: 'center' }}>
+              <MagneticCTA href="/haberler" className="s-btn s-btn-primary">
+                Tüm Haberleri Gör
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M5 12h14" />
+                  <path d="m13 6 6 6-6 6" />
+                </svg>
+              </MagneticCTA>
             </div>
           </div>
         </section>

@@ -13,6 +13,7 @@ import InterviewReel, { type ReelItem } from '@/components/site/InterviewReel';
 import MostRead, { type MostReadItem } from '@/components/site/MostRead';
 import NewsletterCTA from '@/components/site/NewsletterCTA';
 import JoinCTA from '@/components/site/JoinCTA';
+import MagneticCTA from '@/components/site/MagneticCTA';
 import DistrictMap from '@/components/site/DistrictMap';
 import DistrictNewsRail from '@/components/site/DistrictNewsRail';
 import VideoReel from '@/components/site/VideoReel';
@@ -252,8 +253,10 @@ export default async function HomePage() {
       {/* 3 — Son haber akışı */}
       {data.latest.length > 0 && (
         <section className="s-section home-latest">
+          {/* Opsiyonel aurora (yalnız motion tier full + reduced-motion kapalı iken canlanır) */}
+          <div className="s-aurora" aria-hidden="true" />
           <div className="s-container">
-            <div className="s-section-head s-reveal">
+            <div className="s-section-head s-reveal" data-reveal="left">
               <div>
                 <span className="s-kicker">Güncel Akış</span>
                 <h2 className="s-section-title">
@@ -261,10 +264,20 @@ export default async function HomePage() {
                 </h2>
               </div>
             </div>
-            <div className="home-grid">
+            <div className="home-grid" data-reveal-stagger="90">
               {data.latest.map((article, i) => (
                 <ArticleCard key={article.slug} article={article} revealDelay={Math.min(i * 60, 480)} />
               ))}
+            </div>
+            {/* Birincil CTA — manyetik (pointer:fine + motion full iken çekim; aksi halde normal buton) */}
+            <div className="s-reveal home-latest-cta" data-reveal="scale">
+              <MagneticCTA href="/haberler" className="s-btn s-btn-primary">
+                Tüm Haberleri Gör
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M5 12h14" />
+                  <path d="m13 6 6 6-6 6" />
+                </svg>
+              </MagneticCTA>
             </div>
           </div>
         </section>
@@ -288,7 +301,7 @@ export default async function HomePage() {
       {data.stats.articleCount > 0 && (
         <section className="s-section home-map">
           <div className="s-container">
-            <div className="s-section-head s-reveal">
+            <div className="s-section-head s-reveal" data-reveal="right">
               <div>
                 <span className="s-kicker">Şehrin Haritası</span>
                 <h2 className="s-section-title">

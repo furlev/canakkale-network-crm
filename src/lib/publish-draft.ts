@@ -143,6 +143,48 @@ function buildImageAlt(hasImage: boolean, wasAiImage: boolean, title: string | n
  *  - verilirse → SocialPost yalnızca 'social' kanalı seçildiğinde oluşur.
  * ('newsletter' kanalı bülten taslağı yayın rotasında ele alınır; burada site yayını + sosyal yönetilir.)
  */
+/**
+ * Son dakika haberi yayınlanınca ilçe-hedefli web push'u best-effort tetikler.
+ * `breakingPushedAt` atomik claim'i ile mükerrer gönderim engellenir. CRON_SECRET
+ * yoksa, son dakika değilse veya herhangi bir hata olursa sessizce atlanır — yayını bozmaz.
+ * (Lib fonksiyonu request'siz çalışır; taban URL env SITE_URL fallback'inden alınır.)
+ */
+async function tryBreakingPush(article: {
+  id: string;
+  title: string;
+  slug: string;
+  district: string | null;
+  isBreaking: boolean;
+  status: string;
+}): Promise<void> {
+  if (!article.isBreaking || article.status !== 'published') return;
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return;
+  // Atomik claim — yalnız bir çağrı push tetikler (çift yayın/eş zamanlılık güvenli).
+  const claim = await prisma.siteArticle.updateMany({
+    where: { id: article.id, breakingPushedAt: null },
+    data: { breakingPushedAt: new Date() },
+  });
+  if (claim.count === 0) return;
+  try {
+    const raw = process.env.SITE_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://canakkale.network';
+    const base = raw.replace(/\/+$/, '');
+    await fetch(`${base}/api/site/push/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
+      body: JSON.stringify({
+        title: 'Son dakika',
+        body: article.title.slice(0, 300),
+        url: `/haber/${article.slug}`,
+        district: article.district ?? undefined,
+        tag: `breaking-${article.slug}`,
+      }),
+    });
+  } catch {
+    /* push kritik değil — sessiz geç (damga kalır, tekrar denenmez) */
+  }
+}
+
 export async function publishDraftToSite(draft: DraftLike, actor: PublishActor, opts?: PublishDraftOptions) {
   if (!draft.body || !draft.body.trim()) {
     throw new ApiError(400, 'Taslak gövdesi boş — yayınlanamaz');
@@ -164,7 +206,7 @@ export async function publishDraftToSite(draft: DraftLike, actor: PublishActor, 
   const reviewerId = actor.sub ?? draft.reviewerId ?? null;
   const reviewerName = actor.name ?? draft.reviewerName ?? null;
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const claim = await tx.aiDraft.updateMany({
       where: { id: draft.id, status: { not: 'published' } },
       data: { status: 'published', reviewerId, reviewerName },
@@ -215,4 +257,9 @@ export async function publishDraftToSite(draft: DraftLike, actor: PublishActor, 
 
     return { article: created, updated: updatedDraft };
   });
+
+  // Son dakika ise ilçe-hedefli web push (best-effort, transaction dışı — yayını bloklamaz).
+  await tryBreakingPush(result.article);
+
+  return result;
 }

@@ -145,6 +145,8 @@ export default function DashboardLayout({
   const [notifOpen, setNotifOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  /* Yoğunluk (rahat/kompakt) — tercih localStorage'da; globals.css [data-density] hazır */
+  const [density, setDensity] = useState<'comfortable' | 'compact'>('comfortable');
 
   /* Global search */
   type SearchResult = { type: string; icon: string; title: string; subtitle?: string; link: string };
@@ -319,6 +321,25 @@ export default function DashboardLayout({
     });
   };
 
+  /* Yoğunluk modu — kompaktta tablo/kart/badge boşlukları daralır (globals.css) */
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('crm-density') === 'compact') {
+        setDensity('compact');
+        document.documentElement.setAttribute('data-density', 'compact');
+      }
+    } catch { /* */ }
+  }, []);
+  const toggleDensity = () => {
+    setDensity((prev) => {
+      const next = prev === 'compact' ? 'comfortable' : 'compact';
+      if (next === 'compact') document.documentElement.setAttribute('data-density', 'compact');
+      else document.documentElement.removeAttribute('data-density');
+      try { localStorage.setItem('crm-density', next); } catch { /* */ }
+      return next;
+    });
+  };
+
   /* Service-worker registration */
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -489,6 +510,16 @@ export default function DashboardLayout({
             {/* Theme toggle */}
             <button className="topbar-btn" title="Tema değiştir" onClick={toggleTheme}>
               {theme === 'light' ? '🌙' : '☀️'}
+            </button>
+
+            {/* Yoğunluk (kompakt/rahat) */}
+            <button
+              className="topbar-btn"
+              title={density === 'compact' ? 'Rahat görünüme geç' : 'Kompakt görünüme geç'}
+              aria-pressed={density === 'compact'}
+              onClick={toggleDensity}
+            >
+              {density === 'compact' ? '▤' : '▦'}
             </button>
 
             {/* Quick add */}

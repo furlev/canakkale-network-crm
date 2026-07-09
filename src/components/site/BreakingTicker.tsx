@@ -60,10 +60,55 @@ export default function BreakingTicker({ items: initial }: { items: TickerItem[]
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [clock, setClock] = useState<string | null>(null);
   const [slow, setSlow] = useState(false);
+  // Yeni gelen öğelerin slug'ları — kızıl "is-entering" flash için (kısa süre).
+  const [entering, setEntering] = useState<Set<string>>(() => new Set());
 
   // Görülen slug'lar (toast tekrarını ve çift eklemeyi önler) + son sunucu zamanı.
   const seenRef = useRef<Set<string>>(new Set(initial.map(i => i.slug)));
   const sinceRef = useRef<string>(new Date().toISOString());
+
+  /**
+   * Sunucudan gelen son dakika yanıtını (polling VEYA SSE) tek noktada işler:
+   * yeni (görülmemiş) haberleri başa ekler, toast kuyruğuna atar, `since`i ilerletir
+   * ve giren öğelere kızıl flash işareti koyar. Çift kanal güvenli — seenRef dedup eder.
+   */
+  const applyIncoming = useCallback((data: { now?: string; items?: BreakingApiItem[] }) => {
+    if (data.now) sinceRef.current = data.now;
+    const fresh = (data.items ?? []).filter(it => !seenRef.current.has(it.slug));
+    if (fresh.length === 0) return;
+    fresh.forEach(it => seenRef.current.add(it.slug));
+
+    // API en yeni → eski sıralı; başa eklerken bu sırayı koru (en yeni en solda).
+    const asTicker: TickerItem[] = fresh.map(it => ({
+      slug: it.slug,
+      title: it.title,
+      timeAgo: timeAgoTr(it.publishedAt),
+      color: it.color,
+    }));
+    setItems(prev => [...asTicker, ...prev].slice(0, 20));
+
+    // Kızıl flash işareti (yeni slug'lar) — ~1.6 sn sonra kaldır.
+    const freshSlugs = fresh.map(it => it.slug);
+    setEntering(prev => {
+      const next = new Set(prev);
+      freshSlugs.forEach(s => next.add(s));
+      return next;
+    });
+    window.setTimeout(() => {
+      setEntering(prev => {
+        if (prev.size === 0) return prev;
+        const next = new Set(prev);
+        freshSlugs.forEach(s => next.delete(s));
+        return next;
+      });
+    }, 1600);
+
+    // Toast kuyruğu (eskiden yeniye sıralı ki en yeni en son anons edilsin).
+    const asToast: ToastItem[] = [...fresh]
+      .reverse()
+      .map(it => ({ id: it.id, slug: it.slug, title: it.title }));
+    setToasts(prev => [...prev, ...asToast]);
+  }, []);
 
   // Canlı TR saati (mevcut davranış korunur).
   useEffect(() => {
@@ -76,7 +121,8 @@ export default function BreakingTicker({ items: initial }: { items: TickerItem[]
     return () => window.clearInterval(id);
   }, []);
 
-  // 60 sn polling — yeni son dakika haberlerini başa ekle + toast kuyruğuna at.
+  // 60 sn polling — SSE fallback'i (SSE çalışsa bile açık kalır; seenRef çift eklemeyi
+  // engeller). Yeni son dakika haberlerini başa ekler + toast kuyruğuna atar.
   useEffect(() => {
     let cancelled = false;
 
@@ -89,26 +135,7 @@ export default function BreakingTicker({ items: initial }: { items: TickerItem[]
         if (!res.ok) return;
         const data = (await res.json()) as { now?: string; items?: BreakingApiItem[] };
         if (cancelled) return;
-        if (data.now) sinceRef.current = data.now;
-
-        const fresh = (data.items ?? []).filter(it => !seenRef.current.has(it.slug));
-        if (fresh.length === 0) return;
-        fresh.forEach(it => seenRef.current.add(it.slug));
-
-        // API en yeni → eski sıralı; başa eklerken bu sırayı koru (en yeni en solda).
-        const asTicker: TickerItem[] = fresh.map(it => ({
-          slug: it.slug,
-          title: it.title,
-          timeAgo: timeAgoTr(it.publishedAt),
-          color: it.color,
-        }));
-        setItems(prev => [...asTicker, ...prev].slice(0, 20));
-
-        // Toast kuyruğu (eskiden yeniye sıralı ki en yeni en son anons edilsin).
-        const asToast: ToastItem[] = [...fresh]
-          .reverse()
-          .map(it => ({ id: it.id, slug: it.slug, title: it.title }));
-        setToasts(prev => [...prev, ...asToast]);
+        applyIncoming(data);
       } catch {
         /* ağ hatası — sessiz geç, bir sonraki turda tekrar dener */
       }
@@ -119,7 +146,40 @@ export default function BreakingTicker({ items: initial }: { items: TickerItem[]
       cancelled = true;
       window.clearInterval(id);
     };
-  }, []);
+  }, [applyIncoming]);
+
+  // SSE — anlık son dakika akışı (/api/site/breaking-stream). Bağlantı kurulunca
+  // 15 sn'de bir data olayı gelir; hata olursa EventSource kapatılır ve yukarıdaki
+  // 60 sn polling devralır (fallback). EventSource yoksa (eski tarayıcı) sessiz atlanır.
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.EventSource === 'undefined') return;
+
+    let es: EventSource | null = null;
+
+    try {
+      es = new EventSource(`/api/site/breaking-stream?since=${encodeURIComponent(sinceRef.current)}`);
+    } catch {
+      return; // kurulamadı → polling fallback zaten çalışıyor
+    }
+
+    es.onmessage = (ev: MessageEvent) => {
+      try {
+        const data = JSON.parse(ev.data) as { now?: string; items?: BreakingApiItem[] };
+        applyIncoming(data);
+      } catch {
+        /* bozuk kare — yoksay */
+      }
+    };
+
+    es.onerror = () => {
+      // Otomatik yeniden bağlanma fırtınasını durdur; polling fallback devralır.
+      es?.close();
+    };
+
+    return () => {
+      es?.close();
+    };
+  }, [applyIncoming]);
 
   const dismissToast = useCallback((id: string) => {
     setToasts(prev => prev.filter(t => t.id !== id));
@@ -161,11 +221,12 @@ export default function BreakingTicker({ items: initial }: { items: TickerItem[]
         <div className="ticker-track" style={trackStyle}>
           {rendered.map((item, i) => {
             const isClone = animate && i >= items.length;
+            const isNew = !noMotion && entering.has(item.slug);
             return (
               <Link
                 key={`${item.slug}-${i}`}
                 href={`/haber/${item.slug}`}
-                className="ticker-item"
+                className={`ticker-item${isNew ? ' is-entering' : ''}`}
                 tabIndex={isClone ? -1 : 0}
                 aria-hidden={isClone || undefined}
               >

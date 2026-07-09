@@ -25,6 +25,17 @@ type Invoice = {
 
 type Client = { id: string; companyName: string };
 
+/** /api/invoices/from-time GET — faturalanabilir bekleyen zamanı olan projeler. */
+type TimeProject = {
+  projectId: string;
+  projectName: string;
+  clientId: string | null;
+  clientName: string | null;
+  entries: number;
+  hours: number;
+  estimatedAmount: number;
+};
+
 type FormState = {
   clientId: string;
   currency: string;
@@ -86,9 +97,58 @@ export default function InvoicesPage() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
 
+  // Zamandan fatura oluşturma modalı
+  const [timeModal, setTimeModal] = useState(false);
+  const [timeProjects, setTimeProjects] = useState<TimeProject[]>([]);
+  const [timeLoading, setTimeLoading] = useState(false);
+  const [timeBusy, setTimeBusy] = useState<string | null>(null);
+  const [timeErr, setTimeErr] = useState('');
+
   useEffect(() => {
     fetchData();
   }, []);
+
+  const openTimeModal = async () => {
+    setTimeErr('');
+    setTimeModal(true);
+    setTimeLoading(true);
+    try {
+      const res = await fetch('/api/invoices/from-time');
+      const d = await res.json().catch(() => null);
+      setTimeProjects(res.ok && Array.isArray(d) ? d : []);
+      if (!res.ok) setTimeErr((d && d.error) || 'Projeler yüklenemedi.');
+    } catch {
+      setTimeErr('Projeler yüklenemedi.');
+    } finally {
+      setTimeLoading(false);
+    }
+  };
+
+  const createFromTime = async (projectId: string) => {
+    setTimeErr('');
+    setTimeBusy(projectId);
+    try {
+      const res = await fetch('/api/invoices/from-time', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId }),
+      });
+      const saved = await res.json().catch(() => null);
+      if (!res.ok || !saved?.id) {
+        setTimeErr((saved && saved.error) || 'Fatura oluşturulamadı.');
+        return;
+      }
+      if (!saved.client) saved.client = clients.find((c) => c.id === saved.clientId) as Client | undefined;
+      setInvoices((prev) => [saved as Invoice, ...prev]);
+      // Bu projenin bekleyen zamanı tükendi → listeden düş
+      setTimeProjects((prev) => prev.filter((p) => p.projectId !== projectId));
+      setTab('list');
+    } catch {
+      setTimeErr('Fatura oluşturulamadı.');
+    } finally {
+      setTimeBusy(null);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -259,6 +319,7 @@ export default function InvoicesPage() {
         </div>
         <div className="page-header-actions">
           <Link className="btn btn-ghost" href="/invoices/recurring">🔁 Tekrarlayan Faturalar</Link>
+          <button className="btn btn-ghost" onClick={openTimeModal}>⏱ Zamandan Fatura</button>
           <button className="btn btn-primary" onClick={openAdd}>+ Yeni Fatura</button>
         </div>
       </div>
@@ -499,6 +560,56 @@ export default function InvoicesPage() {
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setModal(null)}>İptal</button>
               <button className="btn btn-primary" onClick={handleSave}>{modal === 'edit' ? 'Kaydet' : 'Fatura Oluştur'}</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Zamandan fatura oluştur ── */}
+      {timeModal && (
+        <>
+          <div className="modal-backdrop" onClick={() => setTimeModal(false)}></div>
+          <div className="modal" style={{ maxWidth: 680 }}>
+            <div className="modal-header">
+              <h2 className="modal-title">⏱ Zamandan Fatura Oluştur</h2>
+              <button className="modal-close" onClick={() => setTimeModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ color: 'var(--text-muted)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>
+                Faturalanmamış billable zaman kayıtları görev bazında kalemlere dönüştürülür ve taslak (bekliyor) fatura oluşturulur. Oluşturulan fatura, ilgili zaman kayıtlarını bağlayarak çift faturalamayı önler.
+              </p>
+              {timeErr && <div className="form-group" style={{ color: 'var(--error)', fontSize: 'var(--text-sm)' }}>{timeErr}</div>}
+              {timeLoading ? (
+                <div style={{ padding: 'var(--space-6)', textAlign: 'center' }}>Yükleniyor...</div>
+              ) : timeProjects.length === 0 ? (
+                <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  Faturalanabilir bekleyen zaman kaydı olan proje yok.
+                </div>
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr><th>Proje</th><th>Müşteri</th><th>Saat</th><th>Tahmini Tutar</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {timeProjects.map((p) => (
+                      <tr key={p.projectId}>
+                        <td style={{ fontWeight: 600 }}>{p.projectName}</td>
+                        <td style={{ color: 'var(--text-muted)' }}>{p.clientName || 'Belirtilmemiş'}</td>
+                        <td className="font-mono">{p.hours} sa</td>
+                        <td className="font-mono" style={{ color: 'var(--primary-light)' }}>{money(p.estimatedAmount)}</td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <button className="btn btn-primary btn-sm" disabled={timeBusy === p.projectId} onClick={() => createFromTime(p.projectId)}>
+                            {timeBusy === p.projectId ? '...' : 'Fatura Oluştur'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setTimeModal(false)}>Kapat</button>
             </div>
           </div>
         </>
