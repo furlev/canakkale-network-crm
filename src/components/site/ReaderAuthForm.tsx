@@ -43,7 +43,10 @@ export default function ReaderAuthForm({ mode }: { mode: 'login' | 'register' })
       const data = await res.json().catch(() => null);
       if (res.ok) {
         // Sunucu bileşenlerinin taze okuyucu durumunu görmesi için tam yenileme.
-        window.location.assign(next.startsWith('/') ? next : '/');
+        // GÜVENLİK: yalnız aynı-origin göreli yol; protokol-göreli (//evil) ve backslash reddedilir.
+        const safeNext =
+          next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\') ? next : '/';
+        window.location.assign(safeNext);
       } else {
         setError(data?.error || 'İşlem tamamlanamadı. Lütfen tekrar dene.');
         setBusy(false);

@@ -47,6 +47,15 @@ export default async function LiveBlogPage(context: { params: Promise<{ slug: st
   const blog = await getBlog(slug);
   if (!blog) notFound();
 
+  // İlgili haber linki: articleId bir SiteArticle id'sidir; haber sayfası slug ile
+  // çözer → slug'ı çöz, yoksa/silinmişse linki hiç gösterme (404 önlenir).
+  const relatedSlug = blog.articleId
+    ? (await prisma.siteArticle.findUnique({
+        where: { id: blog.articleId },
+        select: { slug: true },
+      }))?.slug ?? null
+    : null;
+
   const rows = await prisma.liveBlogEntry.findMany({
     where: { liveBlogId: blog.id },
     orderBy: { createdAt: 'desc' },
@@ -77,9 +86,9 @@ export default async function LiveBlogPage(context: { params: Promise<{ slug: st
               ? 'Gelişmeler anlık olarak buraya düşüyor — en yeni giriş en üstte.'
               : 'Bu canlı yayın sona erdi. Aşağıda tüm gelişmeleri geriye dönük okuyabilirsiniz.'}
           </p>
-          {blog.articleId && (
+          {relatedSlug && (
             <p style={{ marginTop: '12px' }}>
-              <Link className="s-btn" href={`/haber/${blog.articleId}`}>
+              <Link className="s-btn" href={`/haber/${relatedSlug}`}>
                 İlgili haberi oku →
               </Link>
             </p>

@@ -37,14 +37,17 @@ export async function GET(request: Request) {
     if (category) and.push(categoryWhere(category));
     if (status === 'unread') and.push({ read: false });
     else if (status === 'read') and.push({ read: true });
-    // "bana atanan": yalnızca bu kullanıcıya hedeflenmiş bildirimler
+    // GÜVENLİK kapsamı: kullanıcı yalnızca GLOBAL (userId=null) + KENDİNE hedeflenmiş
+    // bildirimleri görür (başkasının kişisel/İK bildirimi sızmaz). "bana atanan" yalnız kendi.
+    const ownScope: Prisma.NotificationWhereInput = { OR: [{ userId: null }, { userId: session.sub }] };
     if (mine) and.push({ userId: session.sub });
+    else and.push(ownScope);
 
     const where: Prisma.NotificationWhereInput = and.length > 0 ? { AND: and } : {};
 
     const [rows, unread, unreadMine] = await Promise.all([
       prisma.notification.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit }),
-      prisma.notification.count({ where: { read: false } }),
+      prisma.notification.count({ where: { read: false, ...ownScope } }),
       prisma.notification.count({ where: { read: false, userId: session.sub } }),
     ]);
 

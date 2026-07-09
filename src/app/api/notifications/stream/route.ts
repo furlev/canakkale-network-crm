@@ -10,11 +10,14 @@ export const dynamic = 'force-dynamic';
  * gönderir. İstek iptal edilince (request.signal) temiz kapanır.
  */
 export async function GET(request: Request) {
+  let session;
   try {
-    await requireLevel('C');
+    session = await requireLevel('C');
   } catch (error) {
     return handleApiError(error, 'Bildirim akışı açılamadı');
   }
+  // GÜVENLİK: akış yalnız GLOBAL + oturum sahibine hedeflenmiş bildirimleri yayar.
+  const ownScope = { OR: [{ userId: null }, { userId: session.sub }] };
 
   const encoder = new TextEncoder();
   let lastSent = new Date();
@@ -52,7 +55,7 @@ export async function GET(request: Request) {
         if (closed) return;
         try {
           const items = await prisma.notification.findMany({
-            where: { createdAt: { gt: lastSent } },
+            where: { createdAt: { gt: lastSent }, ...ownScope },
             orderBy: { createdAt: 'asc' },
             take: 20,
           });

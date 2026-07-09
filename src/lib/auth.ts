@@ -30,6 +30,10 @@ export async function verifySession(token: string): Promise<Session | null> {
   try {
     const { payload } = await jwtVerify(token, getSecret());
     if (!payload.sub) return null;
+    // GÜVENLİK: site okuyucu (reader) token'ı panel oturumu OLARAK kabul edilmez.
+    // reader-auth READER_AUTH_SECRET tanımsızsa AUTH_SECRET'e düşebildiğinden, kind
+    // claim'i ile okuyucu token'ı reddedilir (yetki yükseltme savunması).
+    if (payload.kind === 'reader') return null;
     return {
       sub: payload.sub,
       name: (payload.name as string) || '',

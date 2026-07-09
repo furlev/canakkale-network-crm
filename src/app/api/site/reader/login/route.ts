@@ -17,6 +17,10 @@ const loginSchema = z.object({
   password: z.string().min(1, 'Şifre gerekli').max(200),
 });
 
+// Kullanıcı yok/şifresizken de gerçek bcrypt maliyeti kadar bekle → zamanlama-tabanlı
+// e-posta enumeration'ı kapatılır (yanıt süresi her iki yolda da eşitlenir).
+const DUMMY_HASH = bcrypt.hashSync('cn-timing-guard-dummy', 10);
+
 const MAX_ATTEMPTS = 5;
 const LOCK_MS = 10 * 60 * 1000;
 const attempts = new Map<string, { count: number; lockedUntil: number }>();
@@ -54,6 +58,7 @@ export async function POST(request: Request) {
     const invalid = NextResponse.json({ error: 'E-posta veya şifre hatalı' }, { status: 401 });
 
     if (!reader || !reader.password) {
+      await bcrypt.compare(body.password, DUMMY_HASH); // sabit-maliyet: zamanlama sızıntısını kapat
       registerFailure();
       return invalid;
     }
