@@ -13,6 +13,8 @@ import ReadingProgress from '@/components/site/pages/ReadingProgress';
 import ViewBeacon from '@/components/site/pages/ViewBeacon';
 import ShareBar from '@/components/site/pages/ShareBar';
 import RevealInit from '@/components/site/pages/RevealInit';
+import Lightbox, { type GalleryImage } from '@/components/site/Lightbox';
+import Comments from '@/components/site/Comments';
 import '@/app/(public)/pages.css';
 
 export const revalidate = 120;
@@ -55,6 +57,34 @@ function parseSources(raw: string | null): { title: string; url: string }[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * JSON string → galeri görselleri ([{url,alt}]). Yalnız http(s) URL'ler geçer
+ * (javascript:/data: gibi şemalar elenir); alt zorunlu değildir. Bozuk/boş → [].
+ */
+function parseGallery(raw: string | null): GalleryImage[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map(item => {
+        const url = typeof item === 'string' ? item : item && typeof item === 'object' ? item.url : null;
+        if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return null;
+        const alt = item && typeof item === 'object' && typeof item.alt === 'string' ? item.alt : '';
+        return { url, alt } as GalleryImage;
+      })
+      .filter((g): g is GalleryImage => g !== null);
+  } catch {
+    return [];
+  }
+}
+
+/** videoUrl doğrudan bir video dosyası mı? (YouTube değil, .mp4/.webm/.ogg http(s)) */
+function directVideoUrl(url: string | null | undefined): string | null {
+  if (!url || !/^https?:\/\//i.test(url)) return null;
+  return /\.(mp4|webm|ogg)(\?|#|$)/i.test(url) ? url : null;
 }
 
 export async function generateMetadata(context: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -102,6 +132,9 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
   const tags = parseTags(article.tags);
   const sources = parseSources(article.sourceLinks);
   const embedUrl = youtubeEmbedUrl(article.videoUrl);
+  // YouTube değilse doğrudan video dosyası (mp4/webm/ogg) fallback'i
+  const directVideo = embedUrl ? null : directVideoUrl(article.videoUrl);
+  const gallery = parseGallery(article.gallery);
   const bodyHtml = sanitizeHtml(article.body);
   const catColor = article.category?.color || undefined;
 
@@ -129,6 +162,7 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
     views: true,
     authorName: true,
     district: true,
+    videoUrl: true, // '▶ Video' rozeti için (küçük string)
     tags: true, // kesişim skoru için (küçük JSON string)
     category: { select: { name: true } },
   } as const;
@@ -203,6 +237,7 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
     views: r.views,
     authorName: r.authorName,
     district: r.district,
+    hasVideo: !!r.videoUrl,
   }));
 
   // NewsArticle JSON-LD (Google Haberler) — articleSection (kategori) + keywords (etiketler)
@@ -347,7 +382,23 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
           </div>
         )}
 
+        {directVideo && (
+          <div className="p-video">
+            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+            <video
+              src={directVideo}
+              controls
+              playsInline
+              preload="metadata"
+              title={article.title}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, background: '#000' }}
+            />
+          </div>
+        )}
+
         <div className="prose" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+
+        {gallery.length > 0 && <Lightbox images={gallery} title={article.title} />}
 
         <ShareBar url={canonical} title={article.title} />
 
@@ -377,6 +428,11 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
             </ul>
           </section>
         )}
+      </div>
+
+      {/* ── Okuyucu yorumları ── */}
+      <div className="s-container">
+        <Comments articleId={article.id} />
       </div>
 
       {/* ── İlgili haberler ── */}

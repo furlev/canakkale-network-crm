@@ -1,0 +1,55 @@
+/* MostRead sekmeleri: "En Çok Okunan" / "Trend (24s)".
+   Liste görünümü paylaşılan global sınıfları (mostread-*, mr-*) kullanır;
+   burada yalnızca sekme şeridi ve durum metni stillenir (additive, çakışmasız). */
+
+.tabs {
+  display: inline-flex;
+  gap: 4px;
+  margin-top: 16px;
+  padding: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+.tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft, var(--ink));
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 7px 15px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tabActive {
+  background: var(--accent);
+  color: var(--accent-ink, #fff);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.state {
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--ink-faint, var(--ink-soft));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab {
+    transition: none;
+  }
+}

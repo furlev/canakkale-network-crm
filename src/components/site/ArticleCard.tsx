@@ -20,6 +20,8 @@ export type ArticleCardData = {
   authorName?: string | null;
   /** Çanakkale ilçe slug'ı (varsa kartta '📍 İlçe' rozeti gösterilir). */
   district?: string | null;
+  /** Habere bağlı video (videoUrl) varsa kartta '▶ Video' rozeti gösterilir. */
+  hasVideo?: boolean;
 };
 
 // İstemci-güvenli tarih biçimlendirici. @/lib/site (prisma import eder → sunucuya bağlı)
@@ -71,6 +73,24 @@ export default function ArticleCard({
         {a.district && districtName(a.district) && (
           <span className="s-badge s-badge-cat" style={{ left: 'auto', right: 12 }}>
             📍 {districtName(a.district)}
+          </span>
+        )}
+        {/* Video rozeti — medyanın sol altında; kategori (sol üst) ve ilçe (sağ üst)
+            rozetleriyle çakışmaz. */}
+        {a.hasVideo && (
+          <span
+            className="s-badge"
+            style={{
+              top: 'auto',
+              bottom: 12,
+              left: 12,
+              gap: 5,
+              background: 'rgba(12, 14, 20, 0.62)',
+              color: '#fff',
+              backdropFilter: 'blur(6px)',
+            }}
+          >
+            <span aria-hidden="true">▶</span> Video
           </span>
         )}
       </div>

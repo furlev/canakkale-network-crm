@@ -15,6 +15,7 @@ import NewsletterCTA from '@/components/site/NewsletterCTA';
 import JoinCTA from '@/components/site/JoinCTA';
 import DistrictMap from '@/components/site/DistrictMap';
 import DistrictNewsRail from '@/components/site/DistrictNewsRail';
+import VideoReel from '@/components/site/VideoReel';
 import '../home.css';
 
 export const revalidate = 60;
@@ -243,7 +244,7 @@ export default async function HomePage() {
   return (
     <>
       {/* 1 — Sinematik manşet */}
-      <HeroCinematic items={data.hero} />
+      <HeroCinematic items={data.hero} kinetic />
 
       {/* 2 — İstatistik bandı */}
       {data.stats.articleCount > 0 && <StatsBand stats={stats} />}
@@ -302,6 +303,9 @@ export default async function HomePage() {
 
       {/* 5 — Sokak röportajları */}
       <InterviewReel articles={data.interviews} />
+
+      {/* 5b — Video haberler (varsa; kendi verisini çeker) */}
+      <VideoReel />
 
       {/* 6 — En çok okunanlar */}
       <MostRead items={data.mostRead} />

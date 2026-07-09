@@ -1,12 +1,40 @@
 import type { Metadata } from 'next';
+import { Prisma } from '@prisma/client';
 import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import ArticleCard, { type ArticleCardData } from '@/components/site/ArticleCard';
 import Pagination from '@/components/site/pages/Pagination';
 import RevealInit from '@/components/site/pages/RevealInit';
 import DistrictFilter from '@/components/site/DistrictFilter';
+import SearchSuggest from '@/components/site/SearchSuggest';
 import { DISTRICTS, normalizeDistrict } from '@/lib/districts';
 import '@/app/(public)/pages.css';
+
+/**
+ * Arama alaka filtresi: Postgres to_tsvector('turkish', başlık+özet) ile eşleşen
+ * makale id'lerini döner (gövde-LIKE yerine başlık+özet, dil-farkında kök bulma).
+ * GIN index YOKSA da çalışır (seq-scan); ileride GIN index ile hızlanır.
+ * Raw sorgu herhangi bir sebeple patlarsa başlık+özet contains'e zarifçe düşer.
+ */
+async function buildSearchFilter(q: string): Promise<Prisma.SiteArticleWhereInput | null> {
+  if (!q) return null;
+  try {
+    const rows = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM "SiteArticle"
+      WHERE status = 'published' AND "deletedAt" IS NULL
+        AND to_tsvector('turkish', coalesce(title, '') || ' ' || coalesce(summary, ''))
+            @@ plainto_tsquery('turkish', ${q})
+      LIMIT 1000`;
+    return { id: { in: rows.map(r => r.id) } };
+  } catch {
+    return {
+      OR: [
+        { title: { contains: q, mode: 'insensitive' } },
+        { summary: { contains: q, mode: 'insensitive' } },
+      ],
+    };
+  }
+}
 
 export const revalidate = 120;
 
@@ -40,22 +68,17 @@ export default async function ArchivePage(context: {
   const ilce = normalizeDistrict(first(sp.ilce)); // slug | null
   const page = Math.max(1, parseInt(first(sp.sayfa) || '1', 10) || 1);
 
+  // Arama: gövde-LIKE yerine to_tsvector('turkish', başlık+özet) alaka eşleşmesi.
+  const qFilter = await buildSearchFilter(q);
+
   // İlçe dışındaki temel filtre — ilçe pil sayaçları bu bağlamda hesaplanır
-  const baseWhere = {
+  const baseWhere: Prisma.SiteArticleWhereInput = {
     status: 'published',
     deletedAt: null,
     ...(kategori ? { categorySlug: kategori } : {}),
-    ...(q
-      ? {
-          OR: [
-            { title: { contains: q, mode: 'insensitive' as const } },
-            { summary: { contains: q, mode: 'insensitive' as const } },
-            { body: { contains: q, mode: 'insensitive' as const } },
-          ],
-        }
-      : {}),
+    ...(qFilter ?? {}),
   };
-  const where = { ...baseWhere, ...(ilce ? { district: ilce } : {}) };
+  const where: Prisma.SiteArticleWhereInput = { ...baseWhere, ...(ilce ? { district: ilce } : {}) };
 
   const [total, articles, categories, districtGroups] = await Promise.all([
     prisma.siteArticle.count({ where }),
@@ -139,13 +162,7 @@ export default async function ArchivePage(context: {
           <form className="p-search" action="/haberler" method="get" role="search">
             {kategori && <input type="hidden" name="kategori" value={kategori} />}
             {ilce && <input type="hidden" name="ilce" value={ilce} />}
-            <input
-              type="search"
-              name="q"
-              defaultValue={q}
-              placeholder="Haberlerde ara… (başlık, özet, içerik)"
-              aria-label="Haberlerde ara"
-            />
+            <SearchSuggest name="q" defaultValue={q} placeholder="Haberlerde ara… (başlık, özet)" />
             <button type="submit" className="s-btn s-btn-primary">
               Ara
             </button>

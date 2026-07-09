@@ -18,6 +18,7 @@ model User {
   avatar     String?
   title      String? // B/C pozisyonu: Ekip Lideri, Muhasebe, Editör, Muhabir...
   managerId  String? // bağlı olduğu ekip lideri (B kullanıcısı)
+  notifyPrefs String? // JSON: bildirim kanal/kategori tercihleri (P2)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -112,6 +113,7 @@ model Task {
   priority    String    @default("normal") // low, normal, high, urgent
   dueDate     DateTime?
   recurrence  String? // daily | weekly | monthly — done olunca sonraki örnek üretilir
+  dependsOnId String? // görev bağımlılığı (P2): bu görev başlamadan önce biten görev
 
   projectId String?
   project   Project? @relation(fields: [projectId], references: [id])
@@ -451,7 +453,11 @@ model Notification {
   title     String
   link      String? // CRM içi hedef sayfa, ör. /tips
   read      Boolean  @default(false)
+  userId    String? // hedef kullanıcı (P2 bildirim merkezi); null = global
+  category  String? // filtre kategorisi: invoice | tip | ai | task | site ... (P2)
   createdAt DateTime @default(now())
+
+  @@index([userId, read])
 }
 
 model Setting {
@@ -611,6 +617,7 @@ model AiDraft {
   seoTitle        String?
   metaDescription String?
   socialPost      String?
+  titleVariants   String? // JSON: A/B başlık alternatifleri (P2)
   imageUrl        String? // Imagen görseli (data URI / URL), "temsili" etiketli
   sources         String? // JSON: atıf verilen linkler
   confidence      Float? // fact-check güven skoru 0-1
@@ -673,6 +680,8 @@ model SiteArticle {
   isBreaking      Boolean       @default(false) // son dakika şeridi
   isFeatured      Boolean       @default(false) // anasayfa manşet
   isEditorPick    Boolean       @default(false) // editörün seçimi
+  isPremium       Boolean       @default(false) // paywall — premium okuyucuya özel (P2)
+  altTitle        String? // A/B başlık varyantı (P2)
   publishedAt     DateTime?
   views           Int           @default(0)
   seoTitle        String?
@@ -897,4 +906,126 @@ model AiUsageLog {
   createdAt    DateTime @default(now())
 
   @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// P2 modelleri (gevşek referans — @relation yerine düz id; migration güvenliği)
+// ─────────────────────────────────────────────────────────────
+
+// Günlük görüntülenme sayacı — "Trend / En Çok Okunan (son 24-48s)" için.
+model ArticleViewDaily {
+  id        String   @id @default(uuid())
+  articleId String
+  date      DateTime @db.Date
+  count     Int      @default(0)
+
+  @@unique([articleId, date])
+  @@index([date])
+}
+
+// Okuyucu yorumları + moderasyon kuyruğu (AI ön-skoru ile).
+model SiteComment {
+  id        String   @id @default(uuid())
+  articleId String
+  name      String
+  email     String?
+  body      String
+  status    String   @default("pending") // pending | approved | rejected | spam
+  aiScore   Float? // toksisite/spam ön-skoru 0-1
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([articleId, status])
+  @@index([status, createdAt])
+}
+
+// Site okuyucu hesabı — CRM User'dan TAMAMEN ayrı (farklı oturum cookie'si).
+model SiteReader {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  password     String? // bcrypt; null = henüz giriş yapamaz / sadece bülten
+  name         String?
+  plan         String    @default("free") // free | premium
+  premiumUntil DateTime? // premium bitiş
+  confirmToken String?
+  confirmedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+// Canlı blog (deprem/seçim gecesi) — zaman damgalı akış.
+model LiveBlog {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  title     String
+  status    String   @default("active") // active | ended
+  articleId String? // ilişkili haber (opsiyonel)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model LiveBlogEntry {
+  id         String   @id @default(uuid())
+  liveBlogId String
+  body       String
+  important  Boolean  @default(false) // "önemli" vurgu + push tetikler
+  authorName String?
+  createdAt  DateTime @default(now())
+
+  @@index([liveBlogId, createdAt])
+}
+
+// Zaman takibi + faturalanabilir saat (proje kârlılığı).
+model TimeEntry {
+  id        String   @id @default(uuid())
+  userId    String
+  projectId String?
+  taskId    String?
+  minutes   Int
+  billable  Boolean  @default(true)
+  rate      Float? // saatlik ücret (billable ise)
+  note      String?
+  date      DateTime @db.Date
+  createdAt DateTime @default(now())
+
+  @@index([userId, date])
+  @@index([projectId])
+}
+
+// Proje şablonu — tekrarlayan iş tipleri için görev iskeleti.
+model ProjectTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  tasks       String // JSON: [{title, offsetDays?, dependsOnIndex?}]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// İK-lite: izin talebi.
+model LeaveRequest {
+  id         String   @id @default(uuid())
+  userId     String
+  type       String   @default("annual") // annual | sick | unpaid | other
+  startDate  DateTime @db.Date
+  endDate    DateTime @db.Date
+  status     String   @default("pending") // pending | approved | rejected
+  approverId String?
+  note       String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, status])
+  @@index([status, startDate])
+}
+
+// İK-lite: mesai/devam kaydı (opsiyonel).
+model Attendance {
+  id       String    @id @default(uuid())
+  userId   String
+  date     DateTime  @db.Date
+  checkIn  DateTime?
+  checkOut DateTime?
+  note     String?
+
+  @@unique([userId, date])
 }

@@ -1460,3 +1460,62 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
 @media (prefers-reduced-motion: reduce) {
   .hero-live-dot { animation: none; }
 }
+
+/* ═══ KİNETİK TİPOGRAFİ (W1-B) ═══
+   HeroCinematic kinetic=true + motion tier 'full' iken başlık HARF-maskeli
+   reveal'e geçer (JSX .hero-title-kinetic ekler). Harfler alttan clip/transform
+   ile açılır; son kelime (.is-accent) ayrıca 'wght' (font-variation-settings)
+   nefes animasyonu alır — değişken font yoksa zararsız no-op. reduced-motion /
+   full-olmayan tier'da bu markup zaten üretilmez; alttaki media query yine de
+   güvenlik ağıdır. */
+.hero-title-kinetic {
+  /* Harfler kendi maskesini taşır; kelime bütünlüğü .hero-kw ile korunur */
+  overflow: visible;
+}
+
+.hero-kw {
+  display: inline-block;
+  white-space: nowrap; /* kelime içi harfler bölünmesin, kelimeler arası kayar */
+}
+
+.hero-kl {
+  display: inline-block;
+  animation: hero-letter-in 0.62s var(--ease-out) both;
+  will-change: transform, clip-path, opacity;
+}
+
+@keyframes hero-letter-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.85em) rotate(5deg);
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    clip-path: inset(0 0 -10% 0);
+  }
+}
+
+/* Vurgulu son kelime: reveal biter bitmez ince bir ağırlık nefesi */
+.hero-kw.is-accent .hero-kl {
+  color: var(--cn-red-bright, #ff5a67);
+  animation:
+    hero-letter-in 0.62s var(--ease-out) both,
+    hero-kw-wght 2.8s var(--ease-in-out, ease-in-out) 1s infinite alternate;
+}
+
+@keyframes hero-kw-wght {
+  from { font-variation-settings: 'wght' 520; }
+  to { font-variation-settings: 'wght' 820; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-kl,
+  .hero-kw.is-accent .hero-kl {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    clip-path: none;
+  }
+}

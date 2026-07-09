@@ -1,0 +1,52 @@
+/* "Video Haber" rayı — yatay kaydırmalı şerit. site.css token'larını kullanır
+   (tema-duyarlı). Bölüm başlığı (s-section-head) global home.css'ten gelir. */
+
+.reel {
+  background:
+    radial-gradient(760px 320px at 88% -20%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%);
+}
+
+.track {
+  list-style: none;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(280px, 340px);
+  gap: 20px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding: 4px 4px 18px;
+  margin: 0 -4px;
+  /* iOS momentum + ince kaydırma çubuğu */
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.slide {
+  scroll-snap-align: start;
+  min-width: 0;
+}
+
+/* Kaydırma çubuğu (WebKit) — hafif, accent tonlu */
+.track::-webkit-scrollbar {
+  height: 8px;
+}
+.track::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 999px;
+}
+.track::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (min-width: 1024px) {
+  .track {
+    /* Geniş ekranda kartlar biraz ferahlasın; şerit yine yatay kaydırılır */
+    grid-auto-columns: minmax(320px, 360px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track {
+    scroll-snap-type: none;
+  }
+}

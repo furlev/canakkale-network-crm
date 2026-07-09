@@ -23,16 +23,57 @@ export type HeroItem = {
 const ROTATE_MS = 6000;
 
 /**
+ * Başlığı TR-güvenli HARF harf böler (Intl.Segmenter grapheme; birleşik/aksanlı
+ * karakterleri bozmaz). Her kelime bir sarmalayıcı span (kelime bütün olarak
+ * satır kaydırılır), her harf ayrı span (clip/transform stagger). Son kelime
+ * "vurgulu" işaretlenir (wght animasyonu). Segmenter yoksa Array.from fallback.
+ */
+function renderKineticTitle(title: string) {
+  const words = title.split(/\s+/).filter(Boolean);
+  const seg =
+    typeof Intl !== 'undefined' && typeof (Intl as { Segmenter?: unknown }).Segmenter === 'function'
+      ? new Intl.Segmenter('tr', { granularity: 'grapheme' })
+      : null;
+  let idx = 0;
+  return words.map((word, wi) => {
+    const graphemes = seg ? Array.from(seg.segment(word), s => s.segment) : Array.from(word);
+    const isAccent = wi === words.length - 1; // son kelime vurgulu
+    return (
+      <Fragment key={`${wi}-${word}`}>
+        <span className={`hero-kw${isAccent ? ' is-accent' : ''}`}>
+          {graphemes.map((g, gi) => (
+            <span
+              key={gi}
+              className="hero-kl"
+              style={{ animationDelay: `${Math.min(idx++ * 32, 1200)}ms` }}
+            >
+              {g}
+            </span>
+          ))}
+        </span>{' '}
+      </Fragment>
+    );
+  });
+}
+
+/**
  * ~92vh sinematik manşet: Ken Burns arka plan, kor parçacıkları, kelime kelime
  * başlık reveal'ı ve 6 sn'de bir dönen 01–05 mini manşet listesi.
+ *
+ * kinetic (opt-in): true ise ve motion tier 'full' ise başlık HARF-maskeli kinetik
+ * reveal'e geçer. tier 'full' değilse (reduced-motion → MotionProvider 'off'a düşürür,
+ * ya da lite/off) klasik kelime reveal'i korunur → mevcut davranış bozulmaz.
  */
-export default function HeroCinematic({ items }: { items: HeroItem[] }) {
+export default function HeroCinematic({ items, kinetic = false }: { items: HeroItem[]; kinetic?: boolean }) {
   const [active, setActive] = useState(0);
   const [cycle, setCycle] = useState(0); // manuel seçimde sayaç sıfırlansın diye
+  const [mounted, setMounted] = useState(false); // kinetik yalnız istemcide (Segmenter) devreye girer
   const reducedRef = useRef(false);
   const heroRef = useRef<HTMLElement>(null);
   const tier = useMotionTier();
   const [jsScrub, setJsScrub] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     reducedRef.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -111,6 +152,8 @@ export default function HeroCinematic({ items }: { items: HeroItem[] }) {
   // nabız statik kalır (CANLI rozeti görünür ama titremez).
   const isLive = current.isBreaking === true;
   const liveStatic = tier === 'off';
+  // Kinetik başlık yalnız opt-in + istemcide + tier 'full' (reduced-motion → tier 'off')
+  const kineticActive = kinetic && mounted && tier === 'full';
 
   return (
     <section
@@ -164,17 +207,19 @@ export default function HeroCinematic({ items }: { items: HeroItem[] }) {
             )}
             <span className="hero-date">{current.dateLabel}</span>
           </div>
-          <h1 className="hero-title">
-            {current.title.split(/\s+/).map((word, i) => (
-              <Fragment key={`${i}-${word}`}>
-                <span
-                  className="hero-word"
-                  style={{ animationDelay: `${Math.min(i * 70, 900)}ms` }}
-                >
-                  {word}
-                </span>{' '}
-              </Fragment>
-            ))}
+          <h1 className={`hero-title${kineticActive ? ' hero-title-kinetic' : ''}`}>
+            {kineticActive
+              ? renderKineticTitle(current.title)
+              : current.title.split(/\s+/).map((word, i) => (
+                  <Fragment key={`${i}-${word}`}>
+                    <span
+                      className="hero-word"
+                      style={{ animationDelay: `${Math.min(i * 70, 900)}ms` }}
+                    >
+                      {word}
+                    </span>{' '}
+                  </Fragment>
+                ))}
           </h1>
           {current.summary && <p className="hero-spot">{current.summary}</p>}
           <Link href={`/haber/${current.slug}`} className="s-btn s-btn-primary hero-cta">

@@ -83,6 +83,21 @@ export async function POST(request: Request) {
           /* analitik kritik değil — sessiz geç */
         });
 
+      // EK: Günlük görüntülenme kovası (ArticleViewDaily) — trend hesabı için.
+      // SiteArticle.views denormalize sayacına DOKUNMAZ; bu ayrı, tarih bazlı toplamdır.
+      // UTC gün sınırı (@db.Date ile uyumlu) + best-effort; hata trend içindir, yutulur.
+      const now = new Date();
+      const dayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      await prisma.articleViewDaily
+        .upsert({
+          where: { articleId_date: { articleId: article.id, date: dayUtc } },
+          create: { articleId: article.id, date: dayUtc, count: 1 },
+          update: { count: { increment: 1 } },
+        })
+        .catch(() => {
+          /* trend sayacı kritik değil — sessiz geç */
+        });
+
       return NextResponse.json({ ok: true });
     } catch {
       // Slug yok / silinmiş — sayaç kritik değil, sessizce geç
