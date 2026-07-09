@@ -5,7 +5,6 @@ const sections = [
   { key: 'account', icon: '👤', label: 'Hesap' },
   { key: 'general', icon: '⚙️', label: 'Genel' },
   { key: 'company', icon: '🏢', label: 'Şirket Bilgileri' },
-  { key: 'wordpress', icon: '🔗', label: 'WordPress' },
   { key: 'email', icon: '📧', label: 'E-posta' },
   { key: 'notifications', icon: '🔔', label: 'Bildirimler' },
   { key: 'api', icon: '🔑', label: 'API' },
@@ -36,7 +35,7 @@ const NOTIFICATION_ITEMS = [
   'Proje tamamlandığında',
   'Yeni müşteri eklendiğinde',
   'Görev atandığında',
-  "WordPress'te yeni haber yayınlandığında",
+  'Sitede yeni haber yayınlandığında',
   'Sözleşme süresi dolmak üzereyken',
 ];
 
@@ -54,13 +53,6 @@ const defaults = {
     phone: '+90 286 111 2233',
     email: 'info@canakkale.network',
     taxNo: '1234567890',
-  },
-  wordpress: {
-    url: 'https://canakkale.network',
-    endpoint: '/wp-json/cn-crm/v1',
-    apiKey: '',
-    autoFetch: true,
-    newPostNotify: true,
   },
   email: {
     tipEmail: 'ihbar@canakkale.network',
@@ -123,8 +115,6 @@ export default function SettingsPage() {
     else document.documentElement.removeAttribute('data-theme');
     try { localStorage.setItem('crm-theme', t); } catch { /* */ }
   };
-  const [wpBusy, setWpBusy] = useState(false);
-  const [wpStatus, setWpStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
   const [pwStatus, setPwStatus] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -156,47 +146,6 @@ export default function SettingsPage() {
     }
   };
 
-  const testWordPress = async () => {
-    setWpBusy(true);
-    setWpStatus(null);
-    try {
-      // Kaydedilmemiş alanlarla test etmemek için önce mevcut formu kaydet
-      await fetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'wordpress', value: settings.wordpress }),
-      });
-      const res = await fetch('/api/wordpress/test', { method: 'POST' });
-      const data = await res.json();
-      if (res.ok) {
-        const extra = data.stats ? ` — ${data.stats.total_published} yayında, ${data.stats.this_week} bu hafta` : '';
-        setWpStatus({ ok: true, text: `✅ ${data.message}: ${data.site}${extra}` });
-      } else {
-        setWpStatus({ ok: false, text: `❌ ${data.error || 'Bağlantı kurulamadı'}` });
-      }
-    } catch {
-      setWpStatus({ ok: false, text: '❌ Sunucuya ulaşılamadı' });
-    } finally {
-      setWpBusy(false);
-    }
-  };
-
-  const syncWordPress = async () => {
-    setWpBusy(true);
-    setWpStatus(null);
-    try {
-      const res = await fetch('/api/wordpress/sync', { method: 'POST' });
-      const data = await res.json();
-      setWpStatus(res.ok
-        ? { ok: true, text: `✅ ${data.message}` }
-        : { ok: false, text: `❌ ${data.error || 'Senkronizasyon başarısız'}` });
-    } catch {
-      setWpStatus({ ok: false, text: '❌ Sunucuya ulaşılamadı' });
-    } finally {
-      setWpBusy(false);
-    }
-  };
-
   useEffect(() => {
     fetch('/api/settings')
       .then(res => res.json())
@@ -212,7 +161,6 @@ export default function SettingsPage() {
         setSettings({
           general: { ...defaults.general, ...(data.general || {}) },
           company: { ...defaults.company, ...(data.company || {}) },
-          wordpress: { ...defaults.wordpress, ...(data.wordpress || {}) },
           email: { ...defaults.email, ...(data.email || {}) },
           notifications: Array.isArray(data.notifications) ? data.notifications : defaults.notifications,
           ai: { ...defaults.ai, ...(data.ai || {}) },
@@ -353,34 +301,6 @@ export default function SettingsPage() {
                   </div>
                   <div className="form-group"><label className="form-label">Vergi No</label><input className="form-input" value={settings.company.taxNo} onChange={e => set('company', { ...settings.company, taxNo: e.target.value })} /></div>
                   <SaveBtn section="company" />
-                </>
-              )}
-
-              {active === 'wordpress' && (
-                <>
-                  <h3 className="card-title" style={{ marginBottom: 'var(--space-6)' }}>WordPress Entegrasyonu</h3>
-                  <div className="form-group"><label className="form-label">WordPress URL</label><input className="form-input" value={settings.wordpress.url} onChange={e => set('wordpress', { ...settings.wordpress, url: e.target.value })} /></div>
-                  <div className="form-group"><label className="form-label">API Endpoint</label><input className="form-input" value={settings.wordpress.endpoint} onChange={e => set('wordpress', { ...settings.wordpress, endpoint: e.target.value })} /></div>
-                  <div className="form-group"><label className="form-label">API Anahtarı</label><input className="form-input" type="password" placeholder="API anahtarınızı girin..." value={settings.wordpress.apiKey} onChange={e => set('wordpress', { ...settings.wordpress, apiKey: e.target.value })} /></div>
-                  <div style={{ display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
-                    <button className="btn btn-ghost" disabled={wpBusy} onClick={testWordPress}>🔄 {wpBusy ? 'Bekleyin...' : 'Bağlantıyı Test Et'}</button>
-                    <button className="btn btn-ghost" disabled={wpBusy} onClick={syncWordPress}>📥 Haberleri Senkronize Et</button>
-                  </div>
-                  {wpStatus && (
-                    <div style={{ padding: 'var(--space-3)', borderRadius: 'var(--border-radius)', background: wpStatus.ok ? 'rgba(0,184,148,0.12)' : 'rgba(255,118,117,0.12)', color: wpStatus.ok ? 'var(--success)' : 'var(--error)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>
-                      {wpStatus.text}
-                    </div>
-                  )}
-                  <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-3)' }}>Senkronizasyon Ayarları</h4>
-                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 'var(--text-sm)' }}>Otomatik haber çekme</span>
-                    <Toggle on={settings.wordpress.autoFetch} onToggle={() => set('wordpress', { ...settings.wordpress, autoFetch: !settings.wordpress.autoFetch })} />
-                  </div>
-                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 'var(--text-sm)' }}>Yeni haber bildirimi</span>
-                    <Toggle on={settings.wordpress.newPostNotify} onToggle={() => set('wordpress', { ...settings.wordpress, newPostNotify: !settings.wordpress.newPostNotify })} />
-                  </div>
-                  <SaveBtn section="wordpress" />
                 </>
               )}
 

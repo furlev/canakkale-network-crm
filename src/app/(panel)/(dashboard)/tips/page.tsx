@@ -162,10 +162,10 @@ export default function TipsPage() {
     }
   };
 
-  const convertToWordPress = async (tip: Tip) => {
+  const convertToArticle = async (tip: Tip) => {
     setActionMsg('');
     try {
-      const res = await fetch('/api/wordpress/convert-tip', {
+      const res = await fetch('/api/site-admin/convert-tip', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tipId: tip.id }),
@@ -175,11 +175,10 @@ export default function TipsPage() {
         setActionMsg(`✅ ${data.message}`);
         setTips(prev => prev.map(t => t.id === tip.id ? { ...t, status: 'converted' } : t));
         setSelected(null);
+        // Editör hemen düzenleyebilsin diye taslağı yeni sekmede aç
+        if (data.editUrl) window.open(data.editUrl, '_blank');
       } else {
-        // WP yapılandırılmamışsa yerel olarak işaretleme seçeneği sun
-        if (confirm(`WordPress'e gönderilemedi: ${data.error}\n\nİhbar yine de "Habere Dönüştü" olarak işaretlensin mi?`)) {
-          updateTipStatus(tip.id, 'converted');
-        }
+        setActionMsg(`❌ ${data.error || 'Habere dönüştürülemedi'}`);
       }
     } catch {
       setActionMsg('❌ Sunucuya ulaşılamadı');
@@ -450,7 +449,7 @@ export default function TipsPage() {
                 <button className="btn btn-ghost" onClick={()=>updateTipStatus(selected.id, 'investigating')}>🔍 İncelemeye Al</button>
                 <button className="btn btn-danger btn-sm" onClick={()=>updateTipStatus(selected.id, 'rejected')}>Reddet</button>
                 <button className="btn btn-accent" onClick={()=>updateTipStatus(selected.id, 'verified')}>✅ Doğrula</button>
-                <button className="btn btn-primary" onClick={()=>convertToWordPress(selected)}>📰 Habere Dönüştür (WP Taslak)</button>
+                <button className="btn btn-primary" onClick={()=>convertToArticle(selected)}>📰 Habere Dönüştür (Site Taslağı)</button>
               </div>
             )}
           </div>

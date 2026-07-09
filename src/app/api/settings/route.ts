@@ -10,7 +10,7 @@ import { audit } from '@/lib/audit';
 // Settings are stored as { key, value } rows where value is a JSON string per section.
 
 /** apiKey içeren bölümler — DB'de şifreli (enc:v1:) saklanır. */
-const SECRET_KEYS = ['wordpress', 'ai'] as const;
+const SECRET_KEYS = ['ai'] as const;
 
 /** Kayıtlı değerdeki apiKey alanını (varsa) çözerek döndürür. */
 function decryptApiKeyField(key: string, value: unknown): unknown {

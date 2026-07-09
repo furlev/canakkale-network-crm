@@ -22,12 +22,6 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "${{ vars.CRM_URL }}/api/cron/check-tips" || echo "check-tips atlandı/başarısız"
 
-      - name: WordPress haber senkronu
-        run: |
-          curl -fsS -X POST \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ vars.CRM_URL }}/api/cron/wp-sync" || echo "wp-sync atlandı/başarısız"
-
       - name: Kampanya bitiş kontrolü
         run: |
           curl -fsS -X POST \

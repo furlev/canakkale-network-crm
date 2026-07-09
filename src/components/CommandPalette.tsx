@@ -74,7 +74,7 @@ const COMMANDS: Command[] = [
         .catch(() => ctx.toast('⚠️ İşlem başarısız.'));
     },
   },
-  { id: 'settings', label: 'Ayarlar', icon: '⚙️', perm: 'A', href: '/settings', keywords: 'ayar entegrasyon wordpress smtp' },
+  { id: 'settings', label: 'Ayarlar', icon: '⚙️', perm: 'A', href: '/settings', keywords: 'ayar entegrasyon smtp' },
 ];
 
 /* Arama sonucu türü → grup başlığı (çoğul) */

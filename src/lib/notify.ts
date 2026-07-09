@@ -7,7 +7,7 @@ const TYPE_TO_TOGGLE_INDEX: Record<string, number> = {
   project_completed: 2,  // Proje tamamlandığında
   client: 3,             // Yeni müşteri eklendiğinde
   task: 4,               // Görev atandığında
-  news: 5,               // WordPress'te yeni haber yayınlandığında
+  news: 5,               // Sitede yeni haber yayınlandığında
   contract: 6,           // Sözleşme süresi dolmak üzereyken
 };
 

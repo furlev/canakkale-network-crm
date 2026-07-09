@@ -11,7 +11,6 @@ const PUBLIC_PREFIXES = [
   '/api/calendar/ics', // takvim aboneliği (HMAC imzalı kişisel token ile kendini korur)
   '/api/webhooks/',
   '/api/cron/',
-  '/api/ai/analyze-article', // WordPress eklentisi Bearer secret ile çağırır; rota kendini korur
   '/api/ai/generate-drafts', // cron Bearer CRON_SECRET ile çağırır; rota kendini korur
   '/api/admin/seed-sources', // Bearer CRON_SECRET/admin ile kaynak seed; rota kendini korur
   '/site', // halka açık haber sitesi (canakkale.network)

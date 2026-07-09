@@ -7,7 +7,7 @@ import { isStorageConfigured } from '@/lib/storage';
 /**
  * Entegrasyon kurulum durumu — onboarding checklist için.
  * SADECE boolean döner (bağlı/bağlı değil); hiçbir sır/anahtar/değer sızmaz.
- * SMTP/WordPress DB'deki Setting'e, AI/Drive/Spaces env'e bakar.
+ * SMTP DB'deki Setting'e, AI/Drive/Spaces env'e bakar.
  */
 async function settingHas(key: string, fields: string[]): Promise<boolean> {
   const row = await prisma.setting.findUnique({ where: { key } }).catch(() => null);
@@ -24,15 +24,13 @@ export async function GET() {
   try {
     await requireLevel('B');
 
-    const [emailSetting, wordpressSetting, aiSetting] = await Promise.all([
+    const [emailSetting, aiSetting] = await Promise.all([
       settingHas('email', ['smtpServer', 'smtpUser']),
-      settingHas('wordpress', ['url', 'apiKey']),
       settingHas('ai', ['apiKey']),
     ]);
 
     // SMTP: ayar + parola env değişkeni birlikte gerekli
     const smtp = emailSetting && Boolean(process.env.SMTP_PASSWORD);
-    const wordpress = wordpressSetting;
     // AI: Vertex projesi VEYA GEMINI_API_KEY env VEYA Ayarlar'daki anahtar
     const ai = Boolean(
       process.env.GOOGLE_VERTEX_PROJECT ||
@@ -45,7 +43,6 @@ export async function GET() {
 
     const items = [
       { key: 'ai', label: 'AI Haber Motoru', done: ai, icon: '🤖', link: '/settings', hint: 'Vertex / Gemini anahtarı ile taslak üretimi.' },
-      { key: 'wordpress', label: 'WordPress Bağlantısı', done: wordpress, icon: '🔗', link: '/settings', hint: 'Haber yayını için cn-crm connector.' },
       { key: 'smtp', label: 'E-posta (SMTP)', done: smtp, icon: '📧', link: '/settings', hint: 'Fatura / bülten gönderimi.' },
       { key: 'drive', label: 'Google Drive (Depo)', done: drive, icon: '📂', link: '/settings', hint: 'Dosya deposu entegrasyonu.' },
       { key: 'spaces', label: 'Object Storage (Spaces)', done: spaces, icon: '🗄️', link: '/settings', hint: 'Görselleri CDN üzerinden servis eder.' },

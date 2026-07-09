@@ -248,9 +248,8 @@ export default function AiNewsPage() {
     });
   };
 
-  /* ✓ Onayla & Yayınla — önce düzenlemeleri kaydet, sonra hedefe yayınla.
-     Varsayılan hedef SİTE (canakkale.network); 'wordpress' ikincil seçenek. */
-  const handleApproveAndPublish = async (target: 'site' | 'wordpress' = 'site') => {
+  /* ✓ Onayla & Yayınla — önce düzenlemeleri kaydet, sonra siteye (canakkale.network) yayınla. */
+  const handleApproveAndPublish = async () => {
     if (!edit) return;
     setBusy(true);
     setModalMsg(null);
@@ -259,21 +258,16 @@ export default function AiNewsPage() {
       const res = await fetch(`/api/ai/drafts/${edit.id}/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target }),
+        body: JSON.stringify({}),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.ok) {
         throw new Error((data && data.error) || 'Yayınlama başarısız oldu.');
       }
       if (data.draft) applyToList(data.draft as AiDraft);
-      if (data.target === 'site') {
-        // Site linkini göster — modal açık kalır, editör linke tıklayabilir
-        setModalMsg({ kind: 'success', text: 'Siteye yayınlandı ✓', link: data.siteUrl });
-        setSelected((prev) => (prev ? { ...prev, status: 'published', articleId: data.articleId } : prev));
-      } else {
-        setModalMsg({ kind: 'success', text: `Yayınlandı ✓ (WP #${data.wpId})` });
-        setTimeout(() => { setSelected(null); setEdit(null); setModalMsg(null); }, 1200);
-      }
+      // Site linkini göster — modal açık kalır, editör linke tıklayabilir
+      setModalMsg({ kind: 'success', text: 'Siteye yayınlandı ✓', link: data.siteUrl });
+      setSelected((prev) => (prev ? { ...prev, status: 'published', articleId: data.articleId } : prev));
     } catch (e) {
       setModalMsg({ kind: 'error', text: e instanceof Error ? e.message : 'Yayınlama başarısız oldu.' });
     } finally {
@@ -690,7 +684,6 @@ export default function AiNewsPage() {
                 })()}
                 {districtName(edit.district) && <span className="badge badge-accent">📍 {districtName(edit.district)}</span>}
                 {selected.hasContradiction && <span className="badge badge-error">⚠ Kaynak çelişkisi</span>}
-                {selected.wpId && <span className="badge badge-success">WP #{selected.wpId}</span>}
                 {selected.articleId && <span className="badge badge-success">🌐 Sitede</span>}
               </div>
 
@@ -803,10 +796,7 @@ export default function AiNewsPage() {
               <button className="btn btn-ghost btn-sm" disabled={busy} onClick={handleSaveNote}>💾 Notu Kaydet</button>
               <button className="btn btn-ghost btn-sm" disabled={busy || selected.status === 'published'} onClick={handleRewrite} title="AI ile konudan yeniden üret">🔄 AI ile yeniden yaz</button>
               <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setIgDraftId(edit.id)} title="Taslaktan Instagram postu üret">📸 Instagram</button>
-              <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => handleApproveAndPublish('wordpress')} style={{ marginLeft: 'auto' }} title="Eski WordPress sitesine yayınla">
-                WP&apos;ye Yayınla
-              </button>
-              <button className="btn btn-primary" disabled={busy} onClick={() => handleApproveAndPublish('site')}>
+              <button className="btn btn-primary" disabled={busy} onClick={() => handleApproveAndPublish()} style={{ marginLeft: 'auto' }}>
                 {busy ? 'İşleniyor...' : '🌐 Siteye Yayınla'}
               </button>
             </div>

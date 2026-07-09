@@ -9,16 +9,16 @@ import { isLeaderOrAdmin } from '@/lib/permissions';
 export async function POST() {
   try {
     if (!isLeaderOrAdmin(await getSession())) throw new ApiError(403, 'Bu işlem için ekip lideri/yönetici yetkisi gerekli');
-    const news = await prisma.news.findMany({
-      where: { status: 'published' },
-      orderBy: { publishDate: 'desc' },
+    const news = await prisma.siteArticle.findMany({
+      where: { status: 'published', deletedAt: null },
+      orderBy: { publishedAt: 'desc' },
       take: 8,
-      select: { title: true, category: true },
+      select: { title: true, category: { select: { name: true } } },
     });
     if (news.length === 0) {
       return NextResponse.json({ error: 'Özetlenecek yayınlanmış haber yok' }, { status: 400 });
     }
-    const list = news.map((n, i) => `${i + 1}. [${n.category}] ${n.title}`).join('\n');
+    const list = news.map((n, i) => `${i + 1}. [${n.category?.name || 'Genel'}] ${n.title}`).join('\n');
     const intro = await summarizeText(
       `Aşağıdaki bu haftanın öne çıkan Çanakkale haberlerinden, bültenin başına konacak 2-3 cümlelik sıcak, davetkâr bir giriş paragrafı yaz. Haber başlıklarını tek tek sıralama, genel bir çerçeve çiz.\n\n${list}`,
       'Sen Çanakkale Network haber bülteninin editörüsün. Kısa, akıcı, Türkçe yazarsın.'

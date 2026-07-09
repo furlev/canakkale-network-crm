@@ -34,7 +34,7 @@ export async function GET() {
         WHERE status = 'paid' AND "deletedAt" IS NULL AND "createdAt" >= ${twelveMonthsAgo}
         GROUP BY 1
       `,
-      prisma.news.findMany({ where: { status: 'published' }, orderBy: { publishDate: 'desc' }, take: 5 }),
+      prisma.siteArticle.findMany({ where: { status: 'published', deletedAt: null }, orderBy: { publishedAt: 'desc' }, take: 5, select: { id: true, title: true, views: true, publishedAt: true } }),
       prisma.task.findMany({ where: { status: { not: 'done' }, deletedAt: null }, orderBy: { dueDate: 'asc' }, take: 4, include: { project: { select: { name: true } } } }),
       prisma.tip.findMany({ orderBy: { createdAt: 'desc' }, take: 3, select: { subject: true, createdAt: true } }),
       prisma.invoice.findMany({ where: { deletedAt: null }, orderBy: { updatedAt: 'desc' }, take: 3, select: { invoiceNo: true, amount: true, status: true, updatedAt: true } }),
@@ -102,7 +102,7 @@ export async function GET() {
         id: n.id,
         title: n.title,
         views: n.views,
-        publishDate: n.publishDate,
+        publishDate: n.publishedAt,
       })),
     });
   } catch (error) {

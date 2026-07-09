@@ -56,7 +56,7 @@ const navSections: NavSection[] = [
   {
     title: 'HABERLER',
     items: [
-      { label: 'Haberler', href: '/news', icon: '📰' },
+      { label: 'Haberler', href: '/site-yonetimi', icon: '📰' },
       { label: 'Haber İhbarı', href: '/tips', icon: '🔔' },
       { label: 'AI Haber Kuyruğu', href: '/ai-news', icon: '🤖' },
       { label: 'Reklam Verenler', href: '/advertisers', icon: '📢' },

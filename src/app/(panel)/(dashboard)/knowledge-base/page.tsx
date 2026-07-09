@@ -14,7 +14,7 @@ type Article = {
 const categoryMeta: Record<string, { icon: string; desc: string; color: string }> = {
   'Başlangıç Kılavuzu': { icon: '🚀', desc: 'CRM sistemine hızlı başlangıç rehberi', color: 'var(--primary)' },
   'CRM Kullanımı': { icon: '📊', desc: 'Modüller, özellikler ve detaylı kullanım', color: 'var(--accent)' },
-  'WordPress Entegrasyonu': { icon: '🔗', desc: 'WordPress bağlantısı ve haber yönetimi', color: 'var(--success)' },
+  'Haber Sitesi Yönetimi': { icon: '🔗', desc: 'canakkale.network haber sitesi ve içerik yönetimi', color: 'var(--success)' },
   'Fatura İşlemleri': { icon: '💰', desc: 'Fatura oluşturma, ödeme takibi', color: 'var(--warning)' },
   'Raporlama': { icon: '📈', desc: 'Rapor oluşturma ve analiz araçları', color: 'var(--info)' },
   'Sık Sorulan Sorular': { icon: '❓', desc: 'En çok sorulan sorular ve cevapları', color: 'var(--error)' },

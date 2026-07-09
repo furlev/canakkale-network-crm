@@ -9,10 +9,10 @@ export async function register() {
     throw new Error(`Eksik zorunlu ortam değişken(ler)i: ${missing.join(', ')}`);
   }
 
-  const recommended = ['CRON_SECRET', 'WEBHOOK_SECRET'];
+  const recommended = ['CRON_SECRET'];
   for (const key of recommended) {
     if (!process.env[key]) {
-      console.warn(`[startup] Uyarı: ${key} tanımlı değil — ilgili cron/webhook uçları çalışmaz.`);
+      console.warn(`[startup] Uyarı: ${key} tanımlı değil — ilgili cron uçları çalışmaz.`);
     }
   }
 

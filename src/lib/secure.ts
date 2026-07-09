@@ -12,7 +12,7 @@ export function safeEqual(a: string | undefined | null, b: string | undefined | 
 
 /* ── Sır şifreleme (rest'te): AES-256-GCM, anahtar = SHA-256(AUTH_SECRET) ──
  * Format: enc:v1:<iv-base64>:<tag-base64>:<ciphertext-base64>
- * DB'deki API anahtarları (Setting: wordpress/ai) bu biçimde saklanır. */
+ * DB'deki API anahtarları (Setting: ai) bu biçimde saklanır. */
 
 const ENC_PREFIX = 'enc:v1:';
 
