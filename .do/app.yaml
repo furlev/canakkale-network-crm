@@ -9,7 +9,12 @@ services:
       repo: furlev/canakkale-network-crm
       branch: main
       deploy_on_push: true
-    build_command: npx prisma migrate deploy && npm run build
+    # Not: 20260709011317_lead_contact_fields ilk denemede (drift ifadeleri yüzünden) "failed"
+    # işaretlendi ve P3009 ile sonraki tüm migration'ları bloklad. Aşağıdaki resolve adımı bu
+    # kaydı "rolled-back" yapıp (|| true → zaten uygulanmış/uygulanacaksa zararsız no-op) bloğu
+    # açar; ardından düzeltilmiş migration + p1_foundation temiz uygulanır. Prod sağlıklı olunca
+    # bu resolve satırı kaldırılabilir (tek seferlik iyileştirme).
+    build_command: (npx prisma migrate resolve --rolled-back 20260709011317_lead_contact_fields || true) && npx prisma migrate deploy && npm run build
     run_command: npm start
     environment_slug: node-js
     instance_size_slug: basic-xs
