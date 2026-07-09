@@ -25,7 +25,7 @@ export async function GET(request: Request) {
         orderBy: { createdAt: 'desc' },
         select: {
           id: true, topic: true, title: true, body: true, category: true, tags: true,
-          seoTitle: true, metaDescription: true, socialPost: true, sources: true,
+          seoTitle: true, metaDescription: true, socialPost: true, sources: true, titleVariants: true,
           confidence: true, status: true, reviewerId: true, reviewerName: true,
           wpId: true, articleId: true, newsType: true, createdAt: true, updatedAt: true,
           district: true, qualityScore: true, originalityScore: true, sourceCount: true,

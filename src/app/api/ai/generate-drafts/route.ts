@@ -4,9 +4,9 @@ import { handleApiError, ApiError } from '@/lib/api';
 import { getSession } from '@/lib/auth';
 import { isLeaderOrAdmin } from '@/lib/permissions';
 import { safeEqual } from '@/lib/secure';
-import { ingestAllSources, recentUnusedItems, clusterRecentItems, SOURCE_TRUST_SELECT } from '@/lib/newsfeed';
+import { ingestAllSources, recentUnusedItems, clusterRecentItems, SOURCE_TRUST_SELECT, normalizeLink } from '@/lib/newsfeed';
 import {
-  discoverTopics, factCheckTopic, writeArticleFromTopic, generateArticleImage, analyzeArticle, aiEnabled, writeWeeklyRoundup,
+  discoverTopics, factCheckTopic, writeArticleFromTopic, chooseArticleImage, analyzeArticle, aiEnabled, writeWeeklyRoundup,
   summarizeEngagement, getStyleGuide, getAutoPublishConfig, textOriginalityScore, type AutoPublishConfig,
 } from '@/lib/ai';
 import { budgetStatus } from '@/lib/ai-usage';
@@ -86,6 +86,26 @@ async function produceDrafts(
   }
   const confirmedOf = (i: FeedItems[number]) => (i.clusterId ? (clusterSources.get(i.clusterId)?.size ?? 1) : 1);
 
+  // Gerçek foto sourcing: normalize link → feed öğesi (kaynak türü + mediaUrl ile).
+  // "İzin" telif politikası gereği YALNIZCA kendi/yerel kaynakların (official|local) sağladığı
+  // görsel kullanılır; agregatör/sosyal (Google News vb.) fotoğrafın sahibi olmadığından ELENİR.
+  const linkToItem = new Map<string, FeedItems[number]>();
+  for (const i of items) {
+    if (i.link) linkToItem.set(normalizeLink(i.link), i);
+  }
+  const pickSourcePhoto = (t: Awaited<ReturnType<typeof discoverTopics>>[number]): { url: string; name: string | null } | null => {
+    for (const raw of t.sourceLinks || []) {
+      if (typeof raw !== 'string') continue;
+      const it = linkToItem.get(normalizeLink(raw));
+      if (!it || !it.mediaUrl) continue;
+      const st = it.source?.sourceType;
+      if (st === 'official' || st === 'local') {
+        return { url: it.mediaUrl, name: it.sourceName ?? it.source?.district ?? null };
+      }
+    }
+    return null;
+  };
+
   // konu bul + puanla (tek AI çağrısı — hata olursa tüm istek 500 olmasın, ingest korunsun)
   // Her öğeye kaynak güven bağlamı (güven skoru/türü + teyit sayısı) geçir.
   let topics: Awaited<ReturnType<typeof discoverTopics>> = [];
@@ -123,8 +143,13 @@ async function produceDrafts(
       // SEO/etiket/kategori/sosyal
       let seo: Awaited<ReturnType<typeof analyzeArticle>> | null = null;
       try { seo = await analyzeArticle(article.title, article.body); } catch { seo = null; }
-      // "temsili" görsel (breaking'de atlanır: editör görselsiz de yayınlar)
-      const imageUrl = opts.withImage ? await generateArticleImage(t.headline) : null;
+      // Yayın görseli: izinli gerçek foto varsa ONU kullan (telif: yalnız official/local),
+      // yoksa "temsili" Imagen görseli (kendi görselimize logo filigranı). Breaking'de atlanır.
+      const sourcePhoto = pickSourcePhoto(t);
+      const chosenImage = opts.withImage
+        ? await chooseArticleImage({ prompt: t.headline, sourcePhotoUrl: sourcePhoto?.url, sourceName: sourcePhoto?.name, watermark: true })
+        : null;
+      const imageUrl = chosenImage?.url ?? null;
 
       // Özgünlük/intihal: üretilen gövdeyi doğrulanmış özet + başlığa karşı ölç (deterministik)
       const originalityScore = textOriginalityScore(article.body, `${t.headline}\n${fc.verifiedSummary}`);
@@ -170,6 +195,14 @@ async function produceDrafts(
         notes.push(`🤖 Kural gereği otomatik onaylandı (güven %${Math.round(fc.confidence * 100)}, kalite ${qualityScore}). Planlı yayın: ${scheduledAt.toLocaleString('tr-TR')}. Yayın öncesi editör denetimi önerilir.`);
       }
 
+      // Kaynak linkleri + (varsa) görsel meta (alt/telif atfı). Meta nesnesi url İÇERMEZ;
+      // public parseSources ve WP buildSourcesHtml url'siz nesneyi güvenle yok sayar,
+      // publishDraftToSite bu metadan görsel alt/atıf çıkarır (SiteArticle.imageAlt).
+      const sourceLinks: unknown[] = [...new Set([...(t.sourceLinks || []), ...fc.groundingLinks])].slice(0, 8);
+      if (chosenImage) {
+        sourceLinks.push({ meta: 'image', alt: seo?.imageAlt || null, credit: chosenImage.credit, isAi: chosenImage.isAi });
+      }
+
       // onay kuyruğuna taslak (kural kapalıysa status 'pending' — otomatik yayın YOK)
       const draft = await prisma.aiDraft.create({
         data: {
@@ -181,8 +214,9 @@ async function produceDrafts(
           seoTitle: seo?.seoTitle || null,
           metaDescription: seo?.metaDescription || null,
           socialPost: seo?.socialPost || null,
+          titleVariants: seo?.titleVariants && seo.titleVariants.length ? JSON.stringify(seo.titleVariants) : null,
           imageUrl,
-          sources: JSON.stringify([...new Set([...(t.sourceLinks || []), ...fc.groundingLinks])].slice(0, 8)),
+          sources: JSON.stringify(sourceLinks),
           confidence: fc.confidence,
           status,
           scheduledAt,

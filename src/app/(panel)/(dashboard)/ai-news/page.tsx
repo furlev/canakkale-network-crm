@@ -15,6 +15,7 @@ type AiDraft = {
   seoTitle: string | null;
   metaDescription: string | null;
   socialPost: string | null;
+  titleVariants?: string | null;   // JSON: A/B başlık varyantları (dizi) veya {options, altTitle}
   imageUrl?: string | null;        // yalnızca tekil PUT/publish yanıtlarında gelir (listede taşınmaz)
   hasImage?: boolean;              // liste yanıtı: görsel var mı? (görsel /api/ai/drafts/:id/image'dan yüklenir)
   sources: string | null;          // JSON string dizi (linkler)
@@ -62,6 +63,24 @@ function parseJsonArray(raw: string | null): string[] {
   }
 }
 
+/** titleVariants JSON'unu çöz: dizi (varyantlar) veya {options, altTitle}. */
+function parseTitleVariants(raw: string | null | undefined): { options: string[]; altTitle: string } {
+  if (!raw) return { options: [], altTitle: '' };
+  try {
+    const v = JSON.parse(raw);
+    if (Array.isArray(v)) {
+      return { options: v.filter((x): x is string => typeof x === 'string'), altTitle: '' };
+    }
+    if (v && typeof v === 'object') {
+      const opts = Array.isArray(v.options) ? v.options.filter((x: unknown): x is string => typeof x === 'string') : [];
+      return { options: opts, altTitle: typeof v.altTitle === 'string' ? v.altTitle : '' };
+    }
+  } catch {
+    /* bozuk JSON → boş */
+  }
+  return { options: [], altTitle: '' };
+}
+
 /** Güven skoru rozeti: yeşil >=0.7, sarı 0.5-0.7, kırmızı <0.5. */
 function confidenceBadge(confidence: number | null): { cls: string; text: string } | null {
   if (confidence === null || confidence === undefined) return null;
@@ -101,6 +120,8 @@ type EditState = {
   district: string;        // ilçe slug'ı ('' = belirtilmemiş); PUT ile kaydedilir
   editorNote: string;      // redaksiyon notu (bulk 'note' ile kaydedilir)
   scheduledAt: string;     // datetime-local (bulk 'schedule'/'note' ile kaydedilir)
+  variantOptions: string[]; // A/B başlık alternatifleri (AI önerileri)
+  altTitle: string;        // seçilen alt başlık ('' = yok) → SiteArticle.altTitle
 };
 
 export default function AiNewsPage() {
@@ -143,6 +164,7 @@ export default function AiNewsPage() {
   const openDraft = (d: AiDraft) => {
     setModalMsg(null);
     setSelected(d);
+    const tv = parseTitleVariants(d.titleVariants);
     setEdit({
       id: d.id,
       title: d.title || '',
@@ -154,6 +176,8 @@ export default function AiNewsPage() {
       district: d.district || '',
       editorNote: d.editorNote || '',
       scheduledAt: isoToLocalInput(d.scheduledAt),
+      variantOptions: tv.options,
+      altTitle: tv.altTitle,
     });
   };
 
@@ -167,6 +191,10 @@ export default function AiNewsPage() {
   /** Modal düzenlemelerini PUT ile kaydeder. Başarılıysa güncel taslağı döndürür. */
   const saveEdits = async (extra?: { status?: string }): Promise<AiDraft | null> => {
     if (!edit) return null;
+    // A/B: alt başlık seçiliyse {options, altTitle}, değilse yalnız varyant dizisi
+    const titleVariants = edit.altTitle.trim()
+      ? JSON.stringify({ options: edit.variantOptions, altTitle: edit.altTitle.trim() })
+      : (edit.variantOptions.length ? JSON.stringify(edit.variantOptions) : '');
     const payload = {
       title: edit.title,
       body: edit.body,
@@ -175,6 +203,7 @@ export default function AiNewsPage() {
       tags: JSON.stringify(edit.tags.split(',').map(t => t.trim()).filter(Boolean)),
       seoTitle: edit.seoTitle,
       metaDescription: edit.metaDescription,
+      titleVariants,
       district: edit.district,
       ...(extra || {}),
     };
@@ -554,6 +583,30 @@ export default function AiNewsPage() {
                 <label className="form-label">Başlık</label>
                 <input className="form-input" value={edit.title} onChange={e => setEdit({ ...edit, title: e.target.value })} />
               </div>
+
+              {/* A/B başlık — AI'ın önerdiği alternatifler: birini ana başlık, birini alt başlık yap */}
+              {(edit.variantOptions.length > 0 || edit.altTitle) && (
+                <div className="form-group">
+                  <label className="form-label">🔀 Başlık A/B alternatifleri</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                    {edit.variantOptions.map((v, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span style={{ flex: 1, minWidth: 160, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{v}</span>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdit({ ...edit, title: v })} title="Bunu ana başlık yap">Ana yap</button>
+                        <button type="button" className={`btn btn-sm ${edit.altTitle === v ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setEdit({ ...edit, altTitle: edit.altTitle === v ? '' : v })} title="Bunu alt başlık (A/B) yap">
+                          {edit.altTitle === v ? '✓ Alt başlık' : 'Alt yap'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {edit.altTitle && (
+                    <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+                      Alt başlık: <strong>{edit.altTitle}</strong>{' '}
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEdit({ ...edit, altTitle: '' })}>temizle</button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="form-group">
                 <label className="form-label">İçerik</label>

@@ -237,9 +237,32 @@ export type ArticleAnalysis = {
   category: string;
   tags: string[];
   socialPost: string;
+  /** A/B testi için 2-3 alternatif başlık (ana başlıktan farklı) — P2 */
+  titleVariants: string[];
+  /** Görsel için betimleyici alt metni (jenerik "temsili görsel" yerine) — P2 */
+  imageAlt: string;
   /** Haberin geçtiği Çanakkale ilçesi (ad ya da boş) — taslağa taşınır */
   district?: string;
 };
+
+/** A/B başlık varyantlarını temizler: boş/çok kısa olanları at, ana başlıkla aynı olanı çıkar,
+ *  tekilleştir, en fazla 3 adet döndür. */
+function clampTitleVariants(variants: unknown, mainTitle: string): string[] {
+  if (!Array.isArray(variants)) return [];
+  const mainKey = (mainTitle || '').trim().toLocaleLowerCase('tr-TR');
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of variants) {
+    if (typeof v !== 'string') continue;
+    const t = v.trim();
+    const key = t.toLocaleLowerCase('tr-TR');
+    if (t.length < 8 || key === mainKey || seen.has(key)) continue;
+    seen.add(key);
+    out.push(truncateAtWord(t, 120));
+    if (out.length >= 3) break;
+  }
+  return out;
+}
 
 export async function analyzeArticle(title: string, content: string): Promise<ArticleAnalysis> {
   const ai = await getClient();
@@ -262,19 +285,24 @@ export async function analyzeArticle(title: string, content: string): Promise<Ar
           category: { type: Type.STRING, description: 'Önerilen kategori (Gündem, Asayiş, Spor, Sağlık, Ekonomi, Eğitim, Kültür-Sanat vb.)' },
           tags: { type: Type.ARRAY, items: { type: Type.STRING }, description: '5-8 anahtar etiket' },
           socialPost: { type: Type.STRING, description: 'Sosyal medya için kısa, dikkat çekici paylaşım metni (1-2 emoji ile)' },
+          titleVariants: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'Ana başlıktan FARKLI 2-3 alternatif başlık (A/B testi için; her biri abartısız, farklı açı/vurgu)' },
+          imageAlt: { type: Type.STRING, description: 'Habere uygun betimleyici görsel alt metni (sahneyi anlatan, ~10-15 kelime; "temsili görsel" gibi jenerik ifade kullanma)' },
           district: { type: Type.STRING, description: 'Haberin geçtiği Çanakkale ilçesi (Merkez, Ayvacık, Bayramiç, Biga, Çan, Eceabat, Ezine, Gelibolu, Gökçeada, Lapseki, Yenice) — belirsizse boş bırak' },
         },
-        required: ['summary', 'metaDescription', 'seoTitle', 'category', 'tags', 'socialPost', 'district'],
+        required: ['summary', 'metaDescription', 'seoTitle', 'category', 'tags', 'socialPost', 'titleVariants', 'imageAlt', 'district'],
       },
     },
   })));
   const parsed = parseAiJson<ArticleAnalysis>(res);
   // Çıktı doğrulama: SEO alanlarını karakter limitine, etiketleri 8 adede sabitle
+  const seoTitle = truncateAtWord(parsed.seoTitle || '', 70);
   return {
     ...parsed,
-    seoTitle: truncateAtWord(parsed.seoTitle || '', 70),
+    seoTitle,
     metaDescription: truncateAtWord(parsed.metaDescription || '', 160),
     tags: clampTags(parsed.tags),
+    titleVariants: clampTitleVariants(parsed.titleVariants, seoTitle || safeTitle),
+    imageAlt: truncateAtWord(parsed.imageAlt || '', 160),
   };
 }
 
@@ -593,6 +621,76 @@ export async function generateArticleImage(prompt: string): Promise<string | nul
     console.error('[ai] generateArticleImage', e);
     return null;
   }
+}
+
+/** Geçerli http(s) görsel URL'i mi? (uzantı ya da bilinen görsel yolu). */
+function isImageUrl(u: string | null | undefined): boolean {
+  return !!u && /^https?:\/\//i.test(u) && /\.(jpe?g|png|webp|gif|avif)(\?|#|$)/i.test(u);
+}
+
+/**
+ * AI ürettiği "temsili" görsele (base64 data-URI) logo filigranı basar.
+ * GRACEFUL: 'sharp' paketi kurulu değilse ya da logo dosyası yoksa görseli OLDUĞU GİBİ
+ * döndürür (no-op) — hiçbir bağımlılık eklemez, hata halinde de orijinali korur.
+ * Yalnızca KENDİ ürettiğimiz görsele uygulanır (dış/gerçek fotoğraflara DEĞİL — telif/etik).
+ */
+async function watermarkDataUri(dataUri: string): Promise<string> {
+  try {
+    const m = dataUri.match(/^data:(image\/[^;]+);base64,([\s\S]+)$/);
+    if (!m) return dataUri;
+    // Dinamik import: paket yoksa .catch(null) ile no-op'a düşer, build kırılmaz.
+    const sharpMod: unknown = await import('sharp').catch(() => null);
+    const sharp = (sharpMod as { default?: unknown } | null)?.default as
+      | ((input?: Buffer) => { metadata: () => Promise<{ width?: number }>; resize: (o: unknown) => { png: () => { toBuffer: () => Promise<Buffer> } }; composite: (a: unknown[]) => { png: () => { toBuffer: () => Promise<Buffer> } } })
+      | undefined;
+    if (typeof sharp !== 'function') return dataUri;
+    const fs = await import('fs');
+    const path = await import('path');
+    // Koyu/aydınlık logo; koyu haber görselleri yaygın → aydınlık logo daha okunur
+    const logoPath = path.join(process.cwd(), 'public', 'site', 'logo-light.png');
+    if (!fs.existsSync(logoPath)) return dataUri;
+    const base = Buffer.from(m[2], 'base64');
+    const meta = await sharp(base).metadata();
+    const width = meta.width || 1280;
+    const logoW = Math.max(96, Math.round(width * 0.16));
+    const logo = await sharp(fs.readFileSync(logoPath)).resize({ width: logoW }).png().toBuffer();
+    const out = await sharp(base).composite([{ input: logo, gravity: 'southeast' }]).png().toBuffer();
+    return `data:image/png;base64,${out.toString('base64')}`;
+  } catch (e) {
+    console.error('[ai] watermarkDataUri', e);
+    return dataUri; // hata halinde orijinal görsel korunur
+  }
+}
+
+export type ChosenImage = { url: string; isAi: boolean; credit: string | null };
+
+/**
+ * Yayın görselini seçer (P2 — gerçek foto sourcing + telif politikası):
+ *  - `sourcePhotoUrl` verilmiş VE geçerli görsel URL'i ise → GERÇEK fotoğrafı kullanır
+ *    (isAi=false, credit=kaynak adı). Dış fotoğraf filigranlanmaz (telif/etik).
+ *  - aksi halde → Imagen ile "temsili" görsel üretir (isAi=true); `watermark` true ise
+ *    KENDİ görselimize logo filigranı basılır (sharp kuruluysa; değilse no-op).
+ * Görsel üretilemezse null döner (mevcut davranış: editör görselsiz de yayınlar).
+ */
+export async function chooseArticleImage(opts: {
+  prompt: string;
+  sourcePhotoUrl?: string | null;
+  sourceName?: string | null;
+  watermark?: boolean;
+}): Promise<ChosenImage | null> {
+  // İzinli gerçek fotoğraf varsa onu kullan (çağıran taraf "izin"i kaynak türüyle süzer)
+  if (isImageUrl(opts.sourcePhotoUrl)) {
+    let credit = (opts.sourceName || '').trim() || null;
+    if (!credit) {
+      try { credit = new URL(opts.sourcePhotoUrl!).hostname.replace(/^www\./, ''); } catch { credit = null; }
+    }
+    return { url: opts.sourcePhotoUrl!, isAi: false, credit };
+  }
+  // Temsili görsel (Imagen)
+  const dataUri = await generateArticleImage(opts.prompt);
+  if (!dataUri) return null;
+  const finalUri = opts.watermark ? await watermarkDataUri(dataUri) : dataUri;
+  return { url: finalUri, isAi: true, credit: null };
 }
 
 /* ══════════ P1: GERİ BESLEME · STİL/OTO-YAYIN AYARLARI · ÖZGÜNLÜK ══════════ */

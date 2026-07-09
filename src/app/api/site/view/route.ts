@@ -18,7 +18,42 @@ const viewSchema = z.object({
   slug: z.string().min(1).max(120),
   // Ziyaretçinin geldiği dış host (document.referrer'dan) — trafik kaynağı analizi için.
   referrerHost: z.string().trim().max(160).optional(),
+  // A/B başlık varyantı işaretçisi (hangi başlıkla tıklandı) — opsiyonel, hafif sayaç.
+  v: z.string().trim().max(40).optional(),
 });
+
+/** A/B başlık varyant tıklamasını hafif bir Setting sayacına işler (best-effort).
+ *  Ağır şema değişikliği YOK: Setting('titleAbStats') → { [slug]: { [variant]: sayaç } }.
+ *  Yarış koşulunda birkaç artış kaybolabilir (A/B sinyali için kabul edilebilir); asla fırlatmaz. */
+async function bumpTitleVariant(slug: string, variant: string): Promise<void> {
+  const v = variant.replace(/[^a-z0-9_-]/gi, '').slice(0, 40);
+  if (!v) return;
+  try {
+    const row = await prisma.setting.findUnique({ where: { key: 'titleAbStats' } });
+    let stats: Record<string, Record<string, number>> = {};
+    if (row) {
+      try {
+        const parsed = JSON.parse(row.value);
+        if (parsed && typeof parsed === 'object') stats = parsed as Record<string, Record<string, number>>;
+      } catch { /* bozuk → sıfırdan */ }
+    }
+    const bucket = stats[slug] && typeof stats[slug] === 'object' ? stats[slug] : {};
+    bucket[v] = (typeof bucket[v] === 'number' ? bucket[v] : 0) + 1;
+    stats[slug] = bucket;
+    // Şişmeyi sınırla: en fazla 500 slug tut (fazlasında eski anahtarları at)
+    const keys = Object.keys(stats);
+    if (keys.length > 500) {
+      for (const k of keys.slice(0, keys.length - 500)) delete stats[k];
+    }
+    await prisma.setting.upsert({
+      where: { key: 'titleAbStats' },
+      create: { key: 'titleAbStats', value: JSON.stringify(stats) },
+      update: { value: JSON.stringify(stats) },
+    });
+  } catch {
+    /* A/B sayacı kritik değil — sessiz geç */
+  }
+}
 
 /** Kaba cihaz sınıfı (User-Agent) — kişisel veri değil. */
 function deviceType(ua: string): 'mobile' | 'tablet' | 'desktop' {
@@ -97,6 +132,10 @@ export async function POST(request: Request) {
         .catch(() => {
           /* trend sayacı kritik değil — sessiz geç */
         });
+
+      // A/B başlık varyant tıklaması (body.v veya ?v=) — best-effort, sayaç yolunu kırmaz.
+      const variant = body.v || new URL(request.url).searchParams.get('v') || '';
+      if (variant) await bumpTitleVariant(body.slug, variant);
 
       return NextResponse.json({ ok: true });
     } catch {

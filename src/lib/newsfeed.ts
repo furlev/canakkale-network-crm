@@ -62,7 +62,7 @@ function detectGeo(
   return { district, isLocal };
 }
 
-export type ParsedItem = { title: string; link: string; pubDate: Date | null; summary: string | null; guid: string | null };
+export type ParsedItem = { title: string; link: string; pubDate: Date | null; summary: string | null; guid: string | null; mediaUrl: string | null };
 
 /** URL'i tekilleştirme için normalize eder: tracking parametrelerini + hash'i atar, sondaki / kaldırır. */
 export function normalizeLink(url: string): string {
@@ -93,6 +93,34 @@ function tag(block: string, name: string): string | undefined {
   return m ? m[1] : undefined;
 }
 
+/** HTML-encode'lu URL'i çözer (attribute değeri). */
+function decodeAttr(u: string): string {
+  return u.replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
+}
+
+/** Öğe bloğundan gerçek foto URL'i çıkarır (media:content/thumbnail, enclosure image).
+ *  Yalnızca geçerli http(s) görsel uzantılı ya da image/* türlü URL'ler kabul edilir;
+ *  bulunmazsa null (temsili görsele düşülür). */
+function extractMedia(block: string): string | null {
+  const isImg = (u: string) => /^https?:\/\//i.test(u) && /\.(jpe?g|png|webp|gif|avif)(\?|#|$)/i.test(u);
+  // <media:content url="..."> / <media:thumbnail url="...">
+  const media = block.match(/<media:(?:content|thumbnail)\b[^>]*\burl="([^"]+)"/i);
+  if (media) {
+    const u = decodeAttr(media[1]);
+    // media:content type/medium image olabilir; uzantı yoksa da type image ise kabul
+    const typed = block.match(/<media:content\b[^>]*\b(?:type="image\/[^"]+"|medium="image")/i);
+    if (isImg(u) || typed) return u;
+  }
+  // <enclosure url="..." type="image/..."/> (sıra değişebilir)
+  const enc = block.match(/<enclosure\b[^>]*\burl="([^"]+)"[^>]*\/?>/i);
+  if (enc) {
+    const u = decodeAttr(enc[1]);
+    const imgType = /<enclosure\b[^>]*\btype="image\//i.test(block);
+    if (imgType || isImg(u)) return u;
+  }
+  return null;
+}
+
 /** RSS/Atom XML'inden öğeleri çıkarır (regex tabanlı, bağımlılık yok). */
 export function parseFeed(xml: string): ParsedItem[] {
   const items: ParsedItem[] = [];
@@ -114,7 +142,9 @@ export function parseFeed(xml: string): ParsedItem[] {
     const summary = clean(tag(block, 'description') || tag(block, 'summary') || tag(block, 'content')).slice(0, 600) || null;
     // Kararlı tekilleştirme kimliği: RSS <guid> / Atom <id> (varsa)
     const guid = clean(tag(block, 'guid') || tag(block, 'id')) || null;
-    if (title && link) items.push({ title, link, pubDate, summary, guid });
+    // Gerçek foto sourcing: media:content/thumbnail/enclosure görseli (varsa)
+    const mediaUrl = extractMedia(block);
+    if (title && link) items.push({ title, link, pubDate, summary, guid, mediaUrl });
   }
   return items;
 }
@@ -164,6 +194,7 @@ export async function ingestAllSources(): Promise<{ fetched: number; created: nu
               pubDate: it.pubDate,
               district: geo.district,
               isLocal: geo.isLocal,
+              mediaUrl: it.mediaUrl,
             },
           });
           created++;

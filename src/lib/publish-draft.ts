@@ -65,9 +65,75 @@ type DraftLike = {
   metaDescription: string | null;
   sources: string | null;
   socialPost?: string | null;
+  titleVariants?: string | null;
   reviewerId?: string | null;
   reviewerName?: string | null;
 };
+
+/** Görsel meta nesnesi — generate-drafts, taslağın `sources` dizisine ekler (url'siz).
+ *  { meta:'image', alt, credit, isAi } */
+type ImageMeta = { alt: string | null; credit: string | null; isAi: boolean };
+
+/** Taslağın `sources` JSON'undan görsel meta nesnesini çıkarır (yoksa null). */
+function parseImageMeta(raw: string | null): ImageMeta | null {
+  if (!raw) return null;
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return null;
+    for (const e of arr) {
+      if (e && typeof e === 'object' && (e as { meta?: unknown }).meta === 'image') {
+        const o = e as { alt?: unknown; credit?: unknown; isAi?: unknown };
+        return {
+          alt: typeof o.alt === 'string' && o.alt.trim() ? o.alt.trim() : null,
+          credit: typeof o.credit === 'string' && o.credit.trim() ? o.credit.trim() : null,
+          isAi: o.isAi === true,
+        };
+      }
+    }
+  } catch { /* bozuk JSON → meta yok */ }
+  return null;
+}
+
+/** `sources` JSON'undan görsel meta nesnesini AYIKLAR (SiteArticle.sourceLinks'e sızmasın). */
+function stripImageMeta(raw: string | null): string | null {
+  if (!raw) return raw;
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return raw;
+    const cleaned = arr.filter((e) => !(e && typeof e === 'object' && (e as { meta?: unknown }).meta === 'image'));
+    return JSON.stringify(cleaned);
+  } catch {
+    return raw;
+  }
+}
+
+/** Taslağın seçilmiş A/B alt başlığını çözer. titleVariants iki şekli destekler:
+ *  - dizi (üretilmiş varyantlar, seçim yok) → null
+ *  - { altTitle: string, options?: string[] } (editör seçince) → altTitle */
+function parseAltTitle(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw);
+    if (v && typeof v === 'object' && !Array.isArray(v) && typeof (v as { altTitle?: unknown }).altTitle === 'string') {
+      const t = (v as { altTitle: string }).altTitle.trim();
+      return t || null;
+    }
+  } catch { /* yoksay */ }
+  return null;
+}
+
+/** Yayın görseli alt metnini üretir (P2): gerçek foto → betimleyici alt + telif atfı;
+ *  AI (temsili) görsel → "(temsili görsel)" etiketi. Görsel yoksa null. */
+function buildImageAlt(hasImage: boolean, wasAiImage: boolean, title: string | null, meta: ImageMeta | null): string | null {
+  if (!hasImage) return null;
+  if (wasAiImage) {
+    return title ? `${title} (temsili görsel)` : (meta?.alt || null);
+  }
+  // Gerçek fotoğraf: betimleyici alt (analyze'den) + kaynak atfı (telif)
+  const base = meta?.alt || title || null;
+  if (!base) return meta?.credit ? `Fotoğraf: ${meta.credit}` : null;
+  return meta?.credit ? `${base} (Fotoğraf: ${meta.credit})` : base;
+}
 
 /**
  * Taslağı siteye yayınlar. Zaten yayınlanmışsa/gövdesi boşsa ApiError fırlatır.
@@ -88,6 +154,12 @@ export async function publishDraftToSite(draft: DraftLike, actor: PublishActor, 
   // Görseli (varsa) object storage'a taşı; imageIsAi kararı ORİJİNAL data-URI'ye göre.
   const wasAiImage = !!draft.imageUrl && draft.imageUrl.startsWith('data:');
   const imageUrl = await storeDataUri(draft.imageUrl, 'articles');
+
+  // P2: görsel alt/telif atfı (sources meta) + A/B seçilmiş alt başlık
+  const imageMeta = parseImageMeta(draft.sources);
+  const imageAlt = buildImageAlt(!!imageUrl, wasAiImage, draft.title, imageMeta);
+  const altTitle = parseAltTitle(draft.titleVariants);
+  const sourceLinks = stripImageMeta(draft.sources);
 
   const reviewerId = actor.sub ?? draft.reviewerId ?? null;
   const reviewerName = actor.name ?? draft.reviewerName ?? null;
@@ -111,8 +183,9 @@ export async function publishDraftToSite(draft: DraftLike, actor: PublishActor, 
         district: draft.district,
         tags: draft.tags,
         imageUrl,
-        imageAlt: draft.title ? `${draft.title} (temsili görsel)` : null,
+        imageAlt,
         imageIsAi: wasAiImage,
+        altTitle,
         authorName: reviewerName || 'Çanakkale Network',
         authorId: reviewerId,
         status: 'published',
@@ -122,7 +195,7 @@ export async function publishDraftToSite(draft: DraftLike, actor: PublishActor, 
         seoTitle: draft.seoTitle,
         metaDescription: draft.metaDescription,
         sourceDraftId: draft.id,
-        sourceLinks: draft.sources,
+        sourceLinks,
       },
     });
 

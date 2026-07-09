@@ -304,6 +304,7 @@ export const aiDraftUpdate = z.object({
   metaDescription: z.string().optional(),
   socialPost: z.string().optional(),
   imageUrl: z.string().optional(),
+  titleVariants: z.string().optional(),  // JSON: A/B başlık varyantları / seçilen alt başlık (P2)
   district: z.string().optional(),  // ilçe slug'ı (onay kuyruğunda editör düzeltir)
   // 'published' KASITLI olarak yok: yayın yalnızca .../publish route'undan yapılır (WP'ye gönderip wpId set eder).
   status: z.enum(['pending', 'approved', 'rejected']).optional(),

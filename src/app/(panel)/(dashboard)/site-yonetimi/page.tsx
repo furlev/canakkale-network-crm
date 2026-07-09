@@ -145,6 +145,7 @@ export default function SiteYonetimiPage() {
           <Link href="/site-yonetimi/yorumlar" className="btn btn-ghost">💬 Yorumlar</Link>
           <Link href="/site-yonetimi/feribot" className="btn btn-ghost">⛴️ Feribot</Link>
           <Link href="/site-yonetimi/canli-blog" className="btn btn-ghost">🔴 Canlı Blog</Link>
+          <Link href="/site-yonetimi/okuyucular" className="btn btn-ghost">👥 Okuyucular</Link>
           <Link href="/site-yonetimi/ayarlar" className="btn btn-ghost">⚙️ Site Ayarları</Link>
           <button className="btn btn-primary" onClick={() => router.push('/site-yonetimi/haber/yeni')}>➕ Yeni Haber</button>
         </div>

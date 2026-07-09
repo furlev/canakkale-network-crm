@@ -15,6 +15,8 @@ import ShareBar from '@/components/site/pages/ShareBar';
 import RevealInit from '@/components/site/pages/RevealInit';
 import Lightbox, { type GalleryImage } from '@/components/site/Lightbox';
 import Comments from '@/components/site/Comments';
+import Paywall from '@/components/site/Paywall';
+import { getCurrentReader } from '@/lib/reader-auth';
 import '@/app/(public)/pages.css';
 
 export const revalidate = 120;
@@ -87,6 +89,24 @@ function directVideoUrl(url: string | null | undefined): string | null {
   return /\.(mp4|webm|ogg)(\?|#|$)/i.test(url) ? url : null;
 }
 
+/**
+ * Premium paywall (W2-B) için gövdeyi kırpar: sanitize edilmiş HTML'i blok
+ * sınırlarından (kapanış etiketi sonrası) böler ve ilk ~%30'unu (en az 1 blok)
+ * döndürür — tam bloklar alınır, etiket ortadan kesilmez. Blok tespit edilemezse
+ * (etiketsiz düz metin) güvenli düz-metin özetine düşer.
+ */
+function previewHtml(html: string): string {
+  const blocks = html
+    .split(/(?<=<\/(?:p|h2|h3|h4|ul|ol|blockquote|figure|table|pre)>)/i)
+    .filter(b => b.trim() !== '');
+  if (blocks.length <= 1) {
+    const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    return text ? `<p>${text.slice(0, 400)}…</p>` : '';
+  }
+  const keep = Math.max(1, Math.floor(blocks.length * 0.3));
+  return blocks.slice(0, keep).join('');
+}
+
 export async function generateMetadata(context: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await context.params;
   const article = await getArticle(slug);
@@ -137,6 +157,14 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
   const gallery = parseGallery(article.gallery);
   const bodyHtml = sanitizeHtml(article.body);
   const catColor = article.category?.color || undefined;
+
+  // ── Premium paywall (W2-B) ──
+  // Cookie yalnızca premium haberde okunur; sıradan haberler statik/ISR olarak
+  // kalır (getCurrentReader → cookies() yalnız burada, koşullu çağrılır).
+  const reader = article.isPremium ? await getCurrentReader() : null;
+  const locked = article.isPremium && !reader?.isPremium;
+  const displayHtml = locked ? previewHtml(bodyHtml) : bodyHtml;
+  const paymentEnabled = !!process.env.PAYMENT_PROVIDER;
 
   // Yazar hub bağı: authorSlug varsa onu, yoksa yazar adından türetilmiş slug'ı kullan.
   // Kurumsal imza (varsayılan "Çanakkale Network") için kişisel hub yok → düz metin.
@@ -370,7 +398,7 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
         />
         {article.summary && <p className="p-article-summary">{article.summary}</p>}
 
-        {embedUrl && (
+        {!locked && embedUrl && (
           <div className="p-video">
             <iframe
               src={embedUrl}
@@ -382,7 +410,7 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
           </div>
         )}
 
-        {directVideo && (
+        {!locked && directVideo && (
           <div className="p-video">
             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
             <video
@@ -396,9 +424,13 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
           </div>
         )}
 
-        <div className="prose" dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+        <div className="prose" dangerouslySetInnerHTML={{ __html: displayHtml }} />
 
-        {gallery.length > 0 && <Lightbox images={gallery} title={article.title} />}
+        {locked && (
+          <Paywall authenticated={!!reader} paymentEnabled={paymentEnabled} slug={article.slug} />
+        )}
+
+        {!locked && gallery.length > 0 && <Lightbox images={gallery} title={article.title} />}
 
         <ShareBar url={canonical} title={article.title} />
 
@@ -414,7 +446,7 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
           </nav>
         )}
 
-        {sources.length > 0 && (
+        {!locked && sources.length > 0 && (
           <section className="p-sources" aria-label="Kaynaklar">
             <h2>Kaynaklar</h2>
             <ul>
