@@ -9,6 +9,7 @@ import { notify } from '@/lib/notify';
 // recurrence şeması schemas.ts'e eklenmedi (dosya paylaşımlı); yerel extend ile doğrulanır
 const taskUpdateWithRecurrence = taskUpdate.extend({
   recurrence: z.enum(['daily', 'weekly', 'monthly']).or(z.literal('')).nullable().optional(),
+  dependsOnId: z.string().nullable().optional(), // görev bağımlılığı (P2 W3-B)
 });
 
 /** Tekrarlayan görev tamamlanınca sonraki örneğin son teslim tarihi */
@@ -41,6 +42,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         assigneeId: body.assigneeId !== undefined ? (body.assigneeId || null) : undefined,
         dueDate: body.dueDate !== undefined ? (body.dueDate ? new Date(body.dueDate) : null) : undefined,
         recurrence: body.recurrence !== undefined ? (body.recurrence || null) : undefined,
+        dependsOnId: body.dependsOnId !== undefined ? (body.dependsOnId || null) : undefined,
       },
     });
 

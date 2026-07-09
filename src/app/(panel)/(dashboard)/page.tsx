@@ -6,6 +6,7 @@ import { levelOf, type AccessLevel } from '@/lib/permissions';
 import { AreaChart, LineChart, Donut, formatTry, formatCompact, formatTr } from '@/components/charts';
 import { SkeletonStats, SkeletonCard } from '@/components/Skeleton';
 import EmptyState from '@/components/EmptyState';
+import SetupChecklist from '@/components/SetupChecklist';
 
 /* ───────── Types ───────── */
 type DashboardData = {
@@ -337,6 +338,8 @@ export default function DashboardPage() {
           <Link href="/reports" className="btn btn-primary"><span>📈</span> Raporlar</Link>
         </div>
       </div>
+
+      <SetupChecklist />
 
       {showLoading ? (
         <>

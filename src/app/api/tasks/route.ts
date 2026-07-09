@@ -10,6 +10,7 @@ const safeAssignee = { select: { id: true, name: true, email: true, role: true, 
 // recurrence şeması schemas.ts'e eklenmedi (dosya paylaşımlı); yerel extend ile doğrulanır
 const taskCreateWithRecurrence = taskCreate.extend({
   recurrence: z.enum(['daily', 'weekly', 'monthly']).or(z.literal('')).nullable().optional(),
+  dependsOnId: z.string().nullable().optional(), // görev bağımlılığı (P2 W3-B)
 });
 
 export async function GET(request: Request) {
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
         assigneeId: body.assigneeId || null,
         dueDate: body.dueDate ? new Date(body.dueDate) : null,
         recurrence: body.recurrence || null,
+        dependsOnId: body.dependsOnId || null,
       },
     });
 

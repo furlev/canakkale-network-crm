@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import EmptyState from '@/components/EmptyState';
 
 type Item = { id?: string; description: string; quantity: number; unitPrice: number; vatRate: number };
 
@@ -287,7 +288,7 @@ export default function InvoicesPage() {
           {loading ? (
             <div style={{ padding: 'var(--space-8)', textAlign: 'center' }}>Yükleniyor...</div>
           ) : invoices.length === 0 ? (
-            <div style={{ padding: 'var(--space-8)', textAlign: 'center', color: 'var(--text-muted)' }}>Kayıtlı fatura yok.</div>
+            <EmptyState icon="📄" title="Henüz fatura yok" description="İlk faturanızı oluşturarak tahsilat takibine başlayın." actionLabel="+ Yeni Fatura" onAction={openAdd} />
           ) : (
             <table className="data-table">
               <thead>

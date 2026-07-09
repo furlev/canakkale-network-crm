@@ -364,6 +364,8 @@ export default function TeamPage() {
         <input className="form-input" style={{ maxWidth: 320 }} placeholder="İsim, e-posta veya pozisyon ara..." value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
+      <WorkloadPanel />
+
       <div className="data-table-container">
         {loading ? (
           <div style={{ padding: 'var(--space-8)', textAlign: 'center' }}>Yükleniyor...</div>
@@ -425,6 +427,9 @@ export default function TeamPage() {
           </table>
         )}
       </div>
+
+      {/* ── İK-lite: İzin & Mesai (W3-C, additive bölüm) ── */}
+      <HrLeaveSection me={me} team={team} />
 
       {/* ── Yeni kullanıcı ── */}
       {isAdding && (
@@ -737,5 +742,344 @@ function UserFormFields({
         </div>
       )}
     </>
+  );
+}
+
+/* ── İş Yükü Paneli (P2 W3-B) ───────────────────────────────────────────────
+ * Kendi kendine yeten bileşen: /api/team/workload (B/A) uçtan kişi başına açık
+ * görev, gecikmiş görev, öncelik-ağırlıklı yük ve son 7 gün kaydedilen süreyi
+ * çeker; yükün yoğunluğuna göre renkli bir liste (heatmap) gösterir.
+ */
+type WorkloadRow = {
+  userId: string;
+  name: string;
+  title?: string | null;
+  role: string;
+  openTasks: number;
+  overdueTasks: number;
+  loadScore: number;
+  byPriority: Record<string, number>;
+  loggedMinutes7d: number;
+};
+
+function WorkloadPanel() {
+  const [rows, setRows] = useState<WorkloadRow[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && !loaded) {
+      setLoading(true);
+      fetch('/api/team/workload')
+        .then((r) => (r.ok ? r.json() : []))
+        .then((d) => { setRows(Array.isArray(d) ? d : []); setLoaded(true); })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
+  };
+
+  const maxLoad = Math.max(1, ...rows.map((r) => r.loadScore));
+  const heat = (score: number) => {
+    const ratio = score / maxLoad;
+    if (ratio >= 0.75) return { bg: 'rgba(239,68,68,0.15)', bar: 'var(--error)' };
+    if (ratio >= 0.4) return { bg: 'rgba(245,158,11,0.15)', bar: 'var(--warning)' };
+    if (score > 0) return { bg: 'rgba(34,197,94,0.12)', bar: 'var(--success)' };
+    return { bg: 'transparent', bar: 'var(--border-strong)' };
+  };
+  const fmtH = (m: number) => (m >= 60 ? `${Math.round((m / 60) * 10) / 10}s` : `${m}dk`);
+
+  return (
+    <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={toggle}>
+        <h3 style={{ margin: 0 }}>📊 İş Yükü {open ? '' : '(göster)'}</h3>
+        <button className="btn btn-ghost btn-sm">{open ? 'Gizle ▲' : 'Aç ▼'}</button>
+      </div>
+      {open && (
+        <div style={{ marginTop: 'var(--space-4)' }}>
+          {loading ? (
+            <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--text-muted)' }}>Yükleniyor...</div>
+          ) : rows.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)' }}>Veri yok.</div>
+          ) : (
+            <div className="data-table-container">
+              <table className="data-table">
+                <thead>
+                  <tr><th>Kişi</th><th>Açık Görev</th><th>Gecikmiş</th><th>Öncelik</th><th>Tahmini Yük</th><th>Son 7 Gün</th></tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => {
+                    const h = heat(r.loadScore);
+                    return (
+                      <tr key={r.userId} style={{ background: h.bg }}>
+                        <td>
+                          <div style={{ fontWeight: 500 }}>{r.name}</div>
+                          {r.title && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{r.title}</div>}
+                        </td>
+                        <td style={{ fontWeight: 600 }}>{r.openTasks}</td>
+                        <td style={r.overdueTasks > 0 ? { color: 'var(--error)', fontWeight: 600 } : undefined}>{r.overdueTasks || '—'}</td>
+                        <td style={{ fontSize: 'var(--text-xs)' }}>
+                          {r.byPriority.urgent ? <span className="badge badge-error" style={{ marginRight: 2 }}>{r.byPriority.urgent} acil</span> : null}
+                          {r.byPriority.high ? <span className="badge badge-warning" style={{ marginRight: 2 }}>{r.byPriority.high} yük.</span> : null}
+                          {!r.byPriority.urgent && !r.byPriority.high ? '—' : null}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div className="progress-bar" style={{ flex: 1, minWidth: 60 }}>
+                              <div className="progress-fill" style={{ width: `${Math.round((r.loadScore / maxLoad) * 100)}%`, background: h.bar }}></div>
+                            </div>
+                            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{r.loadScore}</span>
+                          </div>
+                        </td>
+                        <td>{r.loggedMinutes7d > 0 ? fmtH(r.loggedMinutes7d) : '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * İK-lite: İzin talepleri + Mesai (devam) + çeyreklik özet.
+ * Tümü self-contained; kendi verisini çeker. team sayfasına additive eklenir.
+ * ══════════════════════════════════════════════════════════════════ */
+
+type LeaveRow = {
+  id: string; userId: string; type: string; startDate: string; endDate: string;
+  status: string; note: string | null; approverId: string | null; createdAt: string;
+  user?: { id: string; name: string; title: string | null } | null;
+};
+type AttendanceRow = {
+  id: string; userId: string; date: string; checkIn: string | null; checkOut: string | null;
+  note: string | null; user?: { id: string; name: string } | null;
+};
+
+const LEAVE_TYPE_LABEL: Record<string, string> = { annual: 'Yıllık İzin', sick: 'Hastalık', unpaid: 'Ücretsiz', other: 'Diğer' };
+const LEAVE_STATUS: Record<string, { l: string; c: string }> = {
+  pending: { l: 'Bekliyor', c: 'badge-warning' },
+  approved: { l: 'Onaylı', c: 'badge-success' },
+  rejected: { l: 'Reddedildi', c: 'badge-error' },
+};
+const fmtDate = (s: string) => new Date(s).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const fmtTime = (s: string | null) => (s ? new Date(s).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—');
+/** Gün farkı (dahil): 10→12 = 3 gün. */
+const leaveDays = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000) + 1;
+
+function HrLeaveSection({ me, team }: { me: { id: string; role: string } | null; team: User[] }) {
+  const isManager = me?.role === 'admin' || me?.role === 'editor';
+  const [tab, setTab] = useState<'mine' | 'team' | 'attendance' | 'summary'>('mine');
+
+  const [mine, setMine] = useState<LeaveRow[]>([]);
+  const [teamLeaves, setTeamLeaves] = useState<LeaveRow[]>([]);
+  const [myAtt, setMyAtt] = useState<AttendanceRow[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const [form, setForm] = useState({ type: 'annual', startDate: '', endDate: '', note: '' });
+
+  const loadMine = () => fetch('/api/leave-requests?scope=mine').then((r) => (r.ok ? r.json() : [])).then((d) => setMine(Array.isArray(d) ? d : [])).catch(() => {});
+  const loadTeam = () => fetch('/api/leave-requests?scope=team').then((r) => (r.ok ? r.json() : [])).then((d) => setTeamLeaves(Array.isArray(d) ? d : [])).catch(() => {});
+  const loadAtt = () => fetch('/api/attendance?scope=mine').then((r) => (r.ok ? r.json() : [])).then((d) => setMyAtt(Array.isArray(d) ? d : [])).catch(() => {});
+
+  useEffect(() => {
+    loadMine();
+    loadAtt();
+    if (isManager) loadTeam();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isManager]);
+
+  const submitLeave = async () => {
+    setMsg('');
+    if (!form.startDate || !form.endDate) { setMsg('Başlangıç ve bitiş tarihi zorunlu'); return; }
+    setBusy(true);
+    try {
+      const res = await fetch('/api/leave-requests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      if (res.ok) {
+        setForm({ type: 'annual', startDate: '', endDate: '', note: '' });
+        await loadMine();
+        if (isManager) await loadTeam();
+      } else {
+        const d = await res.json().catch(() => null);
+        setMsg(d?.error || d?.issues?.[0]?.message || 'Talep oluşturulamadı');
+      }
+    } catch { setMsg('Sunucuya ulaşılamadı'); }
+    finally { setBusy(false); }
+  };
+
+  const cancelLeave = async (id: string) => {
+    if (!confirm('İzin talebini iptal etmek istiyor musunuz?')) return;
+    const res = await fetch(`/api/leave-requests/${id}`, { method: 'DELETE' });
+    if (res.ok) { setMine((l) => l.filter((x) => x.id !== id)); if (isManager) loadTeam(); }
+  };
+
+  const decide = async (id: string, status: 'approved' | 'rejected') => {
+    const res = await fetch(`/api/leave-requests/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }),
+    });
+    if (res.ok) { const u = await res.json(); setTeamLeaves((l) => l.map((x) => (x.id === id ? { ...x, status: u.status } : x))); }
+  };
+
+  const punch = async (action: 'in' | 'out') => {
+    const res = await fetch('/api/attendance', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }),
+    });
+    if (res.ok) await loadAtt();
+  };
+
+  const pendingCount = teamLeaves.filter((l) => l.status === 'pending').length;
+
+  return (
+    <div className="section-card" style={{ marginTop: 'var(--space-6)' }}>
+      <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 600, marginBottom: 'var(--space-3)' }}>🏖️ İzin & Mesai</h2>
+      <div className="tabs" style={{ marginBottom: 'var(--space-4)' }}>
+        <button className={`tab ${tab === 'mine' ? 'active' : ''}`} onClick={() => setTab('mine')}>İzinlerim</button>
+        {isManager && (
+          <button className={`tab ${tab === 'team' ? 'active' : ''}`} onClick={() => setTab('team')}>
+            Ekip İzinleri{pendingCount > 0 ? ` (${pendingCount})` : ''}
+          </button>
+        )}
+        <button className={`tab ${tab === 'attendance' ? 'active' : ''}`} onClick={() => setTab('attendance')}>Mesai</button>
+        {isManager && <button className={`tab ${tab === 'summary' ? 'active' : ''}`} onClick={() => setTab('summary')}>Çeyreklik Özet</button>}
+      </div>
+
+      {/* ── İzinlerim ── */}
+      {tab === 'mine' && (
+        <div>
+          <div className="grid-2" style={{ alignItems: 'end', marginBottom: 'var(--space-3)' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">İzin Türü</label>
+              <select className="form-select" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+                <option value="annual">Yıllık İzin</option>
+                <option value="sick">Hastalık</option>
+                <option value="unpaid">Ücretsiz</option>
+                <option value="other">Diğer</option>
+              </select>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Not (opsiyonel)</label>
+              <input className="form-input" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Kısa açıklama" />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Başlangıç</label>
+              <input type="date" className="form-input" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">Bitiş</label>
+              <input type="date" className="form-input" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
+            </div>
+          </div>
+          {msg && <div style={{ color: 'var(--error)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-2)' }}>{msg}</div>}
+          <button className="btn btn-primary btn-sm" onClick={submitLeave} disabled={busy}>{busy ? '...' : '+ İzin Talebi Oluştur'}</button>
+
+          <div style={{ marginTop: 'var(--space-4)' }}>
+            {mine.length === 0 ? (
+              <div className="empty-hint">Henüz izin talebiniz yok.</div>
+            ) : mine.map((l) => {
+              const st = LEAVE_STATUS[l.status] || LEAVE_STATUS.pending;
+              return (
+                <div key={l.id} className="list-row">
+                  <div className="list-row-main">
+                    <div className="list-row-title">{LEAVE_TYPE_LABEL[l.type] || l.type} · {leaveDays(l.startDate, l.endDate)} gün</div>
+                    <div className="text-meta">{fmtDate(l.startDate)} → {fmtDate(l.endDate)}{l.note ? ` · ${l.note}` : ''}</div>
+                  </div>
+                  <div className="list-row-actions">
+                    <span className={`badge ${st.c}`}>{st.l}</span>
+                    {l.status === 'pending' && <button className="btn btn-ghost btn-sm" onClick={() => cancelLeave(l.id)}>İptal</button>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Ekip İzinleri (yönetici) ── */}
+      {tab === 'team' && isManager && (
+        <div>
+          {teamLeaves.length === 0 ? (
+            <div className="empty-hint">Ekipte izin talebi yok.</div>
+          ) : teamLeaves.map((l) => {
+            const st = LEAVE_STATUS[l.status] || LEAVE_STATUS.pending;
+            return (
+              <div key={l.id} className="list-row">
+                <div className="list-row-main">
+                  <div className="list-row-title">{l.user?.name || 'Bilinmeyen'} — {LEAVE_TYPE_LABEL[l.type] || l.type}</div>
+                  <div className="text-meta">{fmtDate(l.startDate)} → {fmtDate(l.endDate)} · {leaveDays(l.startDate, l.endDate)} gün{l.note ? ` · ${l.note}` : ''}</div>
+                </div>
+                <div className="list-row-actions">
+                  <span className={`badge ${st.c}`}>{st.l}</span>
+                  {l.status === 'pending' && (
+                    <>
+                      <button className="btn btn-primary btn-sm" onClick={() => decide(l.id, 'approved')}>Onayla</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => decide(l.id, 'rejected')}>Reddet</button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Mesai (devam) ── */}
+      {tab === 'attendance' && (
+        <div>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)' }}>
+            <button className="btn btn-primary btn-sm" onClick={() => punch('in')}>🟢 Giriş Yap</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => punch('out')}>🔴 Çıkış Yap</button>
+          </div>
+          {myAtt.length === 0 ? (
+            <div className="empty-hint">Mesai kaydı yok.</div>
+          ) : myAtt.map((a) => (
+            <div key={a.id} className="list-row">
+              <div className="list-row-main">
+                <div className="list-row-title">{fmtDate(a.date)}</div>
+                <div className="text-meta">Giriş: {fmtTime(a.checkIn)} · Çıkış: {fmtTime(a.checkOut)}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Çeyreklik Özet (yönetici): Warn + izin metrikleri ── */}
+      {tab === 'summary' && isManager && (
+        <div>
+          <p className="text-meta" style={{ marginBottom: 'var(--space-3)' }}>
+            Basit özet: kişi başı uyarı sayısı (Warn) ve onaylı izin günleri. Görev/haber metrikleri için /editor-performance.
+          </p>
+          {team.filter((u) => u.role !== 'admin').length === 0 ? (
+            <div className="empty-hint">Özetlenecek ekip üyesi yok.</div>
+          ) : team.filter((u) => u.role !== 'admin').map((u) => {
+            const approvedDays = teamLeaves
+              .filter((l) => l.userId === u.id && l.status === 'approved')
+              .reduce((sum, l) => sum + leaveDays(l.startDate, l.endDate), 0);
+            const warns = u._count?.warnsReceived ?? 0;
+            return (
+              <div key={u.id} className="list-row">
+                <div className="list-row-main">
+                  <div className="list-row-title">{u.name}</div>
+                  <div className="text-meta">{u.title || '—'}</div>
+                </div>
+                <div className="list-row-actions">
+                  <span className={`badge ${warns > 0 ? 'badge-warning' : 'badge-neutral'}`}>⚠️ {warns} uyarı</span>
+                  <span className="badge badge-info">🏖️ {approvedDays} gün izin</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

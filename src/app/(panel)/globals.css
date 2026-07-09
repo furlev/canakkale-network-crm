@@ -2717,3 +2717,71 @@ img { max-width: 100%; height: auto; }
   }
   .dt .data-table tbody td[colspan]::before { content: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   [W3-C] Tasarım sistemi sağlamlaştırma — yüksek-tekrar inline blokların
+   utility/component sınıflarına çıkarımı + 'compact' yoğunluk modu.
+   (additive — mevcut kurallara DOKUNULMADI; yalnızca yeni sınıflar eklendi)
+
+   NOT (kalan tekrarlar — sonraki refactor için): stat-card grid'leri hâlâ
+   inline `style={{ marginBottom }}` kullanıyor; modal `maxWidth` inline;
+   grid-2 form satırları tekrar ediyor. Bunlar tek tek düşük riskli olduğundan
+   bu turda çıkarılmadı — .list-row ve .text-meta en yüksek tekrar oranına sahipti.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── .list-row: ikon/başlık/meta + sağda aksiyon içeren liste satırı ──
+   (warn listesi, erişim listesi, izin/mesai listeleri vb. tekrarını birleştirir) */
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.list-row:last-child { border-bottom: none; }
+.list-row-main { flex: 1; min-width: 0; }
+.list-row-title { font-size: var(--text-sm); color: var(--text-primary); }
+.list-row-actions { display: inline-flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
+
+/* ── .text-meta: küçük, soluk yardımcı metin (kod genelinde en çok tekrar eden inline) ── */
+.text-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.text-meta-sm { font-size: var(--text-sm); color: var(--text-secondary); }
+
+/* ── .empty-hint: ortalanmış boş-durum bildirimi (birçok listede tekrar) ── */
+.empty-hint {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  padding: var(--space-6) var(--space-4);
+}
+
+/* ── Ek badge varyantı: nötr (etiket/durum) ── */
+.badge-neutral {
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+
+/* ── .section-card: hafif kart bölümü (İK sekmeleri gibi gruplu içerik) ── */
+.section-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--border-radius);
+  padding: var(--space-4);
+}
+.section-card + .section-card { margin-top: var(--space-4); }
+
+/* ── 'compact' yoğunluk modu ──
+   Kapsayıcıya data-density="compact" verildiğinde tablo/kart/badge boşlukları
+   sıkışır. Öznitelik yoksa hiçbir şey değişmez (geriye tam uyum). */
+[data-density="compact"] .stat-card { padding: var(--space-3); }
+[data-density="compact"] .stat-card-value { font-size: var(--text-2xl); }
+[data-density="compact"] .card { padding: var(--space-3); }
+[data-density="compact"] .section-card { padding: var(--space-3); }
+[data-density="compact"] .data-table th,
+[data-density="compact"] .data-table td { padding: var(--space-2) var(--space-3); }
+[data-density="compact"] .list-row { padding: var(--space-1) 0; }
+[data-density="compact"] .badge { padding: 2px 8px; }
+[data-density="compact"] .btn-sm { padding: 2px 8px; }

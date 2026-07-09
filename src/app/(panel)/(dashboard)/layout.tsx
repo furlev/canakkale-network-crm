@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { canAccessPath } from '@/lib/permissions';
 import NotificationStream, { type LiveNotification } from '@/components/NotificationStream';
 import CommandPalette, { type AccessInfo } from '@/components/CommandPalette';
+import ShortcutHelp from '@/components/ShortcutHelp';
 
 /* ── Navigation data ─────────────────────────────────── */
 interface NavItem {
@@ -36,6 +37,7 @@ const navSections: NavSection[] = [
     items: [
       { label: 'Projeler', href: '/projects', icon: '📁' },
       { label: 'Görevler', href: '/tasks', icon: '✅' },
+      { label: 'Zaman Takibi', href: '/time', icon: '⏱️' },
       { label: 'Takvim', href: '/calendar', icon: '📅' },
     ],
   },
@@ -669,6 +671,9 @@ export default function DashboardLayout({
 
       {/* Ctrl+K global arama paleti */}
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} access={access} />
+
+      {/* "?" tuşu ile klavye kısayolları yardımı */}
+      <ShortcutHelp />
     </div>
   );
 }

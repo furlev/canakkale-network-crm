@@ -43,6 +43,12 @@ export const metadata: Metadata = {
   },
   description: DEFAULT_SITE_SETTINGS.description,
   applicationName: 'Çanakkale Network',
+  // i18n iskele (W3-C): hreflang alternatifleri. İçerik çevirisi henüz yok;
+  // 'en' rotası ileride devreye alınınca gerçek sayfaya bağlanacak (placeholder).
+  alternates: {
+    canonical: '/',
+    languages: { 'tr-TR': '/', en: '/en' },
+  },
   openGraph: {
     type: 'website',
     locale: 'tr_TR',

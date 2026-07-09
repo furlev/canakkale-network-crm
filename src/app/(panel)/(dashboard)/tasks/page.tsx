@@ -9,6 +9,7 @@ type Task = {
   priority: string;
   dueDate?: string | null;
   recurrence?: string | null;
+  dependsOnId?: string | null;
   projectId?: string | null;
   assigneeId?: string | null;
   assignee?: { id: string; name: string } | null;
@@ -28,9 +29,10 @@ type TaskForm = {
   dueDate: string;
   assigneeId: string;
   recurrence: string;
+  dependsOnId: string;
 };
 
-const emptyForm: TaskForm = { title: '', description: '', status: 'todo', priority: 'normal', dueDate: '', assigneeId: '', recurrence: '' };
+const emptyForm: TaskForm = { title: '', description: '', status: 'todo', priority: 'normal', dueDate: '', assigneeId: '', recurrence: '', dependsOnId: '' };
 
 const columns = [
   { key: 'todo', title: 'Yapılacak', color: 'var(--border-strong)' },
@@ -100,6 +102,7 @@ export default function TasksPage() {
     dueDate: form.dueDate || null,
     assigneeId: form.assigneeId || null,
     recurrence: form.recurrence || null,
+    dependsOnId: form.dependsOnId || null,
   });
 
   const handleCreateTask = async () => {
@@ -135,6 +138,7 @@ export default function TasksPage() {
       dueDate: task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : '',
       assigneeId: task.assigneeId || '',
       recurrence: task.recurrence || '',
+      dependsOnId: task.dependsOnId || '',
     });
   };
 
@@ -164,6 +168,11 @@ export default function TasksPage() {
   const moveTask = async (id: string, newStatus: string) => {
     const task = tasks.find(t => t.id === id);
     if (!task || task.status === newStatus) return;
+    // Bağımlılık kilidi: bağlı görev henüz tamamlanmadıysa ileri taşımadan önce uyar.
+    if (newStatus !== 'todo') {
+      const dep = blockedBy(task);
+      if (dep && !confirm(`Bu görev "${dep.title}" görevine bağlı ve o görev henüz tamamlanmadı. Yine de devam edilsin mi?`)) return;
+    }
     const prevTasks = tasks;
     setTasks(tasks.map(t => (t.id === id ? { ...t, status: newStatus } : t)));
     try {
@@ -208,6 +217,13 @@ export default function TasksPage() {
   const isOverdue = (task: Task) =>
     !!task.dueDate && task.status !== 'done' && new Date(task.dueDate).getTime() < new Date().setHours(0, 0, 0, 0);
 
+  // Görev bağımlılığı: bağlı olduğu görev 'done' değilse bu görev "kilitli" sayılır.
+  const blockedBy = (task: Task): Task | null => {
+    if (!task.dependsOnId) return null;
+    const dep = tasks.find(t => t.id === task.dependsOnId);
+    return dep && dep.status !== 'done' ? dep : null;
+  };
+
   const visibleTasks = tasks.filter(t =>
     (!filterAssignee || t.assigneeId === filterAssignee) &&
     (!filterPriority || t.priority === filterPriority)
@@ -239,6 +255,9 @@ export default function TasksPage() {
           </span>
           {task.recurrence && (
             <span title={`Tekrarlayan görev: ${recurrenceMap[task.recurrence] || task.recurrence}`}>🔁</span>
+          )}
+          {blockedBy(task) && (
+            <span title={`Kilitli: önce "${blockedBy(task)!.title}" tamamlanmalı`}>🔒</span>
           )}
         </span>
         <button
@@ -338,6 +357,7 @@ export default function TasksPage() {
                   <td>
                     <div style={{ fontWeight: 500 }}>
                       {task.title} {task.recurrence && <span title={`Tekrarlayan: ${recurrenceMap[task.recurrence] || task.recurrence}`}>🔁</span>}
+                      {blockedBy(task) && <span title={`Kilitli: önce "${blockedBy(task)!.title}" tamamlanmalı`}>🔒</span>}
                     </div>
                     <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{task.description}</div>
                   </td>
@@ -426,6 +446,18 @@ export default function TasksPage() {
                     <option key={member.id} value={member.id}>{member.name}</option>
                   ))}
                 </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Bağlı Olduğu Görev 🔒</label>
+                <select className="form-select" value={form.dependsOnId} onChange={e => setForm({ ...form, dependsOnId: e.target.value })}>
+                  <option value="">— Yok —</option>
+                  {tasks.filter(t => t.id !== editingId).map(t => (
+                    <option key={t.id} value={t.id}>{t.title}{t.status === 'done' ? ' ✓' : ''}</option>
+                  ))}
+                </select>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 4 }}>
+                  Bu görev, seçilen görev tamamlanmadan başlatılmamalıdır.
+                </div>
               </div>
             </div>
             <div className="modal-footer">
