@@ -15,4 +15,32 @@ export async function register() {
       console.warn(`[startup] Uyarı: ${key} tanımlı değil — ilgili cron/webhook uçları çalışmaz.`);
     }
   }
+
+  await initSentry();
+}
+
+/**
+ * Sentry (gözlemlenebilirlik) — TAMAMEN GRACEFUL / opsiyonel.
+ * SENTRY_DSN yoksa hiçbir şey yapılmaz. DSN varsa `@sentry/nextjs` çalışma zamanında
+ * dinamik yüklenir; paket kurulu değilse (peer opsiyonel) sessizce atlanır — build/runtime
+ * KIRILMAZ. Paketi aktifleştirmek için: `npm i @sentry/nextjs` + DSN env'i tanımlamak yeter.
+ */
+async function initSentry(): Promise<void> {
+  const dsn = process.env.SENTRY_DSN;
+  if (!dsn) return;
+  try {
+    // Değişken specifier → bundler statik çözmez; paket yoksa runtime'da yakalanır.
+    const pkg = '@sentry/nextjs';
+    const Sentry: any = await import(/* @vite-ignore */ /* webpackIgnore: true */ pkg).catch(() => null);
+    if (Sentry && typeof Sentry.init === 'function') {
+      Sentry.init({
+        dsn,
+        tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE || '0') || 0,
+        environment: process.env.NODE_ENV,
+      });
+      console.log('[startup] Sentry etkin.');
+    }
+  } catch (e) {
+    console.warn('[startup] Sentry başlatılamadı (opsiyonel), atlanıyor:', e);
+  }
 }

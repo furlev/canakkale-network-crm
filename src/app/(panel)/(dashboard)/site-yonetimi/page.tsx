@@ -137,6 +137,8 @@ export default function SiteYonetimiPage() {
           <p className="page-subtitle">canakkale.network haber sitesinin içerik yönetimi</p>
         </div>
         <div className="page-header-actions" style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+          <Link href="/site-yonetimi/analitik" className="btn btn-ghost">📊 Analitik</Link>
+          <Link href="/site-yonetimi/takvim" className="btn btn-ghost">🗓️ Takvim</Link>
           <Link href="/site-yonetimi/sayfalar" className="btn btn-ghost">📄 Sayfalar</Link>
           <Link href="/site-yonetimi/form" className="btn btn-ghost">🧩 Katılım Formu</Link>
           <Link href="/site-yonetimi/basvurular" className="btn btn-ghost">📋 Başvurular</Link>

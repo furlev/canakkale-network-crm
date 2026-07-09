@@ -354,11 +354,24 @@ html:not(.js-ready) .s-reveal { opacity: 1; transform: none; transition: none; }
 .site-nav-join:focus-visible,
 .p-share-btn:focus-visible,
 .s-share-ico:focus-visible,
-.hero-list-item:focus-visible {
+.hero-list-item:focus-visible,
+.site-logo:focus-visible,
+.header-icon-btn:focus-visible,
+.footer-social-link:focus-visible,
+.ticker-item:focus-visible,
+.search-input:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
 .s-card:focus-visible { border-color: var(--accent); }
+/* Metin bağlantılarında görünür outline (WCAG 2.2 — odak görünürlüğü) */
+.site-nav-link:focus-visible,
+.mobile-nav-link:focus-visible,
+.footer-legal a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
 
 /* ── ArticleCard 3B tilt katmanları ── */
 /* İşaretçi kart üzerindeyken: 3B perspektif + eğim devreye girer, geçiş hızlanır

@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { parseBody, handleApiError, requireLevel, ApiError } from '@/lib/api';
+import { requireSiteEditor } from '@/lib/access';
+import { isLeaderOrAdmin } from '@/lib/permissions';
+import { notify } from '@/lib/notify';
 import { audit } from '@/lib/audit';
 import { slugifyTr } from '@/lib/site';
 import { normalizeDistrict } from '@/lib/districts';
@@ -29,7 +32,9 @@ const articleUpdate = z.object({
   videoUrl: z.string().optional().nullable(),
   authorName: z.string().optional().nullable(),
   authorSlug: z.string().optional().nullable(), // yazar hub bağı (Author.slug)
-  status: z.enum(['draft', 'published', 'archived']).optional(),
+  // awaiting_approval = C editörün onaya gönderdiği; scheduled = ileri tarihli planlı yayın.
+  status: z.enum(['draft', 'published', 'archived', 'awaiting_approval', 'scheduled']).optional(),
+  scheduledAt: z.string().optional().nullable(), // ISO tarih — status='scheduled' için planlı yayın anı
   newsType: z.enum(['breaking', 'daily', 'weekly', 'manual']).optional(),
   isBreaking: z.boolean().optional(),
   isFeatured: z.boolean().optional(),
@@ -57,7 +62,7 @@ async function uniqueSlug(base: string, excludeId: string): Promise<string> {
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    await requireLevel('B');
+    await requireSiteEditor();
     const { id } = await context.params;
     const article = await prisma.siteArticle.findUnique({ where: { id } });
     if (!article || article.deletedAt) throw new ApiError(404, 'Haber bulunamadı');
@@ -69,12 +74,34 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const session = await requireLevel('B');
+    const session = await requireSiteEditor();
     const { id } = await context.params;
     const body = await parseBody(request, articleUpdate);
 
     const existing = await prisma.siteArticle.findUnique({ where: { id } });
     if (!existing || existing.deletedAt) throw new ApiError(404, 'Haber bulunamadı');
+
+    // Yetki-farkında durum + planlama çözümü. status verilmediyse dokunulmaz.
+    // C (yayınlayamaz): yeni 'published'/'scheduled' → 'awaiting_approval'. Zaten
+    // yayında olan haberi C'nin salt düzenlemesi canlı haberi yayından düşürmez.
+    const canPublish = isLeaderOrAdmin(session);
+    let finalStatus: string | undefined = undefined;
+    let scheduledAt: Date | null | undefined = undefined;
+    if (body.status !== undefined) {
+      let s: string = body.status;
+      let sched: Date | null = null;
+      if (s === 'scheduled') {
+        const d = body.scheduledAt ? new Date(body.scheduledAt) : null;
+        if (d && !isNaN(d.getTime()) && d.getTime() > Date.now()) sched = d;
+        else s = 'draft'; // geçersiz/geçmiş tarih → planlama iptal
+      }
+      if (!canPublish) {
+        if (s === 'published' && existing.status !== 'published') s = 'awaiting_approval';
+        else if (s === 'scheduled') { s = 'awaiting_approval'; sched = null; }
+      }
+      finalStatus = s;
+      scheduledAt = s === 'scheduled' ? sched : null; // scheduled değilse planlamayı temizle
+    }
 
     // Kategori verilmişse var olduğunu doğrula (FK hatasını önle)
     let categorySlug: string | null | undefined = undefined;
@@ -94,8 +121,8 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       if (wanted && wanted !== existing.slug) slug = await uniqueSlug(wanted, id);
     }
 
-    // Yayına alınırken publishedAt yoksa şimdi ata
-    const goingPublished = body.status === 'published' && !existing.publishedAt;
+    // Yayına alınırken publishedAt yoksa şimdi ata (nihai duruma göre)
+    const goingPublished = finalStatus === 'published' && !existing.publishedAt;
 
     // Düzeltme/geri çekme: not doluysa tarihi damgala (varsa koru), boşsa temizle.
     // Tarih daima sunucu tarafından üretilir — istemcinin correctedAt/retractedAt'ı yok sayılır.
@@ -135,7 +162,8 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         ...(body.videoUrl !== undefined ? { videoUrl: body.videoUrl || null } : {}),
         ...(body.authorName !== undefined ? { authorName: body.authorName || 'Çanakkale Network' } : {}),
         ...(body.authorSlug !== undefined ? { authorSlug: body.authorSlug?.trim() || null } : {}),
-        ...(body.status !== undefined ? { status: body.status } : {}),
+        ...(finalStatus !== undefined ? { status: finalStatus } : {}),
+        ...(scheduledAt !== undefined ? { scheduledAt } : {}),
         ...(body.newsType !== undefined ? { newsType: body.newsType } : {}),
         ...(body.isBreaking !== undefined ? { isBreaking: body.isBreaking } : {}),
         ...(body.isFeatured !== undefined ? { isFeatured: body.isFeatured } : {}),
@@ -148,6 +176,10 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     });
 
     await audit(session, 'updated', 'siteArticle', id, `Site haberi güncellendi: ${updated.title}`);
+    // Yeni onaya düştüyse B/A'ya bildir (yayın onay kuyruğu)
+    if (finalStatus === 'awaiting_approval' && existing.status !== 'awaiting_approval') {
+      await notify('site_approval', `Onay bekleyen haber: ${updated.title} (${session.name || 'Editör'})`, `/site-yonetimi/haber/${id}`);
+    }
     return NextResponse.json(updated);
   } catch (error) {
     return handleApiError(error, 'Haber güncellenemedi');

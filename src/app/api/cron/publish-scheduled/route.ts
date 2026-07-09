@@ -39,7 +39,45 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, due: due.length, published, failed });
+    // ─── Planlı SiteArticle'lar (#31): status='scheduled' & scheduledAt<=now ───
+    // Elle oluşturulmuş zamanlı haberleri yayınlar (AiDraft akışından bağımsız).
+    const dueArticles = await prisma.siteArticle.findMany({
+      where: {
+        status: 'scheduled',
+        scheduledAt: { not: null, lte: new Date() },
+        deletedAt: null,
+      },
+      orderBy: { scheduledAt: 'asc' },
+      select: { id: true, slug: true, title: true },
+      take: 50,
+    });
+
+    const publishedArticles: string[] = [];
+    const failedArticles: { id: string; reason: string }[] = [];
+    for (const art of dueArticles) {
+      try {
+        // Atomik claim: yalnız hâlâ 'scheduled' olanı yayınla (çift-yayın/yarış engeli).
+        const claim = await prisma.siteArticle.updateMany({
+          where: { id: art.id, status: 'scheduled' },
+          data: { status: 'published', publishedAt: new Date() },
+        });
+        if (claim.count === 0) continue; // başka bir çalıştırma yayınlamış
+        publishedArticles.push(art.slug);
+        await audit(null, 'published', 'siteArticle', art.id, `Planlı haber yayını (${art.slug}): ${art.title}`);
+      } catch (e) {
+        failedArticles.push({ id: art.id, reason: e instanceof Error ? e.message : 'hata' });
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      due: due.length,
+      published,
+      failed,
+      articlesDue: dueArticles.length,
+      articlesPublished: publishedArticles,
+      articlesFailed: failedArticles,
+    });
   } catch (error) {
     return handleApiError(error, 'Planlı yayın başarısız');
   }

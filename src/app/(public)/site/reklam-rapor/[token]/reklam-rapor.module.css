@@ -1,0 +1,123 @@
+/* Reklamveren self-servis performans raporu — salt-okunur public sayfa.
+   Kendi (additive) CSS Modülü; paylaşılan site.css/home.css'e dokunmaz.
+   Renkler site CSS değişkenlerinden gelir (tema-farkında). */
+
+.wrap {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: clamp(1.5rem, 4vw, 3rem) 1.25rem;
+}
+
+.kicker {
+  display: inline-block;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint, rgba(120, 130, 150, 0.9));
+  margin-bottom: 0.5rem;
+}
+
+.title {
+  font-family: var(--font-display, inherit);
+  font-size: clamp(1.6rem, 4vw, 2.4rem);
+  line-height: 1.1;
+  margin: 0 0 0.35rem;
+}
+
+.sub {
+  color: var(--ink-faint, rgba(120, 130, 150, 0.9));
+  margin: 0 0 2rem;
+  font-size: 0.95rem;
+}
+
+/* Özet metrik kartları */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.card {
+  border: 1px solid var(--ink-line, rgba(120, 130, 150, 0.22));
+  border-radius: 14px;
+  padding: 1.1rem 1.25rem;
+  background: var(--surface, rgba(255, 255, 255, 0.03));
+}
+
+.cardLabel {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint, rgba(120, 130, 150, 0.9));
+}
+
+.cardValue {
+  font-size: 1.7rem;
+  font-weight: 700;
+  margin-top: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Kampanya tablosu — dar ekranda yatay kaydırılır */
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--ink-line, rgba(120, 130, 150, 0.22));
+  border-radius: 14px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 640px;
+  font-size: 0.9rem;
+}
+
+.table th,
+.table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--ink-line, rgba(120, 130, 150, 0.16));
+  white-space: nowrap;
+}
+
+.table th {
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-faint, rgba(120, 130, 150, 0.9));
+  font-weight: 600;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.table tfoot td {
+  font-weight: 700;
+  border-top: 2px solid var(--ink-line, rgba(120, 130, 150, 0.3));
+  border-bottom: none;
+}
+
+.status {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  border: 1px solid var(--ink-line, rgba(120, 130, 150, 0.3));
+  color: var(--ink-faint, rgba(120, 130, 150, 0.95));
+}
+
+.empty {
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--ink-faint, rgba(120, 130, 150, 0.9));
+}
+
+.foot {
+  margin-top: 1.75rem;
+  font-size: 0.8rem;
+  color: var(--ink-faint, rgba(120, 130, 150, 0.85));
+  line-height: 1.6;
+}

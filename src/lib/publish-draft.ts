@@ -43,6 +43,14 @@ export async function matchSiteCategory(draftCategory: string | null): Promise<s
 
 export type PublishActor = { sub?: string | null; name?: string | null };
 
+/** Çoklu-kanal yayın hedefleri (#30). */
+export type PublishChannel = 'site' | 'newsletter' | 'social';
+
+/** publishDraftToSite ek seçenekleri. `channels` verilmezse GERİYE UYUM: sosyal otomatik oluşur. */
+export type PublishDraftOptions = {
+  channels?: PublishChannel[];
+};
+
 type DraftLike = {
   id: string;
   topic: string;
@@ -61,8 +69,15 @@ type DraftLike = {
   reviewerName?: string | null;
 };
 
-/** Taslağı siteye yayınlar. Zaten yayınlanmışsa/gövdesi boşsa ApiError fırlatır. */
-export async function publishDraftToSite(draft: DraftLike, actor: PublishActor) {
+/**
+ * Taslağı siteye yayınlar. Zaten yayınlanmışsa/gövdesi boşsa ApiError fırlatır.
+ *
+ * `opts.channels`:
+ *  - verilmezse (undefined) → GERİYE UYUM: sosyal metin varsa otomatik SocialPost oluşur.
+ *  - verilirse → SocialPost yalnızca 'social' kanalı seçildiğinde oluşur.
+ * ('newsletter' kanalı bülten taslağı yayın rotasında ele alınır; burada site yayını + sosyal yönetilir.)
+ */
+export async function publishDraftToSite(draft: DraftLike, actor: PublishActor, opts?: PublishDraftOptions) {
   if (!draft.body || !draft.body.trim()) {
     throw new ApiError(400, 'Taslak gövdesi boş — yayınlanamaz');
   }
@@ -116,8 +131,10 @@ export async function publishDraftToSite(draft: DraftLike, actor: PublishActor) 
       data: { articleId: created.id },
     });
 
-    // Sosyal metin varsa çoklu-kanal kuyruğa düşür (insan sonradan /social'dan paylaşır).
-    if (draft.socialPost && draft.socialPost.trim()) {
+    // Sosyal metin varsa kuyruğa düşür (insan sonradan /social'dan paylaşır).
+    // channels verilmemişse eskisi gibi otomatik; verilmişse yalnız 'social' seçiliyse.
+    const wantSocial = !opts?.channels || opts.channels.includes('social');
+    if (wantSocial && draft.socialPost && draft.socialPost.trim()) {
       await tx.socialPost.create({
         data: { articleId: created.id, platform: 'instagram', text: draft.socialPost.trim(), status: 'queued' },
       });

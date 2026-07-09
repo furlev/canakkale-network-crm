@@ -11,6 +11,7 @@ type Application = {
   data: string;              // JSON: dinamik form yanıtları
   status: string;            // new | reviewed | accepted | rejected
   note: string | null;
+  convertedLeadId: string | null; // Lead'e aktarıldıysa oluşan Lead id (#33)
   createdAt: string;
 };
 
@@ -102,6 +103,32 @@ export default function BasvurularPage() {
         await fetchApplications(tab);
       } else {
         alert(data?.error || 'İşlem başarısız oldu.');
+      }
+    } catch {
+      alert('Sunucuya ulaşılamadı.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Başvuruyu CRM Lead'ine aktarır (#33). Zaten aktarılmışsa buton gizli. */
+  const convertToLead = async () => {
+    if (!selected) return;
+    if (!confirm(`"${selected.name}" başvurusu CRM'de yeni bir Lead olarak oluşturulsun mu?`)) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/site-admin/applications/${selected.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'convert' }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        setSelected(data);
+        await fetchApplications(tab);
+        alert('Başvuru Lead\'e aktarıldı. CRM → Lead\'ler ekranından takip edebilirsin.');
+      } else {
+        alert(data?.error || 'Aktarım başarısız oldu.');
       }
     } catch {
       alert('Sunucuya ulaşılamadı.');
@@ -284,6 +311,15 @@ export default function BasvurularPage() {
               {selected.status !== 'rejected' && (
                 <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => updateApplication({ status: 'rejected' })}>
                   ✕ Reddet
+                </button>
+              )}
+              {selected.convertedLeadId ? (
+                <Link href="/leads" className="btn btn-ghost btn-sm" title="Bu başvuru zaten Lead'e aktarıldı">
+                  ✅ Lead&apos;e Aktarıldı
+                </Link>
+              ) : (
+                <button className="btn btn-ghost btn-sm" disabled={busy} onClick={convertToLead} title="CRM'de yeni Lead oluştur">
+                  🎯 Lead&apos;e Aktar
                 </button>
               )}
               <button className="btn btn-danger btn-sm" disabled={busy} onClick={handleDelete} style={{ marginLeft: 'auto' }} title="KVKK gereği kalıcı silme">

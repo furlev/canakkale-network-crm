@@ -7,6 +7,27 @@ import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
+/**
+ * PROD-GUARD: seed'in yanlışlıkla üretim veritabanına çalışmasını engeller.
+ * NODE_ENV=production ya da DATABASE_URL bilinen managed host'lara (DigitalOcean/Render)
+ * işaret ediyorsa hata basıp çıkar. Bilerek geçmek için `--force` bayrağı gerekir.
+ */
+function assertNotProdDb() {
+  if (process.argv.includes('--force')) {
+    console.warn('[seed] --force verildi: prod-guard atlandı.');
+    return;
+  }
+  const url = process.env.DATABASE_URL || '';
+  const isProdHost = /ondigitalocean\.com|render\.com/i.test(url);
+  const isProdEnv = process.env.NODE_ENV === 'production';
+  if (isProdEnv || isProdHost) {
+    console.error('HATA: Seed script\'i üretim (production) veritabanına çalıştırılamaz.');
+    console.error(`  NODE_ENV=${process.env.NODE_ENV || '(boş)'} · DATABASE_URL host prod=${isProdHost}`);
+    console.error('  Yerel DB kullan ya da bilerek geçmek için `--force` ekle.');
+    process.exit(1);
+  }
+}
+
 async function upsertUser(email, data) {
   const password = data.password ? await bcrypt.hash(data.password, 12) : undefined;
   const { password: _pw, ...rest } = data;
@@ -71,4 +92,5 @@ async function main() {
   console.log('Giriş: furkan@canakkale.network / 8418fur6169leV.  |  lider@test.local, muhasebe@test.local, uye1@test.local, uye2@test.local (hepsi Test1234!)');
 }
 
+assertNotProdDb();
 main().then(() => prisma.$disconnect()).catch((e) => { console.error(e); prisma.$disconnect(); process.exit(1); });

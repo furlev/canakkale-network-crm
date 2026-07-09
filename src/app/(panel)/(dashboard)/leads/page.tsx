@@ -7,6 +7,10 @@ type Lead = {
   id: string;
   name: string;
   company?: string;
+  email?: string | null;
+  phone?: string | null;
+  source?: string | null;
+  notes?: string | null;
   value: number;
   status: string;
   priority: string;
@@ -151,6 +155,11 @@ export default function LeadsPage() {
   const tableColumns: Column<Lead>[] = [
     { key: 'name', header: 'Aday', filterable: true, render: (l) => <span style={{ fontWeight: 500 }}>{l.name}</span> },
     { key: 'company', header: 'Şirket', accessor: (l) => l.company || '', filterable: true, render: (l) => l.company || '-' },
+    { key: 'email', header: 'E-posta / Kaynak', accessor: (l) => l.email || '', filterable: true, render: (l) => (
+      l.email || l.source
+        ? <span style={{ fontSize: 13 }}>{l.email || '-'}{l.source ? <em style={{ color: 'var(--muted)' }}> · {l.source}</em> : null}</span>
+        : '-'
+    ) },
     { key: 'value', header: 'Değer', accessor: (l) => l.value, numeric: true, render: (l) => <span className="dt-num" style={{ color: 'var(--accent)', fontWeight: 600 }}>₺{l.value.toLocaleString('tr-TR')}</span> },
     {
       key: 'priority', header: 'Öncelik', accessor: (l) => priorityMap[l.priority]?.label || l.priority, filterable: true,

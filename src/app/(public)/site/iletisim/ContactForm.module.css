@@ -1,0 +1,101 @@
+/* İletişim formu (#33) — halka açık site temasına uyumlu, CSS Modules. */
+
+.wrap {
+  margin-top: 2.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius, 14px);
+  background: var(--surface);
+  padding: clamp(1.25rem, 3vw, 2rem);
+  max-width: 640px;
+}
+
+.head {
+  margin-bottom: 1.25rem;
+}
+
+.title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0 0 0.35rem;
+}
+
+.title .tint {
+  color: var(--accent);
+}
+
+.sub {
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.field {
+  margin-bottom: 1rem;
+}
+
+.label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  margin-bottom: 0.4rem;
+}
+
+.input,
+.textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  border-radius: var(--radius-sm, 10px);
+  padding: 0.7rem 0.85rem;
+  font: inherit;
+  transition: border-color 0.2s;
+}
+
+.input:focus-visible,
+.textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring, 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent));
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 130px;
+}
+
+/* Honeypot — ekran dışı, ekran okuyuculardan gizli. */
+.hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.error {
+  color: var(--accent);
+  font-size: 0.9rem;
+  margin: 0.25rem 0 0;
+}
+
+.success {
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  color: var(--ink);
+  border-radius: var(--radius, 14px);
+  padding: 1.5rem;
+  font-size: 1rem;
+  line-height: 1.55;
+}

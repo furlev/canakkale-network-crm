@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { randomBytes } from 'crypto';
 import prisma from '@/lib/prisma';
 import { parseBody, handleApiError, requireLevel } from '@/lib/api';
 import { advertiserUpdate } from '@/lib/schemas';
@@ -8,6 +9,11 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     await requireLevel('B');
     const body = await parseBody(request, advertiserUpdate);
     const params = await context.params;
+    // Public rapor token'ı yoksa bu düzenlemede üret (eski kayıtlar için backfill)
+    const existing = await prisma.advertiser.findUnique({
+      where: { id: params.id },
+      select: { reportToken: true },
+    });
     const updated = await prisma.advertiser.update({
       where: { id: params.id },
       data: {
@@ -18,6 +24,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         activeAds: body.activeAds,
         totalSpent: body.totalSpent,
         status: body.status,
+        ...(existing && !existing.reportToken ? { reportToken: randomBytes(24).toString('base64url') } : {}),
       },
     });
     return NextResponse.json(updated);

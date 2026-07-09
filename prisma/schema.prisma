@@ -128,6 +128,10 @@ model Lead {
   id        String    @id @default(uuid())
   name      String
   company   String?
+  email     String? // iletişim/başvuru e-postası
+  phone     String? // iletişim telefonu
+  notes     String? // serbest not / gelen mesaj / başvuru detayı
+  source    String? // 'Web İletişim' | 'Katılım Başvurusu' | 'CRM' ...
   value     Float     @default(0)
   status    String    @default("new") // new, contacted, proposal, won, lost
   priority  String    @default("normal") // low, normal, high, urgent

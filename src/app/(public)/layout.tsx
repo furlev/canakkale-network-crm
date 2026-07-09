@@ -11,6 +11,7 @@ import {
 import SiteHeader, { type NavCategory } from '@/components/site/SiteHeader';
 import SiteFooter from '@/components/site/SiteFooter';
 import BreakingTicker, { type TickerItem } from '@/components/site/BreakingTicker';
+import EmergencyBanner from '@/components/site/EmergencyBanner';
 import Reveal from '@/components/site/Reveal';
 import MotionProvider from '@/components/site/motion/MotionProvider';
 import CityBar from '@/components/site/panel/CityBar';
@@ -142,6 +143,8 @@ export default async function PublicSiteLayout({ children }: { children: React.R
           <a href="#icerik" className="skip-link">
             İçeriğe atla
           </a>
+          {/* Acil durum bandı (deprem vb.) — en üstte, BreakingTicker'dan ÖNCE. active değilse null. */}
+          <EmergencyBanner />
           {settings.tickerEnabled && <BreakingTicker items={ticker} />}
           <SiteHeader categories={navCategories} />
           <CityBar />

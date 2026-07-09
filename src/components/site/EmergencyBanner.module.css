@@ -1,0 +1,106 @@
+/* ACİL DURUM / DEPREM BANDI (A7b, #36) — sitenin en üstünde sabit kırmızı band.
+   Tema-duyarlı token'lar site.css'ten; acil renk her temada güçlü kırmızı kalır.
+   Yüksek kontrast (beyaz metin / kırmızı zemin) — WCAG AA. */
+
+.banner {
+  position: sticky;
+  top: 0;
+  /* Header (200) ve ticker (210) üstünde; arama/menü overlay'lerinin (400/390) altında. */
+  z-index: 300;
+  width: 100%;
+  color: #ffffff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+}
+
+.inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0.5rem 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 40px;
+}
+
+.icon {
+  font-size: 1.15rem;
+  line-height: 1;
+  flex-shrink: 0;
+  /* Dikkat çeken nabız — reduced-motion'da kapatılır (aşağıda). */
+  animation: emgPulse 1.6s ease-in-out infinite;
+}
+
+.body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.55rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.title {
+  font-family: var(--font-display, system-ui), sans-serif;
+  font-weight: 800;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.detail {
+  font-size: 0.9rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.time {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+}
+
+/* ── Şiddet renkleri (her temada güçlü kırmızı; kritik daha koyu/doygun) ── */
+.info {
+  background: #c0182a;
+}
+
+.warning {
+  background: #b3121f;
+}
+
+.critical {
+  background: #8f0d18;
+}
+
+@keyframes emgPulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.9);
+  }
+}
+
+/* Erişilebilirlik: hareketi azalt tercihi → nabız animasyonu kapalı. */
+@media (prefers-reduced-motion: reduce) {
+  .icon {
+    animation: none;
+  }
+}
+
+/* Küçük ekran: zaman etiketini alta al, metne öncelik ver. */
+@media (max-width: 560px) {
+  .inner {
+    flex-wrap: wrap;
+    padding: 0.45rem 0.9rem;
+  }
+  .time {
+    flex-basis: 100%;
+  }
+}

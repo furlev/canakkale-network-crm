@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import prisma from '@/lib/prisma';
-import { parseBody, handleApiError, requireLevel, getPagination } from '@/lib/api';
+import { parseBody, handleApiError, getPagination } from '@/lib/api';
+import { requireSiteEditor } from '@/lib/access';
+import { isLeaderOrAdmin } from '@/lib/permissions';
+import { notify } from '@/lib/notify';
 import { audit } from '@/lib/audit';
 import { slugifyTr, stripHtml } from '@/lib/site';
 import { normalizeDistrict } from '@/lib/districts';
@@ -29,7 +32,9 @@ const articleCreate = z.object({
   videoUrl: z.string().optional().nullable(),
   authorName: z.string().optional().nullable(),
   authorSlug: z.string().optional().nullable(), // yazar hub bağı (Author.slug)
-  status: z.enum(['draft', 'published', 'archived']).optional(),
+  // awaiting_approval = C editörün onaya gönderdiği; scheduled = ileri tarihli planlı yayın.
+  status: z.enum(['draft', 'published', 'archived', 'awaiting_approval', 'scheduled']).optional(),
+  scheduledAt: z.string().optional().nullable(), // ISO tarih — status='scheduled' için planlı yayın anı
   newsType: z.enum(['breaking', 'daily', 'weekly', 'manual']).optional(),
   isBreaking: z.boolean().optional(),
   isFeatured: z.boolean().optional(),
@@ -62,10 +67,47 @@ async function safeCategorySlug(slug: string | null | undefined): Promise<string
   return cat ? cat.slug : null;
 }
 
-/** GET — haber listesi: ?status=published|draft|archived|all, ?category=, ?q=, sayfalama. */
+/**
+ * Yayın durumu + planlama çözümü (yetki-farkında). Ortak kural (POST + PUT):
+ * - C (yayınlayamaz): yeni 'published' / 'scheduled' istekleri 'awaiting_approval'a düşer.
+ * - 'scheduled': geçerli GELECEK tarih şart; değilse 'draft'a düşer.
+ * - `currentStatus` verilirse (güncelleme) zaten yayında olan haberi C'nin salt
+ *   düzenlemesi durumu değiştirmez (canlı haberi yayından düşürmez).
+ */
+function resolvePublishState(
+  desired: string,
+  scheduledAtRaw: string | null | undefined,
+  canPublish: boolean,
+  currentStatus?: string,
+): { status: string; scheduledAt: Date | null } {
+  let status = desired;
+  let scheduledAt: Date | null = null;
+
+  if (status === 'scheduled') {
+    const d = scheduledAtRaw ? new Date(scheduledAtRaw) : null;
+    if (d && !isNaN(d.getTime()) && d.getTime() > Date.now()) {
+      scheduledAt = d;
+    } else {
+      status = 'draft'; // geçersiz/geçmiş tarih → planlama iptal
+    }
+  }
+
+  if (!canPublish) {
+    if (status === 'published' && currentStatus !== 'published') {
+      status = 'awaiting_approval';
+    } else if (status === 'scheduled') {
+      status = 'awaiting_approval';
+      scheduledAt = null;
+    }
+  }
+
+  return { status, scheduledAt };
+}
+
+/** GET — haber listesi: ?status=published|draft|archived|awaiting_approval|scheduled|all, ?category=, ?q=, sayfalama. */
 export async function GET(request: Request) {
   try {
-    await requireLevel('B');
+    await requireSiteEditor();
     const url = new URL(request.url);
     const status = url.searchParams.get('status') || 'all';
     const category = url.searchParams.get('category') || '';
@@ -107,7 +149,7 @@ export async function GET(request: Request) {
       prisma.siteArticle.aggregate({ where: { deletedAt: null }, _sum: { views: true } }),
     ]);
 
-    const counts: Record<string, number> = { published: 0, draft: 0, archived: 0 };
+    const counts: Record<string, number> = { published: 0, draft: 0, archived: 0, awaiting_approval: 0, scheduled: 0 };
     for (const g of grouped) counts[g.status] = g._count._all;
 
     return NextResponse.json({ items, total, counts, totalViews: viewsAgg._sum.views ?? 0 });
@@ -119,11 +161,16 @@ export async function GET(request: Request) {
 /** POST — yeni haber oluşturur (slug çakışmasında -2 eki). */
 export async function POST(request: Request) {
   try {
-    const session = await requireLevel('B');
+    const session = await requireSiteEditor();
     const body = await parseBody(request, articleCreate);
 
     const slug = await uniqueSlug(body.slug || body.title);
-    const status = body.status || 'draft';
+    // Yetki-farkında durum çözümü: C yayınlayamaz → awaiting_approval.
+    const { status, scheduledAt } = resolvePublishState(
+      body.status || 'draft',
+      body.scheduledAt,
+      isLeaderOrAdmin(session),
+    );
 
     // Düzeltme/geri çekme: not doluysa tarihi sunucu damgalar
     const correctionNote = body.correctionNote?.trim() || null;
@@ -147,6 +194,7 @@ export async function POST(request: Request) {
         authorSlug: body.authorSlug?.trim() || null,
         authorId: session.sub,
         status,
+        scheduledAt,
         newsType: body.newsType || 'manual',
         isBreaking: body.isBreaking ?? false,
         isFeatured: body.isFeatured ?? false,
@@ -162,6 +210,10 @@ export async function POST(request: Request) {
     });
 
     await audit(session, 'created', 'siteArticle', created.id, `Site haberi oluşturuldu: ${created.title}`);
+    // Onaya gönderildiyse B/A'ya bildir (yayın onay kuyruğu)
+    if (status === 'awaiting_approval') {
+      await notify('site_approval', `Onay bekleyen haber: ${created.title} (${session.name || 'Editör'})`, `/site-yonetimi/haber/${created.id}`);
+    }
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return handleApiError(error, 'Haber oluşturulamadı');

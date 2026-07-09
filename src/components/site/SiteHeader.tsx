@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import ThemeToggle from './ThemeToggle';
 import DistrictPref from './DistrictPref';
@@ -81,6 +81,8 @@ export default function SiteHeader({ categories }: { categories: NavCategory[] }
   const searchOverlayRef = useRef<HTMLDivElement>(null);
   const menuOverlayRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  // Aktif kategori sayfasını nav'da işaretlemek için (a11y: aria-current).
+  const pathname = usePathname();
 
   // Scroll'da başlığı sıkılaştır
   useEffect(() => {
@@ -131,11 +133,19 @@ export default function SiteHeader({ categories }: { categories: NavCategory[] }
 
         <nav className="site-nav" aria-label="Ana menü">
           {/* Masaüstünde ilk 6 kategori; tamamı hamburger menüde */}
-          {categories.slice(0, 6).map(c => (
-            <Link key={c.slug} href={`/kategori/${c.slug}`} className="site-nav-link">
-              {c.name}
-            </Link>
-          ))}
+          {categories.slice(0, 6).map(c => {
+            const href = `/kategori/${c.slug}`;
+            return (
+              <Link
+                key={c.slug}
+                href={href}
+                className="site-nav-link"
+                aria-current={pathname === href ? 'page' : undefined}
+              >
+                {c.name}
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="site-header-actions">
@@ -236,17 +246,21 @@ export default function SiteHeader({ categories }: { categories: NavCategory[] }
           tabIndex={-1}
         >
           <nav className="mobile-nav" aria-label="Mobil ana menü">
-            {categories.map((c, i) => (
-              <Link
-                key={c.slug}
-                href={`/kategori/${c.slug}`}
-                className="mobile-nav-link"
-                style={{ '--i': i } as React.CSSProperties}
-                onClick={() => setMenuOpen(false)}
-              >
-                {c.name}
-              </Link>
-            ))}
+            {categories.map((c, i) => {
+              const href = `/kategori/${c.slug}`;
+              return (
+                <Link
+                  key={c.slug}
+                  href={href}
+                  className="mobile-nav-link"
+                  style={{ '--i': i } as React.CSSProperties}
+                  aria-current={pathname === href ? 'page' : undefined}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  {c.name}
+                </Link>
+              );
+            })}
             <Link
               href="/ekibimize-katil"
               className="mobile-nav-link mobile-nav-join"

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import prisma from '@/lib/prisma';
 import { getSiteSettings } from '@/lib/site';
 import { sanitizeHtml } from '@/lib/sanitize';
+import ContactForm from './ContactForm';
 import '@/app/(public)/pages.css';
 
 export const revalidate = 300;
@@ -117,6 +118,9 @@ export default async function ContactPage() {
               <div className="prose" dangerouslySetInnerHTML={{ __html: sanitizeHtml(extra.content) }} />
             </div>
           )}
+
+          {/* İletişim formu (#33) — mailto alternatifi */}
+          <ContactForm />
         </div>
       </section>
     </div>

@@ -38,7 +38,8 @@ type FormState = {
   videoUrl: string;
   authorName: string;
   authorSlug: string;        // yazar hub bağı (Author.slug) — '' = bağsız
-  status: string;            // draft | published | archived
+  status: string;            // draft | published | archived | awaiting_approval | scheduled
+  scheduledAt: string | null; // planlı yayın anı (ISO) — status='scheduled' için
   newsType: string;          // breaking | daily | weekly | manual
   isBreaking: boolean;
   isFeatured: boolean;
@@ -55,10 +56,35 @@ type FormState = {
 const EMPTY: FormState = {
   title: '', slug: '', summary: '', body: '', categorySlug: '', district: '', tags: '',
   imageUrl: '', imageAlt: '', imageIsAi: false, videoUrl: '', authorName: '', authorSlug: '',
-  status: 'draft', newsType: 'manual', isBreaking: false, isFeatured: false,
+  status: 'draft', scheduledAt: null, newsType: 'manual', isBreaking: false, isFeatured: false,
   isEditorPick: false, seoTitle: '', metaDescription: '', publishedAt: null,
   correctionNote: '', correctedAt: null, retractionNote: '', retractedAt: null,
 };
+
+/** Durum → Türkçe etiket + rozet sınıfı (yayın onay hiyerarşisi dahil). */
+const STATUS_LABEL: Record<string, string> = {
+  draft: 'Taslak',
+  awaiting_approval: 'Onay Bekliyor',
+  scheduled: 'Planlandı',
+  published: 'Yayında',
+  archived: 'Arşiv',
+};
+const STATUS_BADGE: Record<string, string> = {
+  draft: 'badge-info',
+  awaiting_approval: 'badge-warning',
+  scheduled: 'badge-primary',
+  published: 'badge-success',
+  archived: 'badge-error',
+};
+
+/** datetime-local input değeri (yerel saat) ↔ ISO. Boşsa ''. */
+function toLocalInput(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const off = d.getTimezoneOffset();
+  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 16);
+}
 
 /** API yanıtındaki makaleyi form state'ine çevirir. */
 function toForm(a: Record<string, unknown>): FormState {
@@ -82,6 +108,7 @@ function toForm(a: Record<string, unknown>): FormState {
     authorName: (a.authorName as string) || '',
     authorSlug: (a.authorSlug as string) || '',
     status: (a.status as string) || 'draft',
+    scheduledAt: (a.scheduledAt as string) || null,
     newsType: (a.newsType as string) || 'manual',
     isBreaking: !!a.isBreaking,
     isFeatured: !!a.isFeatured,
@@ -103,6 +130,7 @@ export default function HaberEditorPage() {
   const isNew = id === 'yeni';
 
   const [form, setForm] = useState<FormState>(EMPTY);
+  const [role, setRole] = useState<string | null>(null); // 'admin' | 'editor' | 'user' — yayın yetkisi için
   const [slugTouched, setSlugTouched] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [authors, setAuthors] = useState<Author[]>([]);
@@ -110,6 +138,14 @@ export default function HaberEditorPage() {
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+
+  // Oturum rolü: 'Yayınla' (B/A) vs 'Onaya Gönder' (C) butonunu belirler
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((u) => { if (u && typeof u.role === 'string') setRole(u.role); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch('/api/site-admin/categories')
@@ -147,13 +183,22 @@ export default function HaberEditorPage() {
     setForm((prev) => ({ ...prev, title, slug: slugTouched ? prev.slug : slugifyTr(title) }));
   };
 
-  const save = async (opts?: { publish?: boolean }) => {
+  const canPublish = role === 'admin' || role === 'editor'; // B/A yayınlayabilir; C onaya gönderir
+
+  const save = async (opts?: { publish?: boolean; submit?: boolean; schedule?: boolean }) => {
     if (!form.title.trim()) { setMsg({ kind: 'error', text: 'Başlık zorunlu.' }); return; }
     if (!form.body.trim()) { setMsg({ kind: 'error', text: 'Haber gövdesi boş olamaz.' }); return; }
+    if (opts?.schedule) {
+      const t = form.scheduledAt ? new Date(form.scheduledAt).getTime() : NaN;
+      if (isNaN(t) || t <= Date.now()) { setMsg({ kind: 'error', text: 'Planlı yayın için ileri bir tarih/saat seçin.' }); return; }
+    }
     setSaving(true);
     setMsg(null);
 
-    const status = opts?.publish ? 'published' : form.status;
+    const status = opts?.publish ? 'published'
+      : opts?.submit ? 'awaiting_approval'
+      : opts?.schedule ? 'scheduled'
+      : form.status;
     const payload = {
       title: form.title,
       slug: form.slug || slugifyTr(form.title),
@@ -169,6 +214,7 @@ export default function HaberEditorPage() {
       authorName: form.authorName || null,
       authorSlug: form.authorSlug || null,
       status,
+      scheduledAt: status === 'scheduled' ? form.scheduledAt : null,
       newsType: form.newsType,
       isBreaking: form.isBreaking,
       isFeatured: form.isFeatured,
@@ -192,7 +238,11 @@ export default function HaberEditorPage() {
       }
       setForm(toForm(data));
       setSlugTouched(true);
-      setMsg({ kind: 'success', text: opts?.publish ? 'Kaydedildi ve yayınlandı ✓' : 'Kaydedildi ✓' });
+      const savedMsg = opts?.publish ? 'Kaydedildi ve yayınlandı ✓'
+        : opts?.submit ? 'Onaya gönderildi ✓ — yöneticiler bilgilendirildi'
+        : opts?.schedule ? 'Planlandı ✓ — belirtilen tarihte yayınlanacak'
+        : (data?.status === 'awaiting_approval' ? 'Kaydedildi — yayın için onay bekliyor' : 'Kaydedildi ✓');
+      setMsg({ kind: 'success', text: savedMsg });
       if (isNew && data?.id) router.replace(`/site-yonetimi/haber/${data.id}`);
     } catch {
       setMsg({ kind: 'error', text: 'Sunucuya ulaşılamadı.' });
@@ -211,7 +261,14 @@ export default function HaberEditorPage() {
     <div>
       <div className="page-header">
         <div className="page-header-left">
-          <h1 className="page-title">{isNew ? '➕ Yeni Haber' : '✏️ Haberi Düzenle'}</h1>
+          <h1 className="page-title">
+            {isNew ? '➕ Yeni Haber' : '✏️ Haberi Düzenle'}
+            {!isNew && (
+              <span className={`badge ${STATUS_BADGE[form.status] || 'badge-info'}`} style={{ marginLeft: 'var(--space-3)', verticalAlign: 'middle' }}>
+                {STATUS_LABEL[form.status] || form.status}
+              </span>
+            )}
+          </h1>
           <p className="page-subtitle">
             <Link href="/site-yonetimi" style={{ color: 'var(--primary-light)', textDecoration: 'none' }}>← Site Yönetimi</Link>
           </p>
@@ -220,9 +277,16 @@ export default function HaberEditorPage() {
           <button className="btn btn-ghost" disabled={saving} onClick={() => save()}>
             {saving ? 'Kaydediliyor...' : '💾 Kaydet'}
           </button>
-          <button className="btn btn-primary" disabled={saving} onClick={() => save({ publish: true })}>
-            🌐 Kaydet ve Yayınla
-          </button>
+          {canPublish ? (
+            <button className="btn btn-primary" disabled={saving} onClick={() => save({ publish: true })}>
+              🌐 Kaydet ve Yayınla
+            </button>
+          ) : (
+            // C seviyesi: doğrudan yayınlayamaz, onaya gönderir (B/A onaylar)
+            <button className="btn btn-primary" disabled={saving} onClick={() => save({ submit: true })}>
+              📤 Onaya Gönder
+            </button>
+          )}
         </div>
       </div>
 
@@ -320,10 +384,44 @@ export default function HaberEditorPage() {
               <label className="form-label">Durum</label>
               <select className="form-select" value={form.status} onChange={(e) => setField('status', e.target.value)}>
                 <option value="draft">Taslak</option>
-                <option value="published">Yayında</option>
+                <option value="awaiting_approval">Onay Bekliyor</option>
+                {canPublish && <option value="scheduled">Planlandı</option>}
+                {canPublish && <option value="published">Yayında</option>}
                 <option value="archived">Arşiv</option>
               </select>
+              {!canPublish && (
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 4 }}>
+                  Yayın yetkiniz yok — “Onaya Gönder” ile yöneticiye iletin.
+                </div>
+              )}
             </div>
+
+            {/* Planlı yayın (ileri tarih) — yalnız B/A */}
+            {canPublish && (
+              <div className="form-group">
+                <label className="form-label">Planlı Yayın Tarihi (ileri tarih)</label>
+                <input
+                  type="datetime-local"
+                  className="form-input"
+                  value={toLocalInput(form.scheduledAt)}
+                  onChange={(e) => setField('scheduledAt', e.target.value ? new Date(e.target.value).toISOString() : null)}
+                />
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ marginTop: 'var(--space-2)' }}
+                  disabled={saving || !form.scheduledAt}
+                  onClick={() => save({ schedule: true })}
+                >
+                  🗓️ Planla (ileri tarih)
+                </button>
+                {form.status === 'scheduled' && form.scheduledAt && (
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--primary-light)', marginTop: 4 }}>
+                    {new Date(form.scheduledAt).toLocaleString('tr-TR')} tarihinde yayınlanacak
+                  </div>
+                )}
+              </div>
+            )}
             <div className="form-group">
               <label className="form-label">Tür</label>
               <select className="form-select" value={form.newsType} onChange={(e) => setField('newsType', e.target.value)}>

@@ -420,5 +420,28 @@ export async function fetchPrayer(): Promise<PrayerData> {
   };
 }
 
+// ─────────────────────────────────────────────────────────────
+// ACİL DURUM / DEPREM MODU (Setting 'emergency') — additive (A7b)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Site geneli acil durum bandı verisi. `Setting('emergency')` JSON'unda tutulur;
+ * emergency cron'u (Kandilli/AFAD feed'i) yazar, EmergencyBanner (server) okur.
+ * active=false iken banner hiç render edilmez.
+ */
+export type EmergencyData = {
+  active: boolean;
+  title: string; // ör. "Deprem Uyarısı"
+  detail: string; // kısa açıklama (büyüklük, yer, derinlik)
+  severity: 'info' | 'warning' | 'critical';
+  updatedAt: string; // ISO — son güncelleme anı
+};
+
+/** Setting('emergency') okur; yoksa/hatalıysa null (banner render edilmez). */
+export const getEmergency = () => readJson<EmergencyData>('emergency');
+
+/** Setting('emergency') yazar (cron kullanır). */
+export const setEmergency = (d: EmergencyData) => writeJson('emergency', d);
+
 // Not: districtName re-export — tüketiciler tek yerden alsın diye.
 export { districtName };

@@ -3,8 +3,11 @@ import { z } from 'zod';
 import prisma from '@/lib/prisma';
 import { parseBody, handleApiError, requireLevel, ApiError } from '@/lib/api';
 import { audit } from '@/lib/audit';
+import { notify } from '@/lib/notify';
 
 const applicationUpdate = z.object({
+  // action:'convert' → başvuruyu CRM Lead'ine aktarır (aşağıda ayrı ele alınır).
+  action: z.enum(['convert']).optional(),
   status: z.enum(['new', 'reviewed', 'accepted', 'rejected']).optional(),
   note: z.string().optional().nullable(),
 });
@@ -17,6 +20,41 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
 
     const existing = await prisma.joinApplication.findUnique({ where: { id } });
     if (!existing) throw new ApiError(404, 'Başvuru bulunamadı');
+
+    // ─── Başvuru → Lead aktarımı (#33) ───
+    if (body.action === 'convert') {
+      if (existing.convertedLeadId) {
+        // Idempotency: zaten aktarılmış — mevcut Lead hâlâ duruyorsa çakışma bildir.
+        const stillThere = await prisma.lead.findUnique({ where: { id: existing.convertedLeadId }, select: { id: true } });
+        if (stillThere) throw new ApiError(409, 'Bu başvuru zaten Lead\'e aktarılmış');
+      }
+      // Başvuru form yanıtlarını (data JSON) + değerlendirme notunu okunur nota çevir.
+      let formSummary = '';
+      try {
+        const answers = JSON.parse(existing.data) as Record<string, unknown>;
+        formSummary = Object.entries(answers)
+          .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+          .join('\n');
+      } catch { /* data JSON değilse atla */ }
+      const noteParts = [existing.note || null, formSummary || null].filter(Boolean).join('\n\n');
+      const lead = await prisma.lead.create({
+        data: {
+          name: existing.name,
+          email: existing.email || null,
+          phone: existing.phone || null,
+          notes: (noteParts || null)?.slice(0, 4000) ?? null,
+          source: 'Katılım Başvurusu',
+          status: 'new',
+        },
+      });
+      const updatedApp = await prisma.joinApplication.update({
+        where: { id },
+        data: { convertedLeadId: lead.id },
+      });
+      await audit(session, 'created', 'lead', lead.id, `Başvurudan Lead oluşturuldu: ${existing.name}`);
+      await notify('lead', `Yeni lead (başvuru): ${existing.name}`, '/leads');
+      return NextResponse.json({ ...updatedApp, lead: { id: lead.id } });
+    }
 
     const updated = await prisma.joinApplication.update({
       where: { id },

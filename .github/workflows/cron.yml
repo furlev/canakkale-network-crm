@@ -52,6 +52,12 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "${{ vars.CRM_URL }}/api/cron/market" || echo "market atlandı/başarısız"
 
+      - name: Acil durum (deprem — AFAD/Kandilli)
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/emergency" || echo "emergency atlandı/başarısız"
+
   cleanup:
     # Günde bir (03:00 UTC): eski feed öğeleri + taslak görselleri + reddedilmiş taslak temizliği
     if: github.event_name != 'schedule' || github.event.schedule == '0 3 * * *'

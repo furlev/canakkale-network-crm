@@ -39,6 +39,10 @@ const A_ONLY = new Set<string>(['/settings']);
 const C_ALLOWED = new Set<string>([
   '/', '/notifications', '/tasks', '/calendar', '/messages', '/notes',
   '/payments', '/knowledge-base', '/announcements', '/news', '/tips', '/profile',
+  // Site editörlüğü: C sınırlı site-editörü olabilir (haber yazar/düzenler) ama
+  // YAYINLAYAMAZ — yayın onayı B/A'da. Kişi bazlı kısıtlama dinamik AccessRule
+  // (access.ts) ile yapılır; proxy statik kontrolü buraya dayanır.
+  '/site-yonetimi',
 ]);
 
 /** Yalnızca A veya (herhangi bir) B görebilir — editör verimlilik paneli. */

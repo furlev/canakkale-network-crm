@@ -4,6 +4,9 @@ import { randomBytes } from 'crypto';
 import prisma from '@/lib/prisma';
 import { parseBody, handleApiError } from '@/lib/api';
 import { getTransport } from '@/lib/mailer';
+import { honeypotTriggered, submittedTooFast } from '@/lib/bot';
+import { verifyTurnstile } from '@/lib/turnstile';
+import { clientIp } from '@/lib/net';
 
 /**
  * Bülten aboneliği — ÇİFT-ONAY (double opt-in) (halka açık; proxy'de public + IP rate-limitli).
@@ -25,6 +28,13 @@ const subscribeSchema = z.object({
   email: z.string().trim().toLowerCase().email('Geçerli bir e-posta adresi gir'),
   // İsteğe bağlı ilgi etiketleri (segment): ilçe/kategori. Yalnız kısa, güvenli string'ler.
   tags: z.array(z.string().trim().min(1).max(48)).max(20).optional(),
+  // Bot koruması (hepsi opsiyonel → eski istemciler kırılmaz):
+  //  website: honeypot (gizli alan; insan boş bırakır)
+  //  ts: form render epoch ms (zaman-tuzağı; çok hızlı gönderim reddedilir)
+  //  turnstileToken: Cloudflare Turnstile token'ı (yalnız TURNSTILE_SECRET varsa doğrulanır)
+  website: z.string().max(200).optional(),
+  ts: z.coerce.number().optional(),
+  turnstileToken: z.string().max(4096).optional(),
 });
 
 /** URL-güvenli rastgele token (çift-onay + tek-tık çıkış). */
@@ -64,6 +74,22 @@ function confirmEmailHtml(confirmUrl: string): string {
 export async function POST(request: Request) {
   try {
     const body = await parseBody(request, subscribeSchema);
+
+    // ── Bot koruması ──
+    // (a) Honeypot: gizli alan doluysa → sessiz sahte başarı (botu bilgilendirme, kayıt açma).
+    // (b) Zaman-tuzağı: 2sn altında gönderim → aynı sessiz sahte başarı (opsiyonel; ts yoksa atlanır).
+    if (honeypotTriggered(body.website) || submittedTooFast(body.ts, 2000)) {
+      return NextResponse.json({ ok: true, message: NEUTRAL_MESSAGE });
+    }
+    // (c) Turnstile: yalnız TURNSTILE_SECRET tanımlıysa doğrular; yoksa no-op (graceful).
+    const turnstile = await verifyTurnstile(body.turnstileToken, clientIp(request.headers));
+    if (!turnstile.ok) {
+      return NextResponse.json(
+        { ok: false, message: 'Doğrulama tamamlanamadı. Lütfen tekrar dene.' },
+        { status: 400 },
+      );
+    }
+
     const tagsJson = body.tags && body.tags.length ? JSON.stringify(body.tags) : undefined;
 
     const existing = await prisma.subscriber.findUnique({

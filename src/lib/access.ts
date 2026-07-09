@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
-import type { Session } from '@/lib/auth';
+import { getSession, type Session } from '@/lib/auth';
 import { canAccessPath, levelOf } from '@/lib/permissions';
+import { ApiError } from '@/lib/api';
 
 /**
  * Dinamik sayfa erişimi: taban RBAC (permissions.ts) + AccessRule istisnaları.
@@ -91,6 +92,21 @@ export async function canAccessPathDynamic(session: Session | null, path: string
   if (roleRule) return roleRule.allow;
 
   return canAccessPath(session, path);
+}
+
+/**
+ * Site yönetimi (haber editörü vb.) için API guard'ı — proxy'den bağımsız
+ * defense-in-depth. Oturum yoksa 401; /site-yonetimi'ne dinamik erişimi yoksa
+ * (AccessRule deny dahil) 403 fırlatır. Geçerse session'ı döndürür.
+ * A/B her zaman geçer; C taban RBAC + AccessRule kararıyla geçer.
+ */
+export async function requireSiteEditor(): Promise<Session> {
+  const session = await getSession();
+  if (!session) throw new ApiError(401, 'Oturum gerekli');
+  if (!(await canAccessPathDynamic(session, '/site-yonetimi'))) {
+    throw new ApiError(403, 'Site yönetimine erişiminiz yok');
+  }
+  return session;
 }
 
 /** Kullanıcının erişebildiği ekran listesi (nav + yönetim UI için). */
