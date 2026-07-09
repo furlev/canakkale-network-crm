@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 
 type Item = { id?: string; description: string; quantity: number; unitPrice: number; vatRate: number };
 
@@ -256,6 +257,7 @@ export default function InvoicesPage() {
           <p className="page-subtitle">Kalemli fatura, KDV, PDF ve tahsilat takibi</p>
         </div>
         <div className="page-header-actions">
+          <Link className="btn btn-ghost" href="/invoices/recurring">🔁 Tekrarlayan Faturalar</Link>
           <button className="btn btn-primary" onClick={openAdd}>+ Yeni Fatura</button>
         </div>
       </div>

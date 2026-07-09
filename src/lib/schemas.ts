@@ -287,7 +287,7 @@ export const messageCreate = z.object({
 
 /* ── Setting ── */
 export const settingPut = z.object({
-  key: z.enum(['general', 'company', 'wordpress', 'email', 'notifications', 'ai']),
+  key: z.enum(['general', 'company', 'wordpress', 'email', 'notifications', 'ai', 'styleGuide', 'autoPublish', 'aiBudget']),
   // Boyut sınırı: ayarlar küçük yapılandırma nesneleridir; dev JSON'la depo şişirilemesin.
   value: z.unknown().refine(v => {
     try { return JSON.stringify(v).length <= 20_000; } catch { return false; }
@@ -304,6 +304,7 @@ export const aiDraftUpdate = z.object({
   metaDescription: z.string().optional(),
   socialPost: z.string().optional(),
   imageUrl: z.string().optional(),
+  district: z.string().optional(),  // ilçe slug'ı (onay kuyruğunda editör düzeltir)
   // 'published' KASITLI olarak yok: yayın yalnızca .../publish route'undan yapılır (WP'ye gönderip wpId set eder).
   status: z.enum(['pending', 'approved', 'rejected']).optional(),
 });

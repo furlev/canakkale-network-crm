@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import ThemeToggle from './ThemeToggle';
+import DistrictPref from './DistrictPref';
 
 export type NavCategory = { slug: string; name: string };
 
@@ -141,6 +142,8 @@ export default function SiteHeader({ categories }: { categories: NavCategory[] }
           <Link href="/ekibimize-katil" className="site-nav-join">
             Ekibimize Katıl
           </Link>
+          {/* "Benim İlçem" seçici — tercih localStorage('cn-district')'e yazılır */}
+          <DistrictPref className="header-district" />
           <button
             ref={searchBtnRef}
             type="button"

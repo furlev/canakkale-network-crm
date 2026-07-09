@@ -110,6 +110,24 @@ export default function CityBar() {
             )}
           </span>
         </Link>
+
+        <span className={styles.sep} aria-hidden="true" />
+
+        {/* Namaz vakitleri */}
+        <Link href="/namaz" className={styles.item} aria-label="Namaz vakitleri">
+          <span className={styles.emoji} aria-hidden="true">
+            🕌
+          </span>
+          <span className={styles.lbl}>Namaz</span>
+        </Link>
+
+        {/* Feribot seferleri */}
+        <Link href="/feribot" className={`${styles.item} ${styles.hideSm}`} aria-label="Feribot seferleri">
+          <span className={styles.emoji} aria-hidden="true">
+            ⛴️
+          </span>
+          <span className={styles.lbl}>Feribot</span>
+        </Link>
       </div>
     </div>
   );

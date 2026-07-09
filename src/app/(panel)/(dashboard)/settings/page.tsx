@@ -9,7 +9,25 @@ const sections = [
   { key: 'email', icon: '📧', label: 'E-posta' },
   { key: 'notifications', icon: '🔔', label: 'Bildirimler' },
   { key: 'api', icon: '🔑', label: 'API' },
+  { key: 'styleGuide', icon: '✍️', label: 'AI Stil Rehberi' },
+  { key: 'autoPublish', icon: '🚦', label: 'AI Oto-Yayın' },
+  { key: 'aiBudget', icon: '💸', label: 'AI Bütçe' },
   { key: 'appearance', icon: '🎨', label: 'Görünüm' },
+];
+
+/* AI stil rehberinde kategori bazlı override alanları — anahtarlar ai-templates.ts CategoryKey ile birebir. */
+const STYLE_CATEGORIES: { key: string; label: string }[] = [
+  { key: 'asayis', label: 'Asayiş / Adli' },
+  { key: 'spor', label: 'Spor' },
+  { key: 'kultur', label: 'Kültür-Sanat' },
+  { key: 'ekonomi', label: 'Ekonomi' },
+  { key: 'resmi', label: 'Resmi Duyuru' },
+  { key: 'genel', label: 'Genel' },
+];
+
+/* AI oto-yayın modları — yalnızca 'daily' desteklenir (ai.ts getAutoPublishConfig). */
+const AUTO_PUBLISH_MODES: { key: string; label: string }[] = [
+  { key: 'daily', label: 'Günlük (daily)' },
 ];
 
 const NOTIFICATION_ITEMS = [
@@ -57,6 +75,25 @@ const defaults = {
   notifications: [true, true, true, true, true, false, false],
   ai: {
     apiKey: '',
+  },
+  // AI editör stil rehberi (Setting('styleGuide')) — ai.ts getStyleGuide bu şekle çözer.
+  styleGuide: {
+    global: '',
+    byCategory: { asayis: '', spor: '', kultur: '', ekonomi: '', resmi: '', genel: '' } as Record<string, string>,
+  },
+  // Yarı-otomatik yayın kuralları (Setting('autoPublish')) — VARSAYILAN KAPALI.
+  autoPublish: {
+    enabled: false,
+    minConfidence: 0.8,     // 0-1 fact-check güveni
+    minQuality: 75,         // 0-100 kalite skoru
+    minOriginality: 55,     // 0-100 özgünlük skoru
+    modes: ['daily'] as string[],
+    delayMinutes: 30,
+  },
+  // Günlük AI harcama bütçesi (Setting('aiBudget')) — VARSAYILAN KAPALI.
+  aiBudget: {
+    enabled: false,
+    dailyUsd: 5,
   },
 };
 
@@ -164,6 +201,14 @@ export default function SettingsPage() {
     fetch('/api/settings')
       .then(res => res.json())
       .then(data => {
+        // styleGuide düz string (legacy) ise global'e taşı; obje ise byCategory'yi varsayılanla birleştir.
+        const sgRaw = data.styleGuide;
+        const styleGuide = typeof sgRaw === 'string'
+          ? { ...defaults.styleGuide, global: sgRaw }
+          : {
+              global: sgRaw?.global ?? defaults.styleGuide.global,
+              byCategory: { ...defaults.styleGuide.byCategory, ...(sgRaw?.byCategory || {}) },
+            };
         setSettings({
           general: { ...defaults.general, ...(data.general || {}) },
           company: { ...defaults.company, ...(data.company || {}) },
@@ -171,6 +216,13 @@ export default function SettingsPage() {
           email: { ...defaults.email, ...(data.email || {}) },
           notifications: Array.isArray(data.notifications) ? data.notifications : defaults.notifications,
           ai: { ...defaults.ai, ...(data.ai || {}) },
+          styleGuide,
+          autoPublish: {
+            ...defaults.autoPublish,
+            ...(data.autoPublish || {}),
+            modes: Array.isArray(data.autoPublish?.modes) ? data.autoPublish.modes : defaults.autoPublish.modes,
+          },
+          aiBudget: { ...defaults.aiBudget, ...(data.aiBudget || {}) },
         });
         setLoading(false);
       })
@@ -422,6 +474,122 @@ export default function SettingsPage() {
                     <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginTop: 'var(--space-2)' }}>Öncelik sırası: sunucu <code>GOOGLE_VERTEX_PROJECT</code> (Vertex/Cloud kredisi) → <code>GEMINI_API_KEY</code> → bu alan. Vertex aktifken bu alan kullanılmaz, boş bırakabilirsiniz.</p>
                   </div>
                   <SaveBtn section="ai" />
+                </>
+              )}
+
+              {active === 'styleGuide' && (
+                <>
+                  <h3 className="card-title" style={{ marginBottom: 'var(--space-6)' }}>✍️ AI Stil Rehberi</h3>
+                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', marginBottom: 'var(--space-4)', lineHeight: 1.5 }}>
+                    Yapay zekânın haber yazarken uyacağı editör kuralları. Global rehber tüm haberlere,
+                    kategori rehberleri yalnızca ilgili kategoriye uygulanır (global talimatın üzerine eklenir).
+                  </p>
+                  <div className="form-group">
+                    <label className="form-label">Global Stil Rehberi (tüm kategoriler)</label>
+                    <textarea
+                      className="form-textarea"
+                      rows={4}
+                      placeholder="Ör. Kısa cümleler kur, edilgen çatıdan kaçın, Çanakkale yerel bağlamını vurgula..."
+                      value={settings.styleGuide.global}
+                      onChange={e => set('styleGuide', { ...settings.styleGuide, global: e.target.value })}
+                    />
+                  </div>
+                  <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, margin: 'var(--space-6) 0 var(--space-4)', color: 'var(--primary-light)' }}>Kategori Bazlı Rehberler</h4>
+                  {STYLE_CATEGORIES.map(c => (
+                    <div key={c.key} className="form-group">
+                      <label className="form-label">{c.label}</label>
+                      <textarea
+                        className="form-textarea"
+                        rows={2}
+                        placeholder={`${c.label} haberleri için özel talimat (opsiyonel)`}
+                        value={settings.styleGuide.byCategory[c.key] ?? ''}
+                        onChange={e => set('styleGuide', { ...settings.styleGuide, byCategory: { ...settings.styleGuide.byCategory, [c.key]: e.target.value } })}
+                      />
+                    </div>
+                  ))}
+                  <SaveBtn section="styleGuide" />
+                </>
+              )}
+
+              {active === 'autoPublish' && (
+                <>
+                  <h3 className="card-title" style={{ marginBottom: 'var(--space-6)' }}>🚦 AI Yarı-Otomatik Yayın</h3>
+                  <div style={{ padding: 'var(--space-4)', background: 'rgba(255,118,117,0.10)', borderRadius: 'var(--border-radius)', marginBottom: 'var(--space-4)' }}>
+                    <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                      ⚠ Etkinken; yalnızca <strong>günlük</strong> üretimde ve aşağıdaki eşikleri geçen taslaklar otomatik olarak
+                      <strong> onaylanıp planlanır</strong> (gerçek yayını planlı-yayın cron&apos;u yapar). Son gelişme (breaking) ve
+                      haftalık panorama <strong>asla</strong> otomatik yayınlanmaz. Varsayılan: <strong>kapalı</strong>.
+                    </p>
+                  </div>
+                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 'var(--text-sm)' }}>Yarı-otomatik yayını etkinleştir</span>
+                    <Toggle on={settings.autoPublish.enabled} onToggle={() => set('autoPublish', { ...settings.autoPublish, enabled: !settings.autoPublish.enabled })} />
+                  </div>
+                  <div className="grid-2">
+                    <div className="form-group">
+                      <label className="form-label">Min. Güven (0-1)</label>
+                      <input className="form-input" type="number" min={0} max={1} step={0.05}
+                        value={settings.autoPublish.minConfidence}
+                        onChange={e => set('autoPublish', { ...settings.autoPublish, minConfidence: e.target.value === '' ? 0 : Number(e.target.value) })} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Gecikme (dakika)</label>
+                      <input className="form-input" type="number" min={0} max={1440} step={5}
+                        value={settings.autoPublish.delayMinutes}
+                        onChange={e => set('autoPublish', { ...settings.autoPublish, delayMinutes: e.target.value === '' ? 0 : Number(e.target.value) })} />
+                    </div>
+                  </div>
+                  <div className="grid-2">
+                    <div className="form-group">
+                      <label className="form-label">Min. Kalite (0-100)</label>
+                      <input className="form-input" type="number" min={0} max={100} step={1}
+                        value={settings.autoPublish.minQuality}
+                        onChange={e => set('autoPublish', { ...settings.autoPublish, minQuality: e.target.value === '' ? 0 : Number(e.target.value) })} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Min. Özgünlük (0-100)</label>
+                      <input className="form-input" type="number" min={0} max={100} step={1}
+                        value={settings.autoPublish.minOriginality}
+                        onChange={e => set('autoPublish', { ...settings.autoPublish, minOriginality: e.target.value === '' ? 0 : Number(e.target.value) })} />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">İzinli Modlar</label>
+                    {AUTO_PUBLISH_MODES.map(m => {
+                      const on = settings.autoPublish.modes.includes(m.key);
+                      return (
+                        <label key={m.key} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', cursor: 'pointer', marginBottom: 'var(--space-2)' }}>
+                          <input type="checkbox" checked={on} onChange={() => {
+                            const next = on ? settings.autoPublish.modes.filter(x => x !== m.key) : [...settings.autoPublish.modes, m.key];
+                            set('autoPublish', { ...settings.autoPublish, modes: next });
+                          }} />
+                          {m.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <SaveBtn section="autoPublish" />
+                </>
+              )}
+
+              {active === 'aiBudget' && (
+                <>
+                  <h3 className="card-title" style={{ marginBottom: 'var(--space-6)' }}>💸 AI Günlük Bütçe</h3>
+                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', marginBottom: 'var(--space-4)', lineHeight: 1.5 }}>
+                    Etkinken günlük tahmini AI harcaması bu tutarı aştığında yeni taslak üretimi durur.
+                    Harcama <a href="/ai-news/maliyet" style={{ color: 'var(--primary-light)' }}>Maliyet</a> ekranından izlenir. Varsayılan: <strong>kapalı</strong>.
+                  </p>
+                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 'var(--text-sm)' }}>Günlük bütçe sınırını etkinleştir</span>
+                    <Toggle on={settings.aiBudget.enabled} onToggle={() => set('aiBudget', { ...settings.aiBudget, enabled: !settings.aiBudget.enabled })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Günlük Bütçe (USD)</label>
+                    <input className="form-input" type="number" min={0} step={0.5}
+                      value={settings.aiBudget.dailyUsd}
+                      onChange={e => set('aiBudget', { ...settings.aiBudget, dailyUsd: e.target.value === '' ? 0 : Number(e.target.value) })} />
+                  </div>
+                  <SaveBtn section="aiBudget" />
                 </>
               )}
 

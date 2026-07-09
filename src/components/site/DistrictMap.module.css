@@ -93,3 +93,103 @@
     transform: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   İnteraktif SVG ilçe haritası (A1 #4) — yukarıdaki .grid/.tile
+   kart ızgarasının yerini alır. site.css token'larını kullanır.
+   ───────────────────────────────────────────────────────────── */
+
+.svg {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible; /* hover rozeti poligon dışına taşabilsin */
+}
+
+.water {
+  fill: color-mix(in srgb, var(--accent) 14%, transparent);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Her ilçe bir SVG bağlantısıdır (klavye ile odaklanabilir, taranabilir) */
+.district {
+  cursor: pointer;
+  outline: none;
+}
+
+.shape {
+  fill: color-mix(in srgb, var(--bg-elevated) 72%, var(--surface));
+  stroke: var(--line);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  transition:
+    fill 0.25s var(--ease-out),
+    stroke 0.25s var(--ease-out),
+    filter 0.25s var(--ease-out);
+}
+
+.district:hover .shape,
+.district:focus-visible .shape {
+  fill: color-mix(in srgb, var(--accent) 34%, var(--surface-2));
+  stroke: var(--accent);
+  filter: drop-shadow(0 6px 16px color-mix(in srgb, var(--accent) 30%, transparent));
+}
+
+.district:focus-visible .shape {
+  stroke-width: 2.6;
+}
+
+/* Görüntülenen ilçe (ör. /ilce/[slug] alt haritasında) kalıcı vurgulu */
+.active .shape {
+  fill: color-mix(in srgb, var(--accent) 24%, var(--surface-2));
+  stroke: var(--accent);
+}
+
+.label {
+  fill: var(--ink);
+  font-family: inherit;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--surface) 85%, transparent);
+  stroke-width: 3px;
+}
+
+/* Yayın sayısı rozeti — varsayılan gizli, hover/odakta belirir */
+.badge {
+  opacity: 0;
+  transform-box: fill-box;
+  transition: opacity 0.2s var(--ease-out);
+  pointer-events: none;
+}
+
+.district:hover .badge,
+.district:focus-visible .badge {
+  opacity: 1;
+}
+
+.badgeBg {
+  fill: var(--accent);
+  filter: drop-shadow(0 4px 10px color-mix(in srgb, var(--accent) 40%, transparent));
+}
+
+.badgeText {
+  fill: var(--accent-ink);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shape {
+    transition: fill 0.15s linear, stroke 0.15s linear;
+  }
+  .badge {
+    transition: none;
+  }
+}

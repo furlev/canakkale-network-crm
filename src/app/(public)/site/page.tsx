@@ -13,6 +13,8 @@ import InterviewReel, { type ReelItem } from '@/components/site/InterviewReel';
 import MostRead, { type MostReadItem } from '@/components/site/MostRead';
 import NewsletterCTA from '@/components/site/NewsletterCTA';
 import JoinCTA from '@/components/site/JoinCTA';
+import DistrictMap from '@/components/site/DistrictMap';
+import DistrictNewsRail from '@/components/site/DistrictNewsRail';
 import '../home.css';
 
 export const revalidate = 60;
@@ -84,6 +86,7 @@ function toHero(a: ArticleRow): HeroItem {
     categoryName: a.category?.name ?? null,
     categorySlug: a.categorySlug,
     dateLabel: a.publishedAt ? formatDateTr(a.publishedAt) : '',
+    isBreaking: a.isBreaking,
   };
 }
 
@@ -95,6 +98,8 @@ type HomeData = {
   interviews: ReelItem[];
   mostRead: MostReadItem[];
   stats: { articleCount: number; totalViews: number; categoryCount: number };
+  /** Yayınlanan haber sayısı — ilçe slug'ı → adet (ilçe haritası rozetleri) */
+  districtCounts: Record<string, number>;
 };
 
 const EMPTY_DATA: HomeData = {
@@ -105,11 +110,12 @@ const EMPTY_DATA: HomeData = {
   interviews: [],
   mostRead: [],
   stats: { articleCount: 0, totalViews: 0, categoryCount: 0 },
+  districtCounts: {},
 };
 
 async function getHomeData(): Promise<HomeData> {
   try {
-    const [settings, featured, latest, navCats, interviews, mostRead, articleCount, viewsAgg, categoryCount] =
+    const [settings, featured, latest, navCats, interviews, mostRead, articleCount, viewsAgg, categoryCount, districtGroups] =
       await Promise.all([
         getSiteSettings(),
         prisma.siteArticle.findMany({
@@ -144,7 +150,19 @@ async function getHomeData(): Promise<HomeData> {
         prisma.siteArticle.count({ where: PUB }),
         prisma.siteArticle.aggregate({ where: PUB, _sum: { views: true } }),
         prisma.siteCategory.count(),
+        // İlçe başına yayınlanan haber sayısı — ilçe haritası rozetleri
+        prisma.siteArticle.groupBy({
+          by: ['district'],
+          where: PUB,
+          _count: { _all: true },
+        }),
       ]);
+
+    // groupBy sonucunu ilçe slug'ı → adet sözlüğüne indir
+    const districtCounts: Record<string, number> = {};
+    for (const g of districtGroups) {
+      if (g.district) districtCounts[g.district] = g._count._all;
+    }
 
     // Manşet: öne çıkanlar yetmezse en yeni haberlerle 5'e tamamla
     let heroRows: ArticleRow[] = featured;
@@ -204,6 +222,7 @@ async function getHomeData(): Promise<HomeData> {
         totalViews: viewsAgg._sum.views ?? 0,
         categoryCount,
       },
+      districtCounts,
     };
   } catch {
     // DB boş/erişilemez olsa da anasayfa zarifçe ayakta kalır
@@ -250,6 +269,9 @@ export default async function HomePage() {
         </section>
       )}
 
+      {/* 3.5 — İlçenden haberler (yalnız ziyaretçi "Benim İlçem"i seçtiyse görünür) */}
+      <DistrictNewsRail />
+
       {/* 4 — Kategori rayları */}
       {data.rails.map(rail => (
         <CategoryRail
@@ -260,6 +282,23 @@ export default async function HomePage() {
           articles={rail.articles}
         />
       ))}
+
+      {/* 4.5 — İlçe İlçe Çanakkale (interaktif harita) */}
+      {data.stats.articleCount > 0 && (
+        <section className="s-section home-map">
+          <div className="s-container">
+            <div className="s-section-head s-reveal">
+              <div>
+                <span className="s-kicker">Şehrin Haritası</span>
+                <h2 className="s-section-title">
+                  İlçe İlçe <span className="tick">Çanakkale</span>
+                </h2>
+              </div>
+            </div>
+            <DistrictMap counts={data.districtCounts} />
+          </div>
+        </section>
+      )}
 
       {/* 5 — Sokak röportajları */}
       <InterviewReel articles={data.interviews} />

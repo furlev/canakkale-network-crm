@@ -1,0 +1,38 @@
+/* "İlçenden Haberler" rayı — site.css token'larını kullanır (tema-duyarlı).
+   Izgara (home-grid) ve bölüm başlığı (s-section-head) global home.css'ten gelir;
+   burada yalnız raya özgü küçük eklemeler var. */
+
+.rail {
+  /* Seçili ilçenin haberleri — hafif accent zemin ile diğer bölümlerden ayrışır */
+  background:
+    radial-gradient(800px 340px at 12% -20%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 62%);
+}
+
+.all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: gap 0.2s var(--ease-out);
+}
+
+.all:hover {
+  gap: 10px;
+}
+
+.all:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .all {
+    transition: none;
+  }
+}

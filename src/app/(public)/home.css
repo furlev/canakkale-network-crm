@@ -1407,3 +1407,56 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
 .hero[data-scrub] .hero-scroll {
   opacity: calc(1 - var(--hero-p, 0) * 3);
 }
+
+/* ═══ HERO "CANLI" VARYANTI (A1 #3) ═══
+   Aktif manşet son dakika (isBreaking) ise hero tam-kızıl bir varyanta geçer:
+   perde kırmızı tonlanır ve nabızlı bir "CANLI" rozeti belirir. off tier
+   (.is-static) ve reduced-motion'da nabız durur — rozet statik görünür. */
+
+.hero[data-variant='breaking'] .hero-veil {
+  background:
+    linear-gradient(100deg, rgba(120, 8, 16, 0.88) 0%, rgba(96, 6, 12, 0.42) 52%, rgba(120, 8, 16, 0.6) 100%),
+    radial-gradient(900px 520px at 72% 16%, rgba(226, 49, 64, 0.5), transparent 70%);
+}
+
+.hero[data-variant='breaking'] .hero-badge {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.hero-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px 5px 10px;
+  border-radius: 999px;
+  background: #e11722;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  box-shadow: 0 4px 20px rgba(225, 23, 34, 0.55);
+}
+
+.hero-live-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #fff;
+  animation: hero-live-pulse 1.15s ease-in-out infinite;
+}
+
+@keyframes hero-live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
+  50% { opacity: 0.45; transform: scale(0.68); box-shadow: 0 0 0 6px rgba(255, 255, 255, 0); }
+}
+
+/* off tier: nabız yok, rozet statik */
+.hero-live.is-static .hero-live-dot {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-live-dot { animation: none; }
+}

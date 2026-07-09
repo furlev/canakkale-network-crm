@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { districtName } from '@/lib/districts';
+import { districtName, DISTRICTS } from '@/lib/districts';
 import InstagramStudio from '@/components/InstagramStudio';
 
 /* API sözleşmesi: /api/ai/drafts GET/PUT/DELETE + /publish + /bulk + /[id]/instagram */
@@ -98,6 +98,7 @@ type EditState = {
   tags: string;            // virgülle ayrılmış (kullanıcı girişi)
   seoTitle: string;
   metaDescription: string;
+  district: string;        // ilçe slug'ı ('' = belirtilmemiş); PUT ile kaydedilir
   editorNote: string;      // redaksiyon notu (bulk 'note' ile kaydedilir)
   scheduledAt: string;     // datetime-local (bulk 'schedule'/'note' ile kaydedilir)
 };
@@ -106,6 +107,7 @@ export default function AiNewsPage() {
   const [drafts, setDrafts] = useState<AiDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<StatusKey>('pending');
+  const [districtFilter, setDistrictFilter] = useState<string>('all'); // 'all' | slug | 'none'
 
   const [selected, setSelected] = useState<AiDraft | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
@@ -149,6 +151,7 @@ export default function AiNewsPage() {
       tags: parseJsonArray(d.tags).join(', '),
       seoTitle: d.seoTitle || '',
       metaDescription: d.metaDescription || '',
+      district: d.district || '',
       editorNote: d.editorNote || '',
       scheduledAt: isoToLocalInput(d.scheduledAt),
     });
@@ -172,6 +175,7 @@ export default function AiNewsPage() {
       tags: JSON.stringify(edit.tags.split(',').map(t => t.trim()).filter(Boolean)),
       seoTitle: edit.seoTitle,
       metaDescription: edit.metaDescription,
+      district: edit.district,
       ...(extra || {}),
     };
     const res = await fetch(`/api/ai/drafts/${edit.id}`, {
@@ -324,11 +328,17 @@ export default function AiNewsPage() {
       return next;
     });
   };
-  const allSelected = drafts.length > 0 && drafts.every(d => selectedIds.has(d.id));
+  // İlçe filtresi (client tarafı): 'all' = hepsi, 'none' = ilçesiz, aksi halde slug eşleşmesi.
+  const visibleDrafts = districtFilter === 'all'
+    ? drafts
+    : districtFilter === 'none'
+      ? drafts.filter(d => !d.district)
+      : drafts.filter(d => d.district === districtFilter);
+  const allSelected = visibleDrafts.length > 0 && visibleDrafts.every(d => selectedIds.has(d.id));
   const toggleAll = () => {
     setSelectedIds(prev => {
-      if (drafts.length > 0 && drafts.every(d => prev.has(d.id))) return new Set();
-      return new Set(drafts.map(d => d.id));
+      if (visibleDrafts.length > 0 && visibleDrafts.every(d => prev.has(d.id))) return new Set();
+      return new Set(visibleDrafts.map(d => d.id));
     });
   };
   const clearSelection = () => setSelectedIds(new Set());
@@ -372,21 +382,38 @@ export default function AiNewsPage() {
         </div>
       </div>
 
-      {/* Durum sekmeleri */}
-      <div className="tabs" style={{ marginBottom: 'var(--space-6)' }}>
-        {TABS.map(t => (
-          <button
-            key={t.key}
-            className={`tab ${tab === t.key ? 'active' : ''}`}
-            onClick={() => setTab(t.key)}
+      {/* Durum sekmeleri + ilçe filtresi */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', flexWrap: 'wrap', marginBottom: 'var(--space-6)' }}>
+        <div className="tabs" style={{ marginBottom: 0 }}>
+          {TABS.map(t => (
+            <button
+              key={t.key}
+              className={`tab ${tab === t.key ? 'active' : ''}`}
+              onClick={() => setTab(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', marginLeft: 'auto' }}>
+          <span style={{ color: 'var(--text-muted)' }}>📍 İlçe</span>
+          <select
+            className="form-select"
+            style={{ maxWidth: 200, padding: '6px 10px', fontSize: 'var(--text-sm)' }}
+            value={districtFilter}
+            onChange={(e) => { setDistrictFilter(e.target.value); clearSelection(); }}
           >
-            {t.label}
-          </button>
-        ))}
+            <option value="all">Tüm ilçeler</option>
+            <option value="none">İlçe belirtilmemiş</option>
+            {DISTRICTS.map(d => (
+              <option key={d.slug} value={d.slug}>{d.name}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {/* Toplu seçim araç çubuğu */}
-      {!loading && drafts.length > 0 && (
+      {!loading && visibleDrafts.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap', marginBottom: 'var(--space-4)', padding: 'var(--space-2) var(--space-3)', background: 'var(--surface-2, rgba(255,255,255,0.02))', borderRadius: 'var(--border-radius)', border: '1px solid var(--border-subtle)' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', fontSize: 'var(--text-sm)', cursor: 'pointer' }}>
             <input type="checkbox" checked={allSelected} onChange={toggleAll} />
@@ -408,15 +435,15 @@ export default function AiNewsPage() {
 
       {loading ? (
         <div style={{ padding: 'var(--space-8)', textAlign: 'center', color: 'var(--text-muted)' }}>Yükleniyor...</div>
-      ) : drafts.length === 0 ? (
+      ) : visibleDrafts.length === 0 ? (
         <div className="data-table-container">
           <div style={{ padding: 'var(--space-8)', textAlign: 'center', color: 'var(--text-muted)' }}>
-            Bu durumda taslak bulunmuyor.
+            {districtFilter === 'all' ? 'Bu durumda taslak bulunmuyor.' : 'Bu ilçe filtresine uyan taslak bulunmuyor.'}
           </div>
         </div>
       ) : (
         <div className="cards-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 'var(--space-4)' }}>
-          {drafts.map(d => {
+          {visibleDrafts.map(d => {
             const conf = confidenceBadge(d.confidence);
             const qual = qualityBadge(d.qualityScore);
             const st = STATUS_BADGE[d.status] || { cls: 'badge-primary', label: d.status };
@@ -509,7 +536,7 @@ export default function AiNewsPage() {
                   const conf = confidenceBadge(selected.confidence);
                   return conf ? <span className={`badge ${conf.cls}`}>{conf.text}</span> : null;
                 })()}
-                {districtName(selected.district) && <span className="badge badge-accent">📍 {districtName(selected.district)}</span>}
+                {districtName(edit.district) && <span className="badge badge-accent">📍 {districtName(edit.district)}</span>}
                 {selected.hasContradiction && <span className="badge badge-error">⚠ Kaynak çelişkisi</span>}
                 {selected.wpId && <span className="badge badge-success">WP #{selected.wpId}</span>}
                 {selected.articleId && <span className="badge badge-success">🌐 Sitede</span>}
@@ -542,6 +569,17 @@ export default function AiNewsPage() {
                   <label className="form-label">Etiketler (virgülle ayırın)</label>
                   <input className="form-input" value={edit.tags} onChange={e => setEdit({ ...edit, tags: e.target.value })} />
                 </div>
+              </div>
+
+              {/* İlçe — düzenlenebilir (PUT ile kaydedilir; Yayınla/Reddet/Notu Kaydet öncesi saveEdits taşır) */}
+              <div className="form-group">
+                <label className="form-label">📍 İlçe</label>
+                <select className="form-select" value={edit.district} onChange={e => setEdit({ ...edit, district: e.target.value })}>
+                  <option value="">Belirtilmemiş</option>
+                  {DISTRICTS.map(d => (
+                    <option key={d.slug} value={d.slug}>{d.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="form-group">

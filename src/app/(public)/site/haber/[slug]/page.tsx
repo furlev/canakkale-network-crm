@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import Link from 'next/link';
 import prisma from '@/lib/prisma';
-import { formatDateTr, readingMinutes, stripHtml } from '@/lib/site';
+import { formatDateTr, readingMinutes, stripHtml, slugifyTr } from '@/lib/site';
 import { sanitizeHtml, youtubeEmbedUrl } from '@/lib/sanitize';
 import ArticleCard, { type ArticleCardData } from '@/components/site/ArticleCard';
 import CorrectionBanner from '@/components/site/CorrectionBanner';
@@ -105,33 +105,89 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
   const bodyHtml = sanitizeHtml(article.body);
   const catColor = article.category?.color || undefined;
 
-  // İlgili haberler: aynı kategoriden son 4 (bu haber hariç)
-  const related = await prisma.siteArticle.findMany({
-    where: {
-      status: 'published',
-      deletedAt: null,
-      slug: { not: article.slug },
-      ...(article.categorySlug ? { categorySlug: article.categorySlug } : {}),
-    },
-    // publishedAt=null satırlar tepeye yapışmasın
-    orderBy: { publishedAt: { sort: 'desc', nulls: 'last' } },
-    take: 4,
-    // body ve imageUrl (data-URI olabilir) ASLA seçilmez — satırlar hafif kalır
-    select: {
-      id: true,
-      slug: true,
-      title: true,
-      summary: true,
-      imageAlt: true,
-      imageIsAi: true,
-      categorySlug: true,
-      isBreaking: true,
-      publishedAt: true,
-      views: true,
-      authorName: true,
-      category: { select: { name: true } },
-    },
-  });
+  // Yazar hub bağı: authorSlug varsa onu, yoksa yazar adından türetilmiş slug'ı kullan.
+  // Kurumsal imza (varsayılan "Çanakkale Network") için kişisel hub yok → düz metin.
+  const authorHubSlug =
+    article.authorSlug || (article.authorName && article.authorName !== 'Çanakkale Network'
+      ? slugifyTr(article.authorName)
+      : null);
+
+  // İlgili haberler: ETİKET BENZERLİĞİ ile seçilir (aynı kategori yerine).
+  // Skor = bu haberin etiketleri ile adayın etiketlerinin kesişim sayısı;
+  // skor eşitse yayın tarihine (yeni → eski) göre sıralanır.
+  // body ve imageUrl (data-URI olabilir) ASLA seçilmez — satırlar hafif kalır.
+  const relatedSelect = {
+    id: true,
+    slug: true,
+    title: true,
+    summary: true,
+    imageAlt: true,
+    imageIsAi: true,
+    categorySlug: true,
+    isBreaking: true,
+    publishedAt: true,
+    views: true,
+    authorName: true,
+    district: true,
+    tags: true, // kesişim skoru için (küçük JSON string)
+    category: { select: { name: true } },
+  } as const;
+
+  const relatedBaseWhere = {
+    status: 'published',
+    deletedAt: null,
+    slug: { not: article.slug },
+  } as const;
+
+  // (1) En az bir ortak etikete sahip yayınlar (etiket varsa)
+  const tagMatches =
+    tags.length > 0
+      ? await prisma.siteArticle.findMany({
+          where: {
+            ...relatedBaseWhere,
+            OR: tags.slice(0, 8).map(t => ({ tags: { contains: `"${t}"`, mode: 'insensitive' as const } })),
+          },
+          orderBy: { publishedAt: { sort: 'desc', nulls: 'last' } },
+          take: 24,
+          select: relatedSelect,
+        })
+      : [];
+
+  // (2) Yedek dolgu — etiket eşleşmesi 4'ü doldurmuyorsa son yayınlarla tamamla
+  const recentFill =
+    tagMatches.length < 4
+      ? await prisma.siteArticle.findMany({
+          where: relatedBaseWhere,
+          orderBy: { publishedAt: { sort: 'desc', nulls: 'last' } },
+          take: 8,
+          select: relatedSelect,
+        })
+      : [];
+
+  // Benzersizleştir (slug), etiket kesişim skoruna göre sırala, ilk 4'ü al
+  type RelatedRow = (typeof tagMatches)[number];
+  const relatedSeen = new Set<string>();
+  const relatedPool: RelatedRow[] = [];
+  for (const r of [...tagMatches, ...recentFill]) {
+    if (relatedSeen.has(r.slug)) continue;
+    relatedSeen.add(r.slug);
+    relatedPool.push(r);
+  }
+
+  const myTags = new Set(tags.map(t => t.toLocaleLowerCase('tr-TR')));
+  const tagScore = (r: RelatedRow): number =>
+    parseTags(r.tags).reduce((n, t) => (myTags.has(t.toLocaleLowerCase('tr-TR')) ? n + 1 : n), 0);
+
+  const related = relatedPool
+    .map(r => ({ r, score: tagScore(r) }))
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const ad = a.r.publishedAt ? a.r.publishedAt.getTime() : 0;
+      const bd = b.r.publishedAt ? b.r.publishedAt.getTime() : 0;
+      return bd - ad;
+    })
+    .slice(0, 4)
+    .map(x => x.r);
 
   const relatedCards: ArticleCardData[] = related.map(r => ({
     id: r.id,
@@ -146,9 +202,10 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
     publishedAt: r.publishedAt,
     views: r.views,
     authorName: r.authorName,
+    district: r.district,
   }));
 
-  // NewsArticle JSON-LD (Google Haberler)
+  // NewsArticle JSON-LD (Google Haberler) — articleSection (kategori) + keywords (etiketler)
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'NewsArticle',
@@ -159,8 +216,35 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
     mainEntityOfPage: canonical,
     author: { '@type': 'Person', name: article.authorName },
     publisher: { '@type': 'NewsMediaOrganization', name: 'Çanakkale Network', url: SITE_URL },
+    ...(article.category ? { articleSection: article.category.name } : {}),
+    ...(tags.length > 0 ? { keywords: tags } : {}),
     // Görsel varsa (gerçek URL veya AI data-URI) /img/[id] endpoint'i üzerinden ver
     ...(article.imageUrl ? { image: [`${SITE_URL}/img/${article.id}`] } : {}),
+  };
+
+  // BreadcrumbList JSON-LD (Ana Sayfa > Kategori > Haber)
+  const breadcrumbLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Ana Sayfa', item: SITE_URL },
+      ...(article.category
+        ? [
+            {
+              '@type': 'ListItem',
+              position: 2,
+              name: article.category.name,
+              item: `${SITE_URL}/kategori/${article.category.slug}`,
+            },
+          ]
+        : []),
+      {
+        '@type': 'ListItem',
+        position: article.category ? 3 : 2,
+        name: article.title,
+        item: canonical,
+      },
+    ],
   };
 
   return (
@@ -171,6 +255,10 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd).replace(/</g, '\\u003c') }}
       />
 
       {/* ── Sinematik hero ── */}
@@ -211,7 +299,13 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
             )}
             <h1 className="p-hero-title">{article.title}</h1>
             <div className="p-hero-meta">
-              <span className="author">{article.authorName}</span>
+              {authorHubSlug ? (
+                <Link href={`/yazar/${authorHubSlug}`} className="author">
+                  {article.authorName}
+                </Link>
+              ) : (
+                <span className="author">{article.authorName}</span>
+              )}
               {article.publishedAt && (
                 <>
                   <span className="sep" aria-hidden="true" />
@@ -262,7 +356,7 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
         {tags.length > 0 && (
           <nav className="p-tags" aria-label="Etiketler">
             {tags.map(tag => (
-              <Link key={tag} href={`/haberler?q=${encodeURIComponent(tag)}`} className="p-tag">
+              <Link key={tag} href={`/etiket/${encodeURIComponent(tag)}`} className="p-tag">
                 {tag}
               </Link>
             ))}

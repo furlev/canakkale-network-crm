@@ -9,6 +9,7 @@ type Estimate = {
   amount: number;
   status: string;
   validUntil?: string;
+  convertedToId?: string | null;
   createdAt: string;
 };
 
@@ -25,6 +26,41 @@ export default function EstimatesPage() {
   const [newEstimate, setNewEstimate] = useState({ clientId: '', amount: 0, status: 'draft', validUntil: '' });
   const [editingEstimate, setEditingEstimate] = useState<{ id: string; clientId: string; amount: number; status: string; validUntil: string } | null>(null);
   const [editError, setEditError] = useState('');
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [convertingId, setConvertingId] = useState<string | null>(null);
+
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleConvert = async (est: Estimate, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (est.convertedToId) {
+      showToast('Bu teklif zaten bir sözleşmeye dönüştürülmüş.', 'error');
+      return;
+    }
+    if (!confirm(`${est.estimateNo} numaralı teklifi sözleşmeye dönüştürmek istiyor musunuz?`)) return;
+    setConvertingId(est.id);
+    try {
+      const res = await fetch(`/api/estimates/${est.id}/convert`, { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        // Teklif kabul edildi + sözleşmeye bağlandı olarak işaretle
+        setEstimates((prev) => prev.map((x) => (x.id === est.id ? { ...x, status: 'accepted', convertedToId: data?.id || 'converted' } : x)));
+        showToast(`Sözleşme oluşturuldu (${est.estimateNo}). Sözleşmeler sayfasından takip edebilirsiniz.`, 'success');
+      } else if (res.status === 409) {
+        setEstimates((prev) => prev.map((x) => (x.id === est.id ? { ...x, convertedToId: 'converted' } : x)));
+        showToast(data?.error || 'Bu teklif zaten bir sözleşmeye dönüştürülmüş.', 'error');
+      } else {
+        showToast(data?.error || 'Teklif dönüştürülemedi.', 'error');
+      }
+    } catch {
+      showToast('Teklif dönüştürülemedi. Lütfen tekrar deneyin.', 'error');
+    } finally {
+      setConvertingId(null);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -209,7 +245,18 @@ export default function EstimatesPage() {
                       <option value="rejected">Reddedildi</option>
                     </select>
                   </td>
-                  <td>
+                  <td style={{whiteSpace:'nowrap'}}>
+                    {est.convertedToId ? (
+                      <span className="badge badge-success" title="Sözleşmeye dönüştürüldü">✓ Sözleşme</span>
+                    ) : (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        disabled={convertingId === est.id}
+                        onClick={(e) => handleConvert(est, e)}
+                      >
+                        {convertingId === est.id ? '...' : '→ Sözleşmeye Dönüştür'}
+                      </button>
+                    )}
                     <button className="btn btn-ghost btn-sm" onClick={(e) => openEdit(est, e)}>Düzenle</button>
                     <button className="btn btn-ghost btn-sm" onClick={(e) => handleDelete(est.id, e)}>Sil</button>
                   </td>
@@ -311,6 +358,12 @@ export default function EstimatesPage() {
             </div>
           </div>
         </>
+      )}
+
+      {toast && (
+        <div className={`crm-toast crm-toast-${toast.type}`} role="status" aria-live="polite" onClick={() => setToast(null)}>
+          {toast.msg}
+        </div>
       )}
     </div>
   );

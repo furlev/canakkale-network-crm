@@ -2620,3 +2620,100 @@ img { max-width: 100%; height: auto; }
   .dash-grid { grid-template-columns: repeat(2, 1fr); }
   .dash-widget.span-4 { grid-column: span 2; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   [A4] Finans bağlama toast'ı + mobil tablo → kart modu
+   (additive — mevcut kurallara dokunulmadı)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Basit toast (teklif→sözleşme→fatura geri bildirimi) ── */
+.crm-toast {
+  position: fixed;
+  bottom: var(--space-6);
+  right: var(--space-6);
+  z-index: var(--z-modal, 1000);
+  max-width: 360px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--border-radius-lg);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: #fff;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  animation: crmToastIn 0.2s ease-out;
+}
+.crm-toast-success { background: var(--success, #2ecc71); }
+.crm-toast-error { background: var(--error, #e74c3c); }
+
+@keyframes crmToastIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 768px) {
+  .crm-toast {
+    left: var(--space-4);
+    right: var(--space-4);
+    bottom: calc(var(--space-4) + 64px); /* mobil alt tab bar üzerinde */
+    max-width: none;
+  }
+
+  /* Ham tablolar (finans sayfaları vb.) kart moduna girmez → yatay kayar,
+     sayfayı taşırmaz. */
+  .data-table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ── DataTable (.dt) kart modu ── */
+  .dt .data-table { display: block; width: 100%; }
+  .dt .data-table thead tr:not(.dt-filter-row) { display: none; } /* başlık satırı gizlenir */
+  .dt .data-table tbody { display: block; width: 100%; }
+
+  .dt .data-table tbody tr {
+    display: block;
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--border-radius);
+    background: var(--surface-1);
+  }
+  .dt .data-table tbody tr:hover td { background: transparent; }
+
+  .dt .data-table tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border: none;
+    border-bottom: 1px solid var(--border-subtle);
+    text-align: right !important;
+  }
+  .dt .data-table tbody td:last-child { border-bottom: none; }
+
+  /* Kolon başlığını etiket olarak göster */
+  .dt .data-table tbody td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    margin-right: auto;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: left;
+  }
+
+  /* Seçim kutusu sütunu: etiketsiz, sola yaslı */
+  .dt .data-table tbody td.dt-check-col { justify-content: flex-start; }
+  .dt .data-table tbody td.dt-check-col::before { content: 'Seç'; }
+
+  /* Boş durum / tam-genişlik hücre: kart düzenine sokma */
+  .dt .data-table tbody td[colspan] {
+    display: block;
+    text-align: center !important;
+    padding: 0;
+  }
+  .dt .data-table tbody td[colspan]::before { content: none; }
+}

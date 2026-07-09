@@ -16,6 +16,8 @@ export type HeroItem = {
   categorySlug: string | null;
   /** Sunucuda formatDateTr ile hazırlanmış tarih etiketi */
   dateLabel: string;
+  /** Son dakika ise manşet tam-kızıl "CANLI" varyantına geçer */
+  isBreaking?: boolean;
 };
 
 const ROTATE_MS = 6000;
@@ -105,9 +107,18 @@ export default function HeroCinematic({ items }: { items: HeroItem[] }) {
   }
 
   const current = items[active];
+  // Aktif manşet son dakika ise tam-kızıl "CANLI" varyant. off tier / reduced-motion'da
+  // nabız statik kalır (CANLI rozeti görünür ama titremez).
+  const isLive = current.isBreaking === true;
+  const liveStatic = tier === 'off';
 
   return (
-    <section ref={heroRef} className="hero" aria-label="Manşet haberler">
+    <section
+      ref={heroRef}
+      className="hero"
+      aria-label="Manşet haberler"
+      data-variant={isLive ? 'breaking' : undefined}
+    >
       <div className="hero-bg-stack" aria-hidden="true">
         {items.map((item, i) => {
           const isActive = i === active;
@@ -140,6 +151,12 @@ export default function HeroCinematic({ items }: { items: HeroItem[] }) {
         {/* key=slug → her manşet değişiminde içerik animasyonları yeniden oynar */}
         <div className="hero-content" key={current.slug}>
           <div className="hero-meta">
+            {isLive && (
+              <span className={`hero-live${liveStatic ? ' is-static' : ''}`}>
+                <span className="hero-live-dot" aria-hidden="true" />
+                CANLI
+              </span>
+            )}
             {current.categoryName && current.categorySlug && (
               <Link href={`/kategori/${current.categorySlug}`} className="s-badge s-badge-cat hero-badge">
                 {current.categoryName}

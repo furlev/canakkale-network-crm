@@ -24,6 +24,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       metaDescription: body.metaDescription,
       socialPost: body.socialPost,
       imageUrl: body.imageUrl,
+      district: body.district,
       status: body.status,
     };
 

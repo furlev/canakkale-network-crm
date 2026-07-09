@@ -109,3 +109,19 @@
     transition: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Yapışkan filtre şeridi (A1 #4) — scroll'da yapışkan başlığın
+   hemen altına yapışır. Arkasındaki içerik görünmesin diye buzlu
+   cam zemin + üst/alt nefes payı. Yatay kaydırma davranışı korunur.
+   ───────────────────────────────────────────────────────────── */
+.wrap {
+  position: sticky;
+  top: calc(var(--header-h, 64px) + 6px);
+  z-index: 30;
+  padding-block: 8px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border-radius: 999px;
+}

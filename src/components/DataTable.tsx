@@ -398,6 +398,7 @@ export default function DataTable<T>({
                       {visibleCols.map((c) => (
                         <td
                           key={c.key}
+                          data-label={c.header}
                           style={{ textAlign: c.align || (c.numeric ? 'right' : 'left') }}
                           className={c.numeric ? 'dt-num' : undefined}
                         >

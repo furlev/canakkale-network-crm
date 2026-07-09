@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useTilt } from '@/hooks/useTilt';
+import { districtName } from '@/lib/districts';
 
 /** Kart bileşeninin beklediği hafif makale özeti (SiteArticle alt kümesi). */
 export type ArticleCardData = {
@@ -17,6 +18,8 @@ export type ArticleCardData = {
   publishedAt?: Date | string | null;
   views?: number;
   authorName?: string | null;
+  /** Çanakkale ilçe slug'ı (varsa kartta '📍 İlçe' rozeti gösterilir). */
+  district?: string | null;
 };
 
 // İstemci-güvenli tarih biçimlendirici. @/lib/site (prisma import eder → sunucuya bağlı)
@@ -63,6 +66,13 @@ export default function ArticleCard({
         ) : a.categoryName ? (
           <span className="s-badge s-badge-cat">{a.categoryName}</span>
         ) : null}
+        {/* İlçe rozeti — kategori/son dakika rozetiyle çakışmasın diye sağ üstte;
+            detay sayfasındaki '📍 İlçe' rozetiyle aynı stil (s-badge-cat). */}
+        {a.district && districtName(a.district) && (
+          <span className="s-badge s-badge-cat" style={{ left: 'auto', right: 12 }}>
+            📍 {districtName(a.district)}
+          </span>
+        )}
       </div>
       <div className="s-card-body">
         <h3 className="s-card-title">{a.title}</h3>

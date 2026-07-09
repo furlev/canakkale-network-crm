@@ -43,6 +43,7 @@ const navSections: NavSection[] = [
     title: 'FİNANS',
     items: [
       { label: 'Faturalar', href: '/invoices', icon: '📄' },
+      { label: 'Tekrarlayan Faturalar', href: '/invoices/recurring', icon: '🔁' },
       { label: 'Teklifler', href: '/estimates', icon: '📋' },
       { label: 'Giderler', href: '/expenses', icon: '💰' },
       { label: 'Sözleşmeler', href: '/contracts', icon: '📝' },

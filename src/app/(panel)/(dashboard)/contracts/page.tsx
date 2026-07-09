@@ -12,6 +12,8 @@ type Contract = {
   endDate?: string | null;
   clientId?: string | null;
   client?: Client | null;
+  publicToken?: string | null;
+  convertedToId?: string | null;
 };
 
 const statusMap: Record<string, { label: string; cls: string }> = {
@@ -29,6 +31,50 @@ export default function ContractsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [invoicingId, setInvoicingId] = useState<string | null>(null);
+
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleGenerateInvoice = async (c: Contract) => {
+    if (c.convertedToId) {
+      showToast('Bu sözleşmeden zaten fatura üretilmiş.', 'error');
+      return;
+    }
+    if (!confirm(`"${c.title}" sözleşmesinden fatura üretmek istiyor musunuz?`)) return;
+    setInvoicingId(c.id);
+    try {
+      const res = await fetch(`/api/contracts/${c.id}/invoice`, { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        setContracts((prev) => prev.map((x) => (x.id === c.id ? { ...x, convertedToId: data?.id || 'converted' } : x)));
+        showToast(`Fatura üretildi${data?.invoiceNo ? ` (${data.invoiceNo})` : ''}. Faturalar sayfasından takip edebilirsiniz.`, 'success');
+      } else if (res.status === 409) {
+        setContracts((prev) => prev.map((x) => (x.id === c.id ? { ...x, convertedToId: 'converted' } : x)));
+        showToast(data?.error || 'Bu sözleşmeden zaten fatura üretilmiş.', 'error');
+      } else {
+        showToast(data?.error || 'Fatura üretilemedi.', 'error');
+      }
+    } catch {
+      showToast('Fatura üretilemedi. Lütfen tekrar deneyin.', 'error');
+    } finally {
+      setInvoicingId(null);
+    }
+  };
+
+  const handleCopyLink = async (c: Contract) => {
+    if (!c.publicToken) return;
+    const url = `https://canakkale.network/site/teklif/${c.publicToken}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast('Onay/imza linki panoya kopyalandı.', 'success');
+    } catch {
+      showToast('Link kopyalanamadı. Manuel kopyalayın: ' + url, 'error');
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -159,7 +205,24 @@ export default function ContractsPage() {
                 <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{c.progress}%</span>
               </div>
               <div className="progress-bar"><div className={`progress-bar-fill ${c.status === 'expired' ? 'warning' : 'primary'}`} style={{ width: `${c.progress}%` }} /></div>
-              <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', marginTop: 'var(--space-4)' }}>
+                {c.convertedToId ? (
+                  <span className="badge badge-success" style={{ flex: 1, textAlign: 'center', alignSelf: 'center' }} title="Bu sözleşmeden fatura üretildi">✓ Fatura üretildi</span>
+                ) : (
+                  <button
+                    className="btn btn-primary btn-sm"
+                    style={{ flex: 1 }}
+                    disabled={invoicingId === c.id}
+                    onClick={() => handleGenerateInvoice(c)}
+                  >
+                    {invoicingId === c.id ? '...' : '🧾 Fatura Üret'}
+                  </button>
+                )}
+                {c.publicToken && (
+                  <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={() => handleCopyLink(c)} title="Halka açık onay/imza linkini kopyala">🔗 İmza linki</button>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
                 <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={() => openEdit(c)}>✏️ Düzenle</button>
                 <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={() => handleDelete(c.id)}>🗑️ Sil</button>
               </div>
@@ -221,6 +284,12 @@ export default function ContractsPage() {
             </div>
           </div>
         </>
+      )}
+
+      {toast && (
+        <div className={`crm-toast crm-toast-${toast.type}`} role="status" aria-live="polite" onClick={() => setToast(null)}>
+          {toast.msg}
+        </div>
       )}
     </div>
   );
