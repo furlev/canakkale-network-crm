@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Yerel geliştirmede site host'u 127.0.0.1:3000 (panel=localhost:3000) — dev kaynaklarına
+  // çapraz-köken erişim uyarısını sustur (yalnız dev; prod'da etkisiz).
+  allowedDevOrigins: ['127.0.0.1'],
   // Gzip/br sıkıştırma (self-host/DO node sunucusunda HTML/JS/CSS küçülür → LCP/transfer iyileşir).
   compress: true,
   // "X-Powered-By: Next.js" başlığını gizle (bilgi sızıntısını azaltır).
