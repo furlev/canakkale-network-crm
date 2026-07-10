@@ -62,7 +62,9 @@ export default function FeribotYonetimPage() {
   const edit = (f: Ferry) =>
     setForm({
       id: f.id, route: f.route, departTime: f.departTime, days: f.days,
-      operator: f.operator, season: f.season || '', active: f.active,
+      // 'auto' = cron işareti; formda geçerli bir sezon değeri değil → düzenlenen
+      // oto satır kaydedilince manuel satıra dönüşür (sezon boşalır).
+      operator: f.operator, season: f.season === 'auto' ? '' : (f.season || ''), active: f.active,
     });
 
   const save = async () => {
@@ -131,7 +133,7 @@ export default function FeribotYonetimPage() {
           <h1 className="page-title">⛴️ Feribot Tarifesi</h1>
           <p className="page-subtitle">
             <Link href="/site-yonetimi" style={{ color: 'var(--primary-light)', textDecoration: 'none' }}>← Site Yönetimi</Link>
-            {'  ·  canakkale.network/feribot sayfasını besler (GESTAŞ resmi API’si olmadığından elle yönetilir)'}
+            {'  ·  canakkale.network/feribot sayfasını besler. Tarife günde iki kez GESTAŞ sitesinden otomatik çekilir (Sezon sütununda “Oto” işaretli satırlar cron yönetimindedir); elle eklediğin satırlara dokunulmaz. Oto bir satırı düzenlersen manuel satıra dönüşür.'}
           </p>
         </div>
       </div>
@@ -217,7 +219,7 @@ export default function FeribotYonetimPage() {
                   <td style={{ fontVariantNumeric: 'tabular-nums' }}>{f.departTime}</td>
                   <td>{DAY_LABEL[f.days] || f.days}</td>
                   <td>{f.operator}</td>
-                  <td>{f.season === 'yaz' ? 'Yaz' : f.season === 'kis' ? 'Kış' : '—'}</td>
+                  <td>{f.season === 'yaz' ? 'Yaz' : f.season === 'kis' ? 'Kış' : f.season === 'auto' ? 'Oto' : '—'}</td>
                   <td>
                     {f.active
                       ? <span className="badge badge-success">Aktif</span>

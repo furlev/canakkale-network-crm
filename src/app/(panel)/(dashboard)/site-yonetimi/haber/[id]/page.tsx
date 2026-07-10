@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { DISTRICTS } from '@/lib/districts';
@@ -21,8 +21,106 @@ function slugifyTr(input: string): string {
     .slice(0, 96);
 }
 
+/* ── Görüntülenme takviyesi — SAF hesap kopyası ──
+   NOT: Aşağıdaki fonksiyonlar src/lib/view-boost.ts içindeki saf hesabın birebir
+   kopyasıdır; o dosya prisma import ettiği için client bundle'a alınamaz (slugifyTr
+   ile aynı desen). Algoritmayı değiştirirsen İKİ yeri birlikte güncelle. */
+
+function xmur3(str: string): () => number {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return function () {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return (h ^= h >>> 16) >>> 0;
+  };
+}
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rnd01 = (seed: string): number => mulberry32(xmur3(seed)())();
+const lerp = (min: number, max: number, t: number): number => min + (max - min) * t;
+const easeInOut = (t: number): number => {
+  const k = Math.min(1, Math.max(0, t));
+  return k * k * (3 - 2 * k);
+};
+function ageCurve(d: number): number {
+  if (d <= 1) return 1.6;
+  if (d <= 3) return 1.25;
+  if (d <= 7) return 1.0;
+  if (d <= 14) return 0.6;
+  if (d <= 30) return 0.3;
+  return 0.12;
+}
+const HOUR_WEIGHTS = [
+  0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
+  0.5, 0.9,
+  1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5,
+  1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5,
+  1.0,
+];
+const TOTAL_WEIGHT = HOUR_WEIGHTS.reduce((a, b) => a + b, 0);
+const TR_OFFSET_MS = 3 * 3_600_000;
+const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
+const trDayNumber = (t: number): number => Math.floor((t + TR_OFFSET_MS) / DAY_MS);
+const trMsOfDay = (t: number): number => (((t + TR_OFFSET_MS) % DAY_MS) + DAY_MS) % DAY_MS;
+function cumWeight(msOfDay: number): number {
+  const hour = Math.min(23, Math.floor(msOfDay / HOUR_MS));
+  let acc = 0;
+  for (let h = 0; h < hour; h++) acc += HOUR_WEIGHTS[h];
+  acc += HOUR_WEIGHTS[hour] * ((msOfDay - hour * HOUR_MS) / HOUR_MS);
+  return acc;
+}
+function dailyIncrement(articleId: string, d: number, dailyMin: number, dailyMax: number): number {
+  return Math.floor(lerp(dailyMin, dailyMax, rnd01(`${articleId}:${d}`)) * ageCurve(d));
+}
+function computeViewBoost(
+  articleId: string,
+  publishedAt: string | null,
+  cfg: { dailyMin: number; dailyMax: number },
+  now: Date = new Date()
+): number {
+  if (!publishedAt) return 0;
+  const pubMs = new Date(publishedAt).getTime();
+  if (Number.isNaN(pubMs)) return 0;
+  const nowMs = now.getTime();
+  if (nowMs <= pubMs) return 0;
+  let min = Math.max(0, Math.floor(cfg.dailyMin));
+  let max = Math.max(0, Math.floor(cfg.dailyMax));
+  if (max < min) [min, max] = [max, min];
+  if (max === 0) return 0;
+  const dNow = trDayNumber(nowMs) - trDayNumber(pubMs);
+  let total = 0;
+  for (let d = 0; d < dNow; d++) total += dailyIncrement(articleId, d, min, max);
+  const inc = dailyIncrement(articleId, dNow, min, max);
+  const wNow = cumWeight(trMsOfDay(nowMs));
+  let frac: number;
+  if (dNow === 0) {
+    const wPub = cumWeight(trMsOfDay(pubMs));
+    const denom = TOTAL_WEIGHT - wPub;
+    frac = denom > 0 ? (wNow - wPub) / denom : 1;
+  } else {
+    frac = wNow / TOTAL_WEIGHT;
+  }
+  total += Math.floor(inc * easeInOut(frac));
+  return total;
+}
+
 type Category = { slug: string; name: string };
 type Author = { slug: string; name: string; title?: string | null };
+type ViewBoostMode = 'inherit' | 'off' | 'custom';
+type GlobalBoost = { enabled: boolean; dailyMin: number; dailyMax: number };
 
 type FormState = {
   title: string;
@@ -51,6 +149,9 @@ type FormState = {
   correctedAt: string | null; // sunucu damgası (salt-okunur gösterim)
   retractionNote: string;    // geri çekme gerekçesi
   retractedAt: string | null; // sunucu damgası (salt-okunur gösterim)
+  viewBoostMode: ViewBoostMode; // görüntülenme takviyesi: genel ayarı izle / kapalı / özel
+  viewBoostMin: string;      // özel aralık girişi (boş = genel değerden tamamlanır)
+  viewBoostMax: string;
 };
 
 const EMPTY: FormState = {
@@ -59,6 +160,7 @@ const EMPTY: FormState = {
   status: 'draft', scheduledAt: null, newsType: 'manual', isBreaking: false, isFeatured: false,
   isEditorPick: false, seoTitle: '', metaDescription: '', publishedAt: null,
   correctionNote: '', correctedAt: null, retractionNote: '', retractedAt: null,
+  viewBoostMode: 'inherit', viewBoostMin: '', viewBoostMax: '',
 };
 
 /** Durum → Türkçe etiket + rozet sınıfı (yayın onay hiyerarşisi dahil). */
@@ -93,6 +195,16 @@ function toForm(a: Record<string, unknown>): FormState {
     const parsed = JSON.parse((a.tags as string) || '[]');
     if (Array.isArray(parsed)) tags = parsed.filter((t): t is string => typeof t === 'string').join(', ');
   } catch { /* bozuk JSON → boş */ }
+  // Görüntülenme takviyesi override'ı (Json) → form alanları
+  let viewBoostMode: ViewBoostMode = 'inherit';
+  let viewBoostMin = '';
+  let viewBoostMax = '';
+  const vb = a.viewBoost as { mode?: string; dailyMin?: number; dailyMax?: number } | null | undefined;
+  if (vb && typeof vb === 'object') {
+    if (vb.mode === 'off' || vb.mode === 'custom') viewBoostMode = vb.mode;
+    if (typeof vb.dailyMin === 'number') viewBoostMin = String(vb.dailyMin);
+    if (typeof vb.dailyMax === 'number') viewBoostMax = String(vb.dailyMax);
+  }
   return {
     title: (a.title as string) || '',
     slug: (a.slug as string) || '',
@@ -120,6 +232,7 @@ function toForm(a: Record<string, unknown>): FormState {
     correctedAt: (a.correctedAt as string) || null,
     retractionNote: (a.retractionNote as string) || '',
     retractedAt: (a.retractedAt as string) || null,
+    viewBoostMode, viewBoostMin, viewBoostMax,
   };
 }
 
@@ -134,6 +247,8 @@ export default function HaberEditorPage() {
   const [slugTouched, setSlugTouched] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [authors, setAuthors] = useState<Author[]>([]);
+  const [realViews, setRealViews] = useState(0); // gerçek views (takviye önizlemesi için)
+  const [globalBoost, setGlobalBoost] = useState<GlobalBoost | null>(null); // genel takviye ayarı (B/A okuyabilir)
   const [bodyTab, setBodyTab] = useState<'edit' | 'preview'>('edit');
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
@@ -156,6 +271,11 @@ export default function HaberEditorPage() {
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => { if (Array.isArray(data)) setAuthors(data); })
       .catch(() => {});
+    // Genel takviye ayarı (yalnız B/A okuyabilir; 403 → önizleme 'kapalı' varsayar)
+    fetch('/api/site-admin/view-boost')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((d) => { if (d?.settings) setGlobalBoost(d.settings as GlobalBoost); })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -165,6 +285,7 @@ export default function HaberEditorPage() {
       .then((data) => {
         if (data) {
           setForm(toForm(data));
+          setRealViews(typeof data.views === 'number' ? data.views : 0);
           setSlugTouched(true); // mevcut haberde slug'a dokunma (elle değiştirilebilir)
         } else {
           setMsg({ kind: 'error', text: 'Haber bulunamadı.' });
@@ -185,6 +306,29 @@ export default function HaberEditorPage() {
 
   const canPublish = role === 'admin' || role === 'editor'; // B/A yayınlayabilir; C onaya gönderir
 
+  /* Görüntülenme takviyesi önizlemesi: form + genel ayardan etkin aralığı çöz
+     (resolveBoostRange mantığının kopyası) ve ŞU ANKİ takviyeli sayıyı hesapla. */
+  const boostPreview = useMemo(() => {
+    const g = globalBoost ?? { enabled: false, dailyMin: 40, dailyMax: 120 };
+    const parseNum = (s: string): number | undefined => {
+      const t = s.trim();
+      if (!t) return undefined;
+      const n = Number(t);
+      return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
+    };
+    let range: { dailyMin: number; dailyMax: number } | null = null;
+    if (form.viewBoostMode === 'custom') {
+      range = {
+        dailyMin: parseNum(form.viewBoostMin) ?? g.dailyMin,
+        dailyMax: parseNum(form.viewBoostMax) ?? g.dailyMax,
+      };
+    } else if (form.viewBoostMode === 'inherit' && g.enabled) {
+      range = { dailyMin: g.dailyMin, dailyMax: g.dailyMax };
+    }
+    const boost = range && !isNew ? computeViewBoost(id, form.publishedAt, range) : 0;
+    return { active: !!range, boost, shown: realViews + boost };
+  }, [globalBoost, form.viewBoostMode, form.viewBoostMin, form.viewBoostMax, form.publishedAt, isNew, id, realViews]);
+
   const save = async (opts?: { publish?: boolean; submit?: boolean; schedule?: boolean }) => {
     if (!form.title.trim()) { setMsg({ kind: 'error', text: 'Başlık zorunlu.' }); return; }
     if (!form.body.trim()) { setMsg({ kind: 'error', text: 'Haber gövdesi boş olamaz.' }); return; }
@@ -192,6 +336,29 @@ export default function HaberEditorPage() {
       const t = form.scheduledAt ? new Date(form.scheduledAt).getTime() : NaN;
       if (isNaN(t) || t <= Date.now()) { setMsg({ kind: 'error', text: 'Planlı yayın için ileri bir tarih/saat seçin.' }); return; }
     }
+
+    // Görüntülenme takviyesi override'ı: 'inherit' → null (DB satırı temizlenir).
+    // Özel modda geçersiz/boş uç gönderilmez (sunucu genel değerden tamamlar).
+    const parseBoostNum = (s: string): number | undefined => {
+      const t = s.trim();
+      if (!t) return undefined;
+      const n = Number(t);
+      return Number.isInteger(n) && n >= 0 ? n : undefined;
+    };
+    let viewBoost: { mode: 'off' } | { mode: 'custom'; dailyMin?: number; dailyMax?: number } | null = null;
+    if (form.viewBoostMode === 'off') viewBoost = { mode: 'off' };
+    else if (form.viewBoostMode === 'custom') {
+      const mn = parseBoostNum(form.viewBoostMin);
+      const mx = parseBoostNum(form.viewBoostMax);
+      if ((form.viewBoostMin.trim() !== '' && mn === undefined) || (form.viewBoostMax.trim() !== '' && mx === undefined)) {
+        setMsg({ kind: 'error', text: 'Takviye aralığı için 0 veya daha büyük tam sayılar girin.' }); return;
+      }
+      if (mn !== undefined && mx !== undefined && mx < mn) {
+        setMsg({ kind: 'error', text: 'Takviye üst sınırı alt sınırdan küçük olamaz.' }); return;
+      }
+      viewBoost = { mode: 'custom', ...(mn !== undefined ? { dailyMin: mn } : {}), ...(mx !== undefined ? { dailyMax: mx } : {}) };
+    }
+
     setSaving(true);
     setMsg(null);
 
@@ -223,6 +390,8 @@ export default function HaberEditorPage() {
       metaDescription: form.metaDescription || null,
       correctionNote: form.correctionNote || null,
       retractionNote: form.retractionNote || null,
+      // Yeni haber POST şeması bu alanı tanımaz (zod strip'ler); PUT'ta işlenir.
+      viewBoost,
     };
 
     try {
@@ -495,10 +664,13 @@ export default function HaberEditorPage() {
               <label className="form-label">Görsel Alt Metni</label>
               <input className="form-input" value={form.imageAlt} onChange={(e) => setField('imageAlt', e.target.value)} />
             </div>
-            <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-3)' }}>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-1)' }}>
               <input type="checkbox" checked={form.imageIsAi} onChange={(e) => setField('imageIsAi', e.target.checked)} />
-              ✨ Temsili görsel (AI) rozeti göster
+              ✨ Temsili görsel (AI ile üretildi)
             </label>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', marginBottom: 'var(--space-3)' }}>
+              Kayıt amaçlı işaret — sitede rozet gösterilmez; bilgilendirme /gorsel-politikasi sayfasındadır.
+            </div>
             <div className="form-group">
               <label className="form-label">Video URL (YouTube vb.)</label>
               <input className="form-input" value={form.videoUrl} onChange={(e) => setField('videoUrl', e.target.value)} placeholder="https://youtube.com/..." />
@@ -545,6 +717,75 @@ export default function HaberEditorPage() {
               Not kaydedildiğinde tarih otomatik damgalanır; notu boşaltıp kaydetmek damgayı kaldırır.
             </p>
           </div>
+
+          {/* Görüntülenme takviyesi (habere özel) — yalnız mevcut haberde (POST bu alanı işlemez) */}
+          {!isNew && (
+            <div className="card" style={{ padding: 'var(--space-4)' }}>
+              <div style={{ fontWeight: 600, fontSize: 'var(--text-sm)', marginBottom: 'var(--space-3)' }}>👁️ Görüntülenme Takviyesi</div>
+              <div className="form-group">
+                <label className="form-label">Mod</label>
+                <select
+                  className="form-select"
+                  value={form.viewBoostMode}
+                  onChange={(e) => setField('viewBoostMode', e.target.value as ViewBoostMode)}
+                >
+                  <option value="inherit">Genel ayarı izle{globalBoost ? (globalBoost.enabled ? ` (açık, ${globalBoost.dailyMin}-${globalBoost.dailyMax}/gün)` : ' (kapalı)') : ''}</option>
+                  <option value="off">Kapalı (yalnız gerçek sayı)</option>
+                  <option value="custom">Özel aralık</option>
+                </select>
+              </div>
+              {form.viewBoostMode === 'custom' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                  <div className="form-group">
+                    <label className="form-label">Günlük en az</label>
+                    <input
+                      type="number"
+                      min={0}
+                      className="form-input"
+                      value={form.viewBoostMin}
+                      onChange={(e) => setField('viewBoostMin', e.target.value)}
+                      placeholder={globalBoost ? String(globalBoost.dailyMin) : '40'}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Günlük en çok</label>
+                    <input
+                      type="number"
+                      min={0}
+                      className="form-input"
+                      value={form.viewBoostMax}
+                      onChange={(e) => setField('viewBoostMax', e.target.value)}
+                      placeholder={globalBoost ? String(globalBoost.dailyMax) : '120'}
+                    />
+                  </div>
+                </div>
+              )}
+              {/* Anlık önizleme: gerçek + takviye = sitede görünen */}
+              <div style={{ padding: 'var(--space-3)', borderRadius: 'var(--border-radius)', background: 'var(--bg-secondary, rgba(255,255,255,0.04))', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-2)' }}>
+                {boostPreview.active ? (
+                  form.publishedAt ? (
+                    <>
+                      Sitede şu an görünecek sayı:{' '}
+                      <strong>{boostPreview.shown.toLocaleString('tr-TR')}</strong>
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        {' '}(gerçek {realViews.toLocaleString('tr-TR')} + takviye {boostPreview.boost.toLocaleString('tr-TR')})
+                      </span>
+                    </>
+                  ) : (
+                    <span style={{ color: 'var(--text-muted)' }}>Takviye yayınla birlikte 0&apos;dan başlar (haber henüz yayınlanmadı).</span>
+                  )
+                ) : (
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    Takviye devre dışı — sitede gerçek sayı ({realViews.toLocaleString('tr-TR')}) görünür.
+                  </span>
+                )}
+              </div>
+              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', margin: 0 }}>
+                Takviye yalnız sitede gösterilen sayıyı etkiler; gerçek ölçüm CRM analitiğinde ayrı durur.
+                Sayı deterministik hesaplanır ve zamanla asla azalmaz.
+              </p>
+            </div>
+          )}
 
           {/* Canlı site linki */}
           {!isNew && liveUrl && form.status === 'published' && (

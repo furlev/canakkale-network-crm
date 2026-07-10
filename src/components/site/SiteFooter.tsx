@@ -65,12 +65,18 @@ export default function SiteFooter({ settings }: { settings: SiteSettings }) {
     Object.entries(settings.social) as [keyof SiteSettings['social'], string | undefined][]
   ).filter((entry): entry is [keyof SiteSettings['social'], string] => Boolean(entry[1]));
 
+  // CRM > Site Yönetimi > Ayarlar'dan gelen kabuk metinleri (boşsa otomatik/varsayılan).
+  const copyright =
+    settings.copyrightText.trim() ||
+    `© ${new Date().getFullYear()} ${settings.title || 'Çanakkale Network'} — Tüm hakları saklıdır.`;
+  const credit = settings.footerCredit.trim();
+
   return (
     <footer className="site-footer">
       <div className="s-container">
         <div className="footer-grid">
           <div className="footer-brand">
-            <img src="/site/logo-dark.png" alt="Çanakkale Network" className="footer-logo" />
+            <img src={settings.logoFooter || '/site/logo-dark.png'} alt={settings.title || 'Çanakkale Network'} className="footer-logo" />
             <p className="footer-slogan">{settings.slogan}</p>
             <p className="footer-desc">{settings.description}</p>
             {socialEntries.length > 0 && (
@@ -128,10 +134,12 @@ export default function SiteFooter({ settings }: { settings: SiteSettings }) {
         </div>
 
         <div className="footer-bottom">
-          <p>© 2026 Çanakkale Network — Tüm hakları saklıdır.</p>
-          <p className="footer-credit">
-            Bir <span>Condia Media</span> yapımıdır.
-          </p>
+          <p>{copyright}</p>
+          {credit && (
+            <p className="footer-credit">
+              <span>{credit}</span>
+            </p>
+          )}
         </div>
       </div>
     </footer>

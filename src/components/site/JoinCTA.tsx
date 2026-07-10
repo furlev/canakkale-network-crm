@@ -4,8 +4,10 @@ import Link from 'next/link';
 import { useEffect, useRef } from 'react';
 
 /**
- * "Ekibimize Katıl" sinematik bandı — arka planda düşük opaklıkta abide görseli,
- * scroll'a bağlı hafif paralaks (reduced-motion'da kapalı).
+ * "Ekibimize Katıl" sinematik bandı — zemin koyu lacivert→kızıl degrade + ince
+ * partikül dokusu (saf CSS, home.css); üzerine varsa düşük opaklıkta Çanakkale
+ * görseli biner (yüklenmezse onError ile gizlenir). Scroll'a bağlı hafif paralaks
+ * (reduced-motion'da kapalı).
  */
 export default function JoinCTA() {
   const sectionRef = useRef<HTMLElement>(null);
@@ -42,7 +44,18 @@ export default function JoinCTA() {
   return (
     <section className="join-cta" ref={sectionRef}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img ref={bgRef} src="/site/abide.png" alt="" className="join-abide" aria-hidden="true" />
+      <img
+        ref={bgRef}
+        src="/site/cta-canakkale.jpg"
+        alt=""
+        className="join-bg"
+        aria-hidden="true"
+        loading="lazy"
+        onError={e => {
+          // Görsel yoksa/kırıksa gizle — CSS degrade zemin tek başına taşır.
+          e.currentTarget.style.display = 'none';
+        }}
+      />
       <div className="join-veil" aria-hidden="true" />
       <div className="s-container join-inner s-reveal">
         <span className="s-kicker join-kicker">Aramıza Katıl</span>

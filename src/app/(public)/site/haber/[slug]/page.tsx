@@ -18,6 +18,7 @@ import Lightbox, { type GalleryImage } from '@/components/site/Lightbox';
 import Comments from '@/components/site/Comments';
 import Paywall from '@/components/site/Paywall';
 import { getCurrentReader } from '@/lib/reader-auth';
+import { getViewBoostSettings, displayViews } from '@/lib/view-boost';
 import '@/app/(public)/pages.css';
 
 export const revalidate = 120;
@@ -159,6 +160,11 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
   const bodyHtml = sanitizeHtml(article.body);
   const catColor = article.category?.color || undefined;
 
+  // Görüntülenme takviyesi: sitede gösterilen sayı = gerçek views + deterministik
+  // takviye (src/lib/view-boost.ts). CRM analitiği gerçek views'i göstermeye devam eder.
+  const boostCfg = await getViewBoostSettings();
+  const shownViews = displayViews(article, boostCfg);
+
   // ── Premium paywall (W2-B) ──
   // Cookie yalnızca premium haberde okunur; sıradan haberler statik/ISR olarak
   // kalır (getCurrentReader → cookies() yalnız burada, koşullu çağrılır).
@@ -193,6 +199,7 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
     district: true,
     videoUrl: true, // '▶ Video' rozeti için (küçük string)
     tags: true, // kesişim skoru için (küçük JSON string)
+    viewBoost: true, // görüntülenme takviyesi override'ı (küçük JSON)
     category: { select: { name: true } },
   } as const;
 
@@ -263,7 +270,8 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
     categoryName: r.category?.name || null,
     isBreaking: r.isBreaking,
     publishedAt: r.publishedAt,
-    views: r.views,
+    // Kart sayısı da takviyeli gösterilir (sunucuda hesaplanır, karta sayı geçer)
+    views: displayViews({ id: r.id, publishedAt: r.publishedAt, views: r.views, viewBoost: r.viewBoost }, boostCfg),
     authorName: r.authorName,
     district: r.district,
     hasVideo: !!r.videoUrl,
@@ -341,9 +349,8 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
             />
           </div>
         )}
-        {article.imageUrl && article.imageIsAi && (
-          <span className="p-hero-ai">🎨 Temsili görsel — yapay zekâ ile üretilmiştir</span>
-        )}
+        {/* "Temsili görsel" rozeti sitede artık gösterilmiyor — imageIsAi alanı ve
+            /gorsel-politikasi sayfası bilgilendirme amaçlı durmaya devam eder. */}
         <div className="p-hero-inner">
           <div className="s-container">
             {article.isBreaking ? (
@@ -379,10 +386,10 @@ export default async function ArticlePage(context: { params: Promise<{ slug: str
               )}
               <span className="sep" aria-hidden="true" />
               <span>{minutes} dk okuma</span>
-              {article.views > 0 && (
+              {shownViews > 0 && (
                 <>
                   <span className="sep" aria-hidden="true" />
-                  <span>{article.views.toLocaleString('tr-TR')} görüntülenme</span>
+                  <span>{shownViews.toLocaleString('tr-TR')} görüntülenme</span>
                 </>
               )}
             </div>

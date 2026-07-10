@@ -26,6 +26,19 @@ const getPage = cache(async (slug: string) => {
   }
 });
 
+/**
+ * WP'den taşınan içeriklerdeki mutlak canakkale.network linklerini iç linke
+ * çevirir — hiçbir sözleşme/sayfa eski WordPress sitesine gitmesin.
+ * Görüntüleme katmanında, sanitizeHtml SONRASI uygulanır (sanitize çıktısı
+ * daima çift tırnaklı attribute üretir).
+ */
+function localizeWpLinks(html: string): string {
+  return html.replace(
+    /href="https?:\/\/(?:www\.)?canakkale\.network(\/[^"]*)?"/gi,
+    (_m, path: string | undefined) => `href="${path || '/'}"`
+  );
+}
+
 export async function generateMetadata(context: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await context.params;
   const page = await getPage(slug);
@@ -66,7 +79,10 @@ export default async function StaticPage(context: { params: Promise<{ slug: stri
       </header>
 
       <div className="p-static-body">
-        <div className="prose" dangerouslySetInnerHTML={{ __html: sanitizeHtml(page.content) }} />
+        <div
+          className="prose"
+          dangerouslySetInnerHTML={{ __html: localizeWpLinks(sanitizeHtml(page.content)) }}
+        />
       </div>
     </div>
   );

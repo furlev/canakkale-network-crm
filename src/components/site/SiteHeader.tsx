@@ -71,7 +71,17 @@ function useFocusTrap<
  * Yapışkan site başlığı: scroll'da küçülür ve buzlu cam arka plana geçer.
  * Tam ekran arama overlay'i ve mobil menü de burada yaşar.
  */
-export default function SiteHeader({ categories }: { categories: NavCategory[] }) {
+export default function SiteHeader({
+  categories,
+  logoDark = '/site/logo-dark.png',
+  logoLight = '/site/logo-light.png',
+}: {
+  categories: NavCategory[];
+  /** Koyu (network) temada gösterilen logo — CRM > Site Yönetimi > Ayarlar */
+  logoDark?: string;
+  /** Açık (truva) temada gösterilen logo */
+  logoLight?: string;
+}) {
   const [scrolled, setScrolled] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -127,8 +137,8 @@ export default function SiteHeader({ categories }: { categories: NavCategory[] }
       <div className="s-container site-header-inner">
         <Link href="/" className="site-logo" aria-label="Çanakkale Network — anasayfa">
           {/* İki logo da basılır; hangisinin görüneceğine data-site-theme üzerinden CSS karar verir */}
-          <img src="/site/logo-dark.png" alt="Çanakkale Network" className="only-network" />
-          <img src="/site/logo-light.png" alt="Çanakkale Network" className="only-truva" />
+          <img src={logoDark} alt="Çanakkale Network" className="only-network" />
+          <img src={logoLight} alt="Çanakkale Network" className="only-truva" />
         </Link>
 
         <nav className="site-nav" aria-label="Ana menü">

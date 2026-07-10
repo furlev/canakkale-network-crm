@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import prisma from '@/lib/prisma';
+import { displayViews, getViewBoostSettings } from '@/lib/view-boost';
 import ArticleCard, { type ArticleCardData } from '@/components/site/ArticleCard';
 import Pagination from '@/components/site/pages/Pagination';
 import RevealInit from '@/components/site/pages/RevealInit';
@@ -57,6 +58,7 @@ export default async function BreakingArchivePage(context: {
         isBreaking: true,
         publishedAt: true,
         views: true,
+        viewBoost: true,
         authorName: true,
         category: { select: { name: true } },
       },
@@ -64,6 +66,8 @@ export default async function BreakingArchivePage(context: {
   ]);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // Sitede gösterilen sayı = views + takviye (haber detayıyla tutarlı)
+  const boostCfg = await getViewBoostSettings();
   const cards: ArticleCardData[] = articles.map(a => ({
     id: a.id,
     slug: a.slug,
@@ -75,7 +79,7 @@ export default async function BreakingArchivePage(context: {
     categoryName: a.category?.name || null,
     isBreaking: a.isBreaking,
     publishedAt: a.publishedAt,
-    views: a.views,
+    views: displayViews(a, boostCfg),
     authorName: a.authorName,
   }));
 

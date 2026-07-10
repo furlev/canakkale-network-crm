@@ -697,6 +697,7 @@ model SiteArticle {
   authorSlug      String? // yazar/köşe hub bağı (Author.slug)
   scheduledAt     DateTime? // planlı yayın (status='scheduled' → cron yayınlar)
   breakingPushedAt DateTime? // son dakika web push tetiklendi damgası (mükerrer engel)
+  viewBoost       Json? // görüntülenme takviyesi (habere özel): {mode:'inherit'|'off'|'custom', dailyMin?, dailyMax?} — hesap: src/lib/view-boost.ts (deterministik, cron'suz)
   wpId            Int?          @unique // WP'den içe aktarılan haberler
   deletedAt       DateTime?
   createdAt       DateTime      @default(now())

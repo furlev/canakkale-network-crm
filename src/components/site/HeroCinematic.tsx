@@ -112,6 +112,79 @@ export default function HeroCinematic({ items, kinetic = false }: { items: HeroI
     { disabled: !jsScrub }
   );
 
+  // ── 3B tilt + işaretçi paralaksı (madde 3) ──
+  // YALNIZ pointer:fine + tier 'full' + reduced-motion kapalıyken devreye girer;
+  // mobil/dokunmatik ve düşük tier'da attribute hiç eklenmez → sıfır maliyet.
+  // Tek rAF döngüsü (yalnız hareket varken çalışır, hedefe oturunca durur) ve
+  // layout okuması yok: normalize konum viewport ölçüsünden hesaplanır.
+  useEffect(() => {
+    const el = heroRef.current;
+    if (!el || tier !== 'full') return;
+    if (typeof window.matchMedia !== 'function') return;
+    if (!window.matchMedia('(pointer: fine)').matches) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    el.setAttribute('data-tilt', 'on');
+
+    let vw = window.innerWidth || 1;
+    let vh = window.innerHeight || 1;
+    const onResize = () => {
+      vw = window.innerWidth || 1;
+      vh = window.innerHeight || 1;
+    };
+
+    let raf = 0;
+    let tx = 0; // hedef (-1..1)
+    let ty = 0;
+    let cx = 0; // lerp'li güncel değer
+    let cy = 0;
+
+    const frame = () => {
+      cx += (tx - cx) * 0.1;
+      cy += (ty - cy) * 0.1;
+      // rotateY yatayı, rotateX dikeyi izler (maks ~4°); --tilt-x/y liste paralaksı için birimsiz
+      el.style.setProperty('--tilt-ry', `${(cx * 4).toFixed(3)}deg`);
+      el.style.setProperty('--tilt-rx', `${(cy * -3).toFixed(3)}deg`);
+      el.style.setProperty('--tilt-x', cx.toFixed(3));
+      el.style.setProperty('--tilt-y', cy.toFixed(3));
+      if (Math.abs(tx - cx) > 0.002 || Math.abs(ty - cy) > 0.002) {
+        raf = requestAnimationFrame(frame);
+      } else {
+        raf = 0;
+      }
+    };
+    const kick = () => {
+      if (!raf) raf = requestAnimationFrame(frame);
+    };
+
+    const onMove = (e: PointerEvent) => {
+      tx = Math.max(-1, Math.min(1, (e.clientX / vw) * 2 - 1));
+      ty = Math.max(-1, Math.min(1, (e.clientY / vh) * 2 - 1));
+      kick();
+    };
+    const onLeave = () => {
+      tx = 0;
+      ty = 0;
+      kick();
+    };
+
+    el.addEventListener('pointermove', onMove, { passive: true });
+    el.addEventListener('pointerleave', onLeave, { passive: true });
+    window.addEventListener('resize', onResize, { passive: true });
+
+    return () => {
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerleave', onLeave);
+      window.removeEventListener('resize', onResize);
+      if (raf) cancelAnimationFrame(raf);
+      el.removeAttribute('data-tilt');
+      el.style.removeProperty('--tilt-rx');
+      el.style.removeProperty('--tilt-ry');
+      el.style.removeProperty('--tilt-x');
+      el.style.removeProperty('--tilt-y');
+    };
+  }, [tier, items.length]);
+
   useEffect(() => {
     if (items.length < 2 || reducedRef.current) return;
     const id = setInterval(() => setActive(a => (a + 1) % items.length), ROTATE_MS);
@@ -188,7 +261,8 @@ export default function HeroCinematic({ items, kinetic = false }: { items: HeroI
         })}
       </div>
       <div className="hero-veil" aria-hidden="true" />
-      <ParticleField />
+      {/* sparks: işaretçiyi izleyen kıvılcımlar (ParticleField içinde pointer:fine + full tier'a kilitli) */}
+      <ParticleField sparks />
 
       <div className="s-container hero-layout">
         {/* key=slug → her manşet değişiminde içerik animasyonları yeniden oynar */}

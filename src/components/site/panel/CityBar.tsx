@@ -60,6 +60,8 @@ export default function CityBar() {
   const pharmMerkez = pharm.find((e) => e.districtSlug === 'merkez') ?? pharm[0];
 
   const loading = data === null;
+  // Veri henüz yokken '—' yerine zarif iskelet hapı göster.
+  const skel = <span className={styles.skel} aria-hidden="true" />;
 
   return (
     <div className={`${styles.bar} ${animate ? styles.animate : ''}`} role="region" aria-label="Şehir panosu özeti">
@@ -69,7 +71,7 @@ export default function CityBar() {
           <span className={styles.emoji} aria-hidden="true">
             {info?.emoji ?? '🌡️'}
           </span>
-          <span className={styles.val}>{wx ? formatTemp(wx.current.temp) : loading ? '—' : '—'}</span>
+          <span className={styles.val}>{wx ? formatTemp(wx.current.temp) : loading ? skel : '—'}</span>
           <span className={styles.lbl}>{info?.label ?? 'Hava'}</span>
         </Link>
 
@@ -78,7 +80,7 @@ export default function CityBar() {
         {/* Döviz + Altın */}
         <Link href="/piyasa" className={styles.item} aria-label="Piyasa detayları">
           <span className={styles.tag}>USD</span>
-          <span className={styles.val}>{usd ? `${formatTRY(usd.selling)}₺` : '—'}</span>
+          <span className={styles.val}>{usd ? `${formatTRY(usd.selling)}₺` : loading ? skel : '—'}</span>
           {usd?.changePct != null && (
             <span className={usd.changePct >= 0 ? styles.up : styles.down}>
               {usd.changePct >= 0 ? '▲' : '▼'}
@@ -88,7 +90,7 @@ export default function CityBar() {
 
         <Link href="/piyasa" className={`${styles.item} ${styles.hideSm}`} aria-label="Altın fiyatı">
           <span className={styles.tag}>Gram Altın</span>
-          <span className={styles.val}>{gram ? `${formatTRY(gram.selling)}₺` : '—'}</span>
+          <span className={styles.val}>{gram ? `${formatTRY(gram.selling)}₺` : loading ? skel : '—'}</span>
         </Link>
 
         <span className={styles.sep} aria-hidden="true" />

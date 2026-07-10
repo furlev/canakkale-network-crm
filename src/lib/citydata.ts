@@ -443,5 +443,25 @@ export const getEmergency = () => readJson<EmergencyData>('emergency');
 /** Setting('emergency') yazar (cron kullanır). */
 export const setEmergency = (d: EmergencyData) => writeJson('emergency', d);
 
+// ─────────────────────────────────────────────────────────────
+// FERİBOT tarife çekimi meta'sı (Setting 'ferryMeta') — additive
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * GESTAŞ tarife cron'unun (/api/cron/ferry) durum kaydı. Tarife satırlarının
+ * kendisi FerrySchedule tablosundadır: season='auto' işaretli satırlar cron
+ * yönetimindedir, manuel satırlara (season != 'auto') asla dokunulmaz.
+ * Çekim başarısızsa mevcut veri aynen korunur; hata buraya loglanır.
+ */
+export type FerryMeta = {
+  fetchedAt: string; // ISO — son çekim denemesi
+  source: string; // kaynak URL (gdu.com.tr sefer tarifeleri)
+  routes: Record<string, number>; // rota → son çekimde yazılan otomatik sefer sayısı
+  lastError: string | null; // son hata özeti (tam başarıda null)
+};
+
+export const getFerryMeta = () => readJson<FerryMeta>('ferryMeta');
+export const setFerryMeta = (d: FerryMeta) => writeJson('ferryMeta', d);
+
 // Not: districtName re-export — tüketiciler tek yerden alsın diye.
 export { districtName };

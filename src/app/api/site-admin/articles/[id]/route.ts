@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { parseBody, handleApiError, requireLevel, ApiError } from '@/lib/api';
 import { requireSiteEditor } from '@/lib/access';
@@ -14,6 +15,24 @@ const galleryItem = z.object({
   url: z.string().min(1),
   alt: z.string().optional().nullable(),
 });
+
+/** Habere özel görüntülenme takviyesi (SiteArticle.viewBoost Json) —
+ *  hesap/çözüm: src/lib/view-boost.ts. 'inherit' = genel ayarı izle. */
+const viewBoostOverride = z
+  .object({
+    mode: z.enum(['inherit', 'off', 'custom']),
+    dailyMin: z.number().int().min(0).max(1_000_000).optional(),
+    dailyMax: z.number().int().min(0).max(1_000_000).optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.dailyMin !== undefined && v.dailyMax !== undefined && v.dailyMax < v.dailyMin) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Günlük üst sınır alt sınırdan küçük olamaz',
+        path: ['dailyMax'],
+      });
+    }
+  });
 
 /** Site haberi güncelleme şeması — tüm alanlar opsiyonel (kısmi güncelleme / toggle). */
 const articleUpdate = z.object({
@@ -47,6 +66,8 @@ const articleUpdate = z.object({
   correctedAt: z.string().optional().nullable(),
   retractionNote: z.string().optional().nullable(),
   retractedAt: z.string().optional().nullable(),
+  // Görüntülenme takviyesi (habere özel): null → satır temizlenir (= 'inherit')
+  viewBoost: viewBoostOverride.optional().nullable(),
 });
 
 /**
@@ -120,6 +141,14 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     // C (yayınlayamaz): yeni 'published'/'scheduled' → 'awaiting_approval'. Zaten
     // yayında olan haberi C'nin salt düzenlemesi canlı haberi yayından düşürmez.
     const canPublish = isLeaderOrAdmin(session);
+
+    // GÜVENLİK: görüntülenme takviyesi yalnız B+ tarafından değiştirilebilir.
+    // Aksi halde C editörü, yönetim global takviyeyi kapatmışken bile kendi
+    // haberine 'custom' modla sınırsız takviye açabilirdi (denetim bulgusu).
+    if (body.viewBoost !== undefined && !canPublish) {
+      throw new ApiError(403, 'Görüntülenme takviyesini yalnız yöneticiler (A/B) değiştirebilir');
+    }
+
     let finalStatus: string | undefined = undefined;
     let scheduledAt: Date | null | undefined = undefined;
     if (body.status !== undefined) {
@@ -205,6 +234,10 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
         ...(body.isEditorPick !== undefined ? { isEditorPick: body.isEditorPick } : {}),
         ...(body.seoTitle !== undefined ? { seoTitle: body.seoTitle || null } : {}),
         ...(body.metaDescription !== undefined ? { metaDescription: body.metaDescription || null } : {}),
+        // Takviye override'ı: null → DB'de temizle ('inherit' ile eşdeğer)
+        ...(body.viewBoost !== undefined
+          ? { viewBoost: body.viewBoost === null ? Prisma.DbNull : body.viewBoost }
+          : {}),
         ...pressData,
         ...(goingPublished ? { publishedAt: new Date() } : {}),
       },

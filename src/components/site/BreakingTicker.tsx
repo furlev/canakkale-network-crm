@@ -41,42 +41,58 @@ function timeAgoTr(iso: string | null): string {
   return new Date(iso).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+export type TickerMode = 'breaking' | 'gundem';
+
 /**
- * Son dakika şeridi 2.0: kızıl marquee + canlı TR saati + geliştirmeler:
- *  - Sol "SON DAKİKA" rozetinde nabız; rozet son dakika arşivine (/son-dakika) link.
- *  - Her öğede kategori renk noktası.
- *  - Hover/odakta marquee yavaşlar (durmadan okunabilir).
+ * Son dakika şeridi 2.0: kesintisiz marquee + canlı TR saati + geliştirmeler:
+ *  - İki mod: 'breaking' (kızıl SON DAKİKA) · 'gundem' (nötr lacivert GÜNDEM —
+ *    son 24 saatte son dakika yoksa layout en yeni haberlerle doldurur).
+ *  - Sol rozet nabızlı; breaking'de /son-dakika arşivine, gündem'de /haberler'e link.
+ *  - Her öğede kategori renk noktası; öğeler /haber/[slug]'a tıklanabilir.
+ *  - Hover/odakta marquee DURUR (okunabilirlik); reduced-motion'da statik liste.
  *  - 60 sn'de bir /api/site/breaking?since= ile yoklama: yeni haber gelince listeye
- *    başa eklenir ve BreakingToast tetiklenir (kuyruklu).
+ *    başa eklenir ve BreakingToast tetiklenir (kuyruklu). Gündem modundayken gerçek
+ *    son dakika düşerse şerit kızıl 'breaking' moduna döner.
  *  - reduced-motion / tier 'off': nabız kapalı, statik liste, animasyonsuz toast.
  *
  * Toast bu bileşenin içinde render edilir — ekstra layout mount gerekmez.
  */
-export default function BreakingTicker({ items: initial }: { items: TickerItem[] }) {
+export default function BreakingTicker({
+  items: initial,
+  mode: initialMode = 'breaking',
+}: {
+  items: TickerItem[];
+  mode?: TickerMode;
+}) {
   const tier = useMotionTier();
   const noMotion = tier === 'off';
 
   const [items, setItems] = useState<TickerItem[]>(initial);
+  const [mode, setMode] = useState<TickerMode>(initialMode);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [clock, setClock] = useState<string | null>(null);
-  const [slow, setSlow] = useState(false);
   // Yeni gelen öğelerin slug'ları — kızıl "is-entering" flash için (kısa süre).
   const [entering, setEntering] = useState<Set<string>>(() => new Set());
 
   // Görülen slug'lar (toast tekrarını ve çift eklemeyi önler) + son sunucu zamanı.
   const seenRef = useRef<Set<string>>(new Set(initial.map(i => i.slug)));
   const sinceRef = useRef<string>(new Date().toISOString());
+  // Mod, callback deps'ine girmeden okunabilsin diye ref'te de tutulur.
+  const modeRef = useRef<TickerMode>(initialMode);
 
   /**
    * Sunucudan gelen son dakika yanıtını (polling VEYA SSE) tek noktada işler:
    * yeni (görülmemiş) haberleri başa ekler, toast kuyruğuna atar, `since`i ilerletir
    * ve giren öğelere kızıl flash işareti koyar. Çift kanal güvenli — seenRef dedup eder.
+   * Gündem modunda gelen İLK gerçek son dakika şeridi kızıl 'breaking' moduna çevirir
+   * (gündem dolgu listesi yerini son dakika listesine bırakır).
    */
   const applyIncoming = useCallback((data: { now?: string; items?: BreakingApiItem[] }) => {
     if (data.now) sinceRef.current = data.now;
-    const fresh = (data.items ?? []).filter(it => !seenRef.current.has(it.slug));
+    const wasGundem = modeRef.current === 'gundem';
+    // Gündem dolgusundaki bir haber sonradan son dakika işaretlenebilir → gündemde seen filtresi atlanır.
+    const fresh = (data.items ?? []).filter(it => wasGundem || !seenRef.current.has(it.slug));
     if (fresh.length === 0) return;
-    fresh.forEach(it => seenRef.current.add(it.slug));
 
     // API en yeni → eski sıralı; başa eklerken bu sırayı koru (en yeni en solda).
     const asTicker: TickerItem[] = fresh.map(it => ({
@@ -85,7 +101,16 @@ export default function BreakingTicker({ items: initial }: { items: TickerItem[]
       timeAgo: timeAgoTr(it.publishedAt),
       color: it.color,
     }));
-    setItems(prev => [...asTicker, ...prev].slice(0, 20));
+    if (wasGundem) {
+      // Gündem dolgusu yerini gerçek son dakika listesine bırakır; dedup seti sıfırlanır.
+      modeRef.current = 'breaking';
+      setMode('breaking');
+      seenRef.current = new Set(fresh.map(it => it.slug));
+      setItems(asTicker);
+    } else {
+      fresh.forEach(it => seenRef.current.add(it.slug));
+      setItems(prev => [...asTicker, ...prev].slice(0, 20));
+    }
 
     // Kızıl flash işareti (yeni slug'lar) — ~1.6 sn sonra kaldır.
     const freshSlugs = fresh.map(it => it.slug);
@@ -188,36 +213,37 @@ export default function BreakingTicker({ items: initial }: { items: TickerItem[]
   if (items.length === 0) return null;
 
   const animate = !noMotion;
-  // Statik modda tek liste; hareketli modda kesintisiz akış için iki kez basılır.
+  // Statik modda tek liste; hareketli modda kesintisiz marquee için iki kez basılır.
   const rendered = animate ? [...items, ...items] : items;
   const duration = Math.max(items.length * 9, 20);
 
-  // Inline animationPlayState:'running', global :hover{paused} kuralını ezerek
-  // "durma" yerine "yavaşlama" sağlar (duration hover/odakta 2.5×).
+  // Süre öğe sayısına göre; hover/odakta durma CSS'ten gelir (.ticker-track:hover { paused }).
   const trackStyle: React.CSSProperties | undefined = animate
-    ? { animationDuration: `${slow ? duration * 2.5 : duration}s`, animationPlayState: 'running' }
+    ? { animationDuration: `${duration}s` }
     : undefined;
 
-  const onSlowOn = () => animate && setSlow(true);
-  const onSlowOff = () => animate && setSlow(false);
+  const isGundem = mode === 'gundem';
 
   return (
-    <div className="ticker" role="region" aria-label="Son dakika haberleri">
-      <Link href="/son-dakika" className="ticker-label" aria-label="Son dakika haberleri — tüm arşiv">
+    <div
+      className="ticker"
+      data-mode={mode}
+      role="region"
+      aria-label={isGundem ? 'Gündem haberleri' : 'Son dakika haberleri'}
+    >
+      <Link
+        href={isGundem ? '/haberler' : '/son-dakika'}
+        className="ticker-label"
+        aria-label={isGundem ? 'Gündem haberleri — tüm haberler' : 'Son dakika haberleri — tüm arşiv'}
+      >
         <span
           className="ticker-dot"
           aria-hidden="true"
           style={noMotion ? { animation: 'none' } : undefined}
         />
-        SON DAKİKA
+        {isGundem ? 'GÜNDEM' : 'SON DAKİKA'}
       </Link>
-      <div
-        className="ticker-viewport"
-        onMouseEnter={onSlowOn}
-        onMouseLeave={onSlowOff}
-        onFocusCapture={onSlowOn}
-        onBlurCapture={onSlowOff}
-      >
+      <div className="ticker-viewport">
         <div className="ticker-track" style={trackStyle}>
           {rendered.map((item, i) => {
             const isClone = animate && i >= items.length;

@@ -90,6 +90,36 @@ export default function Reveal() {
       remaining.forEach(revealIfInView);
     }, 2500);
 
+    // Güvenlik ağı 3 — sekmeye dönüş / bfcache ("hayalet içerik" bug'ı):
+    // Sekme gizliyken IO tetiklenmez ve yarım kalan transition'lar takılı
+    // görünebilir. Sayfa yeniden görünür olduğunda viewport içindeki TÜM
+    // .s-reveal öğeleri .reveal-instant ile ANINDA tamamlanmış duruma oturur;
+    // <html>'e ~1s'lik .page-revived basılır → hero'nun tek-atımlık giriş
+    // animasyonları da bitmiş haline zorlanır (site.css).
+    let revivedTimer = 0;
+    const revive = () => {
+      document.querySelectorAll<HTMLElement>('.s-reveal').forEach(el => {
+        const r = el.getBoundingClientRect();
+        if (r.top < window.innerHeight && r.bottom > 0) {
+          el.classList.add('reveal-instant', 'is-visible');
+        }
+      });
+      const root = document.documentElement;
+      root.classList.add('page-revived');
+      window.clearTimeout(revivedTimer);
+      revivedTimer = window.setTimeout(() => root.classList.remove('page-revived'), 900);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') revive();
+    };
+    // pageshow: yalnız bfcache restorasyonunda (persisted) zorla — normal
+    // yüklemede giriş animasyonları olağan akışıyla oynamaya devam etsin.
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) revive();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pageshow', onPageShow);
+
     // Sonradan eklenen .s-reveal öğeleri: TÜM belgeyi süpürmek yerine yalnızca
     // eklenen node'ları tara ve rAF ile toplu işle (her mutasyonda çalışma yok).
     let moScheduled = false;
@@ -123,6 +153,10 @@ export default function Reveal() {
       mo.disconnect();
       window.removeEventListener('scroll', onScroll);
       window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pageshow', onPageShow);
+      window.clearTimeout(revivedTimer);
+      document.documentElement.classList.remove('page-revived');
     };
   }, []);
 

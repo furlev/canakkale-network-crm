@@ -3,6 +3,18 @@
    Tasarım tokenları site.css'ten gelir; bu dosya bileşen stillerini taşır.
    ═══════════════════════════════════════════════════════════════ */
 
+/* ── Kabuk ölçüleri ──
+   Kabuk sırası: EmergencyBanner → SiteHeader (sticky) → BreakingTicker → CityBar → main.
+   Anasayfa hero'su bu üç bandın altına süzülür (bkz. --shell-pull); ticker ve CityBar
+   kendi z-index'leriyle hero'nun üzerinde görünür kalır. */
+:root {
+  --ticker-h: 38px;
+  --citybar-h: 40px;
+  /* Hero'nun negatif margin ile geri çekildiği toplam kabuk yüksekliği.
+     Ticker kapalıysa 38px fazla çekilir — hero üstten hafif kırpılır, zararsız. */
+  --shell-pull: calc(var(--header-h) + var(--ticker-h) + var(--citybar-h));
+}
+
 /* ── Yardımcılar ── */
 .sr-only {
   position: absolute;
@@ -41,13 +53,17 @@
 /* ═══ SON DAKİKA ŞERİDİ ═══ */
 .ticker {
   position: relative;
-  z-index: 210;
+  /* Header'ın (z:200) ALTINDA kalmalı: kabuk sırası header→ticker olduğundan
+     daha yüksek bir z-index scroll'da şeridin yapışkan header'ın ÜSTÜNE
+     binmesine yol açıyordu (bozuk header görünümü). Hero'nun (z:2) üstünde
+     kalması için pozitif değer yeterli. */
+  z-index: 120;
   display: flex;
   align-items: stretch;
   height: 38px;
   overflow: hidden;
   background: linear-gradient(90deg, #7e1120, var(--cn-red) 35%, var(--cn-red) 65%, #7e1120);
-  color: #fff;
+  color: var(--accent-ink); /* kızıl marka bandı: iki temada da beyaz metin */
 }
 
 .ticker-label {
@@ -67,7 +83,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--accent-ink);
   animation: ticker-pulse 1.2s ease-in-out infinite;
 }
 
@@ -98,7 +114,7 @@
   align-items: center;
   gap: 10px;
   padding: 0 24px;
-  color: #fff;
+  color: var(--accent-ink);
   text-decoration: none;
   font-size: 13.5px;
   font-weight: 600;
@@ -136,12 +152,26 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ticker-track { animation: none; }
-  .ticker-viewport { overflow-x: auto; }
+  /* Statik modda şerit parmakla kaydırılır; öğeler yumuşakça hizalanır */
+  .ticker-viewport { overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; }
+  .ticker-viewport::-webkit-scrollbar { display: none; }
+  .ticker-item { scroll-snap-align: start; }
   .ticker-item.is-entering { animation: none; background: transparent; box-shadow: none; }
 }
 
 @media (max-width: 640px) {
   .ticker-clock { display: none; }
+}
+
+/* GÜNDEM modu — son 24 saatte son dakika yoksa nötr lacivert dolgu şeridi.
+   (Kızıl SON DAKİKA yalnız gerçek son dakika varken; ayrım data-mode ile.) */
+.ticker[data-mode='gundem'] {
+  background: linear-gradient(90deg, #0c1729, var(--cn-navy) 35%, var(--cn-navy) 65%, #0c1729);
+}
+
+.ticker[data-mode='gundem'] .ticker-dot {
+  background: var(--cn-gold);
+  animation: none;
 }
 
 /* ═══ BAŞLIK ═══ */
@@ -151,6 +181,15 @@
   z-index: 200;
 }
 
+/* Acil durum bandı (EmergencyBanner, role="alert") aktifken: band da sticky
+   olduğundan header viewport tepesine değil bandın ALTINA yapışır — scroll'da
+   iki sticky öğenin üst üste binmesi engellenir. (Band tek satırda 40px;
+   çok dar ekranda sararsa 1-2px bindirme kabul edilebilir.) */
+[role='alert'][data-severity] ~ .site-header { top: 40px; }
+
+/* Buzlu cam zemin: VARSAYILAN GÖRÜNÜR — alt sayfalarda header tepedeyken de
+   arkasında zemin olur (eskiden yalnız scroll'da geliyordu → başlık boşlukta
+   yüzen öğeler gibi görünüyordu). */
 .site-header::before {
   content: '';
   position: absolute;
@@ -158,14 +197,48 @@
   background: color-mix(in srgb, var(--bg) 78%, transparent);
   -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
-  border-bottom: 1px solid transparent;
-  opacity: 0;
-  transition: opacity 0.35s var(--ease-out), border-color 0.35s;
+  border-bottom: 1px solid var(--line);
+  opacity: 1;
+  transition: opacity 0.35s var(--ease-out);
 }
 
-.site-header.is-scrolled::before {
-  opacity: 1;
-  border-bottom-color: var(--line);
+/* Anasayfa istisnası: hero kabuğun altına süzüldüğünden tepedeyken cam tam
+   şeffaf başlar, kaydırınca geri gelir. :has desteklemeyen tarayıcıda cam hep
+   açık kalır (güvenli bozulma: menü daima okunur). Yükleme iskeleti de dahil. */
+.site-header:has(~ main :is(.hero, .s-skel-hero)):not(.is-scrolled)::before {
+  opacity: 0;
+}
+
+/* Hero üstünde şeffaf başlarken metin/ikon DAİMA açık renk (hero her iki temada
+   koyu scrim taşır) — truva'da koyu lacivert menünün koyu hero'da kaybolmasını önler. */
+.site-header:has(~ main :is(.hero, .s-skel-hero)):not(.is-scrolled) .site-nav-link {
+  color: var(--overlay-ink-soft);
+}
+.site-header:has(~ main :is(.hero, .s-skel-hero)):not(.is-scrolled) .site-nav-link:hover {
+  color: var(--overlay-ink);
+}
+.site-header:has(~ main :is(.hero, .s-skel-hero)):not(.is-scrolled) .header-icon-btn {
+  color: var(--overlay-ink);
+  border-color: var(--overlay-line);
+  background: color-mix(in srgb, var(--scrim) 30%, transparent);
+}
+/* Aksiyon kümesinin TAMAMI (tema anahtarı, "Benim İlçem" seçici) hero üstünde
+   koyu-zemin tokenlarına geçer: bileşenler/modül CSS'leri var(--ink/--ink-soft/
+   --line/--surface) okuduğundan değişkenleri yerinde yeniden kapsamlamak yeterli
+   — truva'da koyu lacivert etiket/ikonların koyu hero'da kaybolmasını önler. */
+.site-header:has(~ main :is(.hero, .s-skel-hero)):not(.is-scrolled) .site-header-actions {
+  --ink: var(--overlay-ink);
+  --ink-soft: var(--overlay-ink-soft);
+  --ink-faint: var(--overlay-ink-faint);
+  --line: var(--overlay-line);
+  --surface: color-mix(in srgb, var(--scrim) 46%, transparent);
+}
+/* Logo da hero üstünde koyu-zemin varyantında kalır (açık temada bile) */
+.site-header:has(~ main :is(.hero, .s-skel-hero)):not(.is-scrolled) .only-network {
+  display: block;
+}
+.site-header:has(~ main :is(.hero, .s-skel-hero)):not(.is-scrolled) .only-truva {
+  display: none;
 }
 
 .site-header-inner {
@@ -245,7 +318,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
 }
 
 .header-icon-btn {
@@ -291,11 +363,18 @@
 .theme-toggle:hover .theme-toggle-track { border-color: var(--accent); }
 
 .theme-toggle-icon {
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
   line-height: 1;
   z-index: 1;
-  transition: transform 0.35s var(--ease-spring), opacity 0.25s;
+  transition: transform 0.35s var(--ease-spring), opacity 0.25s, color 0.25s;
 }
+
+.theme-toggle-icon svg { width: 13px; height: 13px; }
+
+/* Güneş (truva/aydınlık) altın, ay (network/koyu) yumuşak mürekkep tonu */
+.theme-icon-truva { color: var(--cn-gold); }
+.theme-icon-network { color: var(--ink-soft); }
 
 .theme-toggle-thumb {
   position: absolute;
@@ -309,12 +388,34 @@
   transition: transform 0.35s var(--ease-spring);
 }
 
-/* Koyu (network): top solda 🏛️'yi örter → 🌃 görünür; aydınlıkta tersine */
+/* Koyu (network): top solda güneşi örter → ay görünür; aydınlıkta tersine */
 [data-site-theme='truva'] .theme-toggle-thumb { transform: translateX(28px); }
 .theme-icon-truva { opacity: 0.9; }
 .theme-icon-network { opacity: 0.9; }
 [data-site-theme='truva'] .theme-icon-network { transform: scale(0.8); opacity: 0.35; }
 html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); opacity: 0.35; }
+
+/* ── Tema geçiş efekti ──
+   ThemeToggle, document.startViewTransition destekleyen tarayıcıda tıklama
+   noktasından dairesel açılma sürer: ::view-transition-new(root) clip-path'i
+   Web Animations API ile animasyonlanır. .theme-vt yalnız TEMA geçişi sırasında
+   köke basılır — Next'in kendi (rota) view transition'ları etkilenmez. */
+html.theme-vt::view-transition-old(root),
+html.theme-vt::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* startViewTransition yoksa fallback: kökte ~350ms renk geçişi (JS .theme-fading basar) */
+html.theme-fading,
+html.theme-fading .site-body {
+  transition: background-color 0.35s var(--ease-out), color 0.35s var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.theme-fading,
+  html.theme-fading .site-body { transition: none; }
+}
 
 /* Arama overlay'i */
 .search-overlay {
@@ -461,12 +562,15 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   position: relative;
   display: flex;
   align-items: flex-end;
-  min-height: max(92vh, 620px);
-  margin-top: calc(var(--header-h) * -1); /* yapışkan başlığın altına süzülür */
-  padding: calc(var(--header-h) + clamp(60px, 8vh, 110px)) 0 clamp(76px, 9vh, 110px);
+  /* Kabuk bantlarının altına süzüldüğü kadar uzar → alt kenar eski konumunda kalır */
+  min-height: max(calc(92vh + var(--ticker-h) + var(--citybar-h)), 698px);
+  /* Yapışkan başlık + son dakika şeridi + CityBar'ın altına süzülür; bantlar kendi
+     z-index'leriyle üstte görünür kalır (CityBar.module.css .bar, .ticker z-index) */
+  margin-top: calc(var(--shell-pull) * -1);
+  padding: calc(var(--shell-pull) + clamp(60px, 8vh, 110px)) 0 clamp(76px, 9vh, 110px);
   overflow: hidden;
   /* Veil her iki temada da görseli karartır → hero metni daima açık renk */
-  color: #eef2f8;
+  color: var(--overlay-ink);
 }
 
 .hero-bg-stack, .hero-bg { position: absolute; inset: 0; }
@@ -502,8 +606,14 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
 .hero-veil {
   position: absolute;
   inset: 0;
+  /* Scrim tabanı --scrim tokenından: iki temada da koyu, truva'da lacivert ton */
   background:
-    linear-gradient(100deg, rgba(7, 13, 24, 0.82) 0%, rgba(7, 13, 24, 0.25) 55%, rgba(7, 13, 24, 0.45) 100%),
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--scrim) 82%, transparent) 0%,
+      color-mix(in srgb, var(--scrim) 25%, transparent) 55%,
+      color-mix(in srgb, var(--scrim) 45%, transparent) 100%
+    ),
     var(--veil);
 }
 
@@ -531,14 +641,15 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   gap: 14px;
 }
 
-.hero-badge { text-decoration: none; background: rgba(226, 49, 64, 0.18); color: #ff8a94; }
-.hero-badge:hover { background: rgba(226, 49, 64, 0.3); }
+/* Koyu scrim üstünde açık kızıl — tema bağımsız (görsel-üstü kuralı) */
+.hero-badge { text-decoration: none; background: color-mix(in srgb, var(--cn-red-bright) 18%, transparent); color: #ff8a94; }
+.hero-badge:hover { background: color-mix(in srgb, var(--cn-red-bright) 30%, transparent); }
 
 .hero-date {
   font-size: 12.5px;
   font-weight: 600;
   letter-spacing: 0.06em;
-  color: rgba(238, 242, 248, 0.6);
+  color: var(--overlay-ink-dim);
 }
 
 .hero-title {
@@ -566,7 +677,7 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   font-family: var(--font-serif, Lora), Georgia, serif;
   font-size: clamp(16px, 1.5vw, 20px);
   line-height: 1.65;
-  color: rgba(238, 242, 248, 0.82);
+  color: var(--overlay-ink-soft);
   animation: hero-word-in 0.8s var(--ease-out) 0.35s both;
 }
 
@@ -580,7 +691,7 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   list-style: none;
   display: flex;
   flex-direction: column;
-  border-top: 1px solid rgba(238, 242, 248, 0.16);
+  border-top: 1px solid var(--overlay-line);
 }
 
 .hero-list-item {
@@ -592,7 +703,7 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   width: 100%;
   padding: 13px 2px;
   border: none;
-  border-bottom: 1px solid rgba(238, 242, 248, 0.16);
+  border-bottom: 1px solid var(--overlay-line);
   background: none;
   text-align: left;
   cursor: pointer;
@@ -605,7 +716,7 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   font-size: 13px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  color: rgba(238, 242, 248, 0.45);
+  color: var(--overlay-ink-faint);
   transition: color 0.25s;
 }
 
@@ -615,7 +726,7 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   font-size: 13.5px;
   font-weight: 600;
   line-height: 1.45;
-  color: rgba(238, 242, 248, 0.68);
+  color: var(--overlay-ink-soft);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -624,7 +735,7 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
 }
 
 .hero-list-item:hover .hero-list-title,
-.hero-list-item.is-active .hero-list-title { color: #fff; }
+.hero-list-item.is-active .hero-list-title { color: var(--overlay-ink); }
 
 .hero-progress {
   position: absolute;
@@ -653,7 +764,7 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   flex-direction: column;
   align-items: center;
   gap: 7px;
-  color: rgba(238, 242, 248, 0.55);
+  color: var(--overlay-ink-dim);
 }
 
 .hero-scroll-text {
@@ -669,7 +780,7 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   width: 22px;
   height: 34px;
   padding-top: 6px;
-  border: 2px solid rgba(238, 242, 248, 0.38);
+  border: 2px solid var(--overlay-ink-faint);
   border-radius: 12px;
 }
 
@@ -727,10 +838,14 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
     border-top: none;
     padding-bottom: 4px;
     scrollbar-width: none;
+    /* Kartlar parmak kaydırmasında yumuşakça hizalanır */
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 2px;
   }
+  .hero-list li { scroll-snap-align: start; }
   .hero-list::-webkit-scrollbar { display: none; }
   .hero-list li { flex: 0 0 220px; }
-  .hero-list-item { border-bottom: none; border-top: 2px solid rgba(238, 242, 248, 0.18); padding: 10px 2px; }
+  .hero-list-item { border-bottom: none; border-top: 2px solid var(--overlay-line); padding: 10px 2px; }
   .hero-list-item:hover { padding-left: 2px; }
   .hero-progress { top: -2px; bottom: auto; }
   .hero-scroll { display: none; }
@@ -954,7 +1069,7 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   height: 54px;
   border-radius: 50%;
   background: var(--cn-red-bright);
-  color: #fff;
+  color: var(--accent-ink);
   transform: translate(-50%, -50%);
   box-shadow: 0 0 0 8px rgba(226, 49, 64, 0.22), 0 10px 30px rgba(0, 0, 0, 0.45);
   transition: transform 0.3s var(--ease-spring), box-shadow 0.3s;
@@ -970,8 +1085,9 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   inset: auto 0 0 0;
   z-index: 2;
   padding: 44px 16px 14px;
-  background: linear-gradient(180deg, transparent, rgba(4, 9, 17, 0.9));
-  color: #fff;
+  /* Görsel-üstü metin: iki temada da koyu scrim + açık metin */
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--scrim) 90%, transparent));
+  color: var(--overlay-ink);
 }
 
 .reel-title {
@@ -989,7 +1105,7 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   display: block;
   margin-top: 5px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--overlay-ink-dim);
 }
 
 @media (max-width: 980px) {
@@ -1160,7 +1276,7 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   font-weight: 600;
 }
 
-.newsletter-status.is-ok { color: #2fb96b; }
+.newsletter-status.is-ok { color: var(--ok); }
 .newsletter-status.is-error { color: var(--accent); }
 
 .newsletter-notice {
@@ -1179,19 +1295,41 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   position: relative;
   overflow: hidden;
   padding: clamp(72px, 12vw, 150px) 0;
-  background: linear-gradient(125deg, #0a1424 0%, #16263f 60%, #0a1424 100%);
-  color: #eef2f8;
+  /* Zemin: koyu lacivert→kızıl sinematik degrade — görsel yüklenmese de band dolu durur */
+  background:
+    radial-gradient(900px 480px at 84% 14%, rgba(226, 49, 64, 0.18), transparent 65%),
+    radial-gradient(720px 420px at 8% 92%, rgba(200, 32, 47, 0.12), transparent 70%),
+    linear-gradient(125deg, #0a1424 0%, #1a2c49 55%, #2a0e18 100%);
+  color: var(--overlay-ink); /* koyu band: iki temada da açık metin */
 }
 
-.join-abide {
+/* İnce partikül dokusu — saf CSS nokta katmanları (veil'in üstünde, içeriğin altında) */
+.join-cta::after {
+  content: '';
   position: absolute;
-  right: min(-4vw, -30px);
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.2) 1px, transparent 1.5px),
+    radial-gradient(rgba(226, 49, 64, 0.28) 1px, transparent 1.6px);
+  background-size: 96px 96px, 148px 148px;
+  background-position: 0 0, 46px 62px;
+  opacity: 0.3;
+}
+
+/* Şehir görseli (varsa) degradenin üzerine düşük opaklıkla biner; yüklenmezse
+   JoinCTA onError ile gizler — zemin degrade tek başına yeterli. */
+.join-bg {
+  position: absolute;
+  left: 0;
   top: 50%;
+  width: 100%;
   height: 135%;
-  width: auto;
+  object-fit: cover;
   /* -50% dikey ortalar; JS paralaksı aynı kalıbı px offset ile yeniden yazar */
   transform: translate3d(0, -50%, 0) scale(1.12);
-  opacity: 0.13;
+  opacity: 0.16;
   pointer-events: none;
   will-change: transform;
 }
@@ -1231,21 +1369,21 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   font-family: var(--font-serif, Lora), Georgia, serif;
   font-size: clamp(15px, 1.5vw, 18px);
   line-height: 1.7;
-  color: rgba(238, 242, 248, 0.78);
+  color: var(--overlay-ink-soft);
 }
 
 .join-btn {
   margin-top: 28px;
   background: var(--cn-red-bright);
   border-color: var(--cn-red-bright);
-  color: #fff;
+  color: var(--accent-ink);
 }
 
-/* ═══ ALT BİLGİ (her iki temada koyu lacivert) ═══ */
+/* ═══ ALT BİLGİ (her iki temada koyu lacivert — tokenlar site.css'te) ═══ */
 .site-footer {
   position: relative;
-  background: #0a1424;
-  color: #cfd9e8;
+  background: var(--footer-bg);
+  color: var(--footer-ink);
 }
 
 .site-footer::before {
@@ -1272,14 +1410,14 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   font-family: var(--font-serif, Lora), Georgia, serif;
   font-style: italic;
   font-size: 17px;
-  color: #eef2f8;
+  color: var(--overlay-ink);
 }
 
 .footer-desc {
   margin-top: 10px;
   font-size: 13.5px;
   line-height: 1.65;
-  color: rgba(207, 217, 232, 0.62);
+  color: color-mix(in srgb, var(--footer-ink) 62%, transparent);
   max-width: 42ch;
 }
 
@@ -1296,15 +1434,15 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  border: 1px solid rgba(238, 242, 248, 0.16);
-  color: #cfd9e8;
+  border: 1px solid var(--overlay-line);
+  color: var(--footer-ink);
   transition: border-color 0.2s, color 0.2s, background 0.2s, transform 0.25s var(--ease-spring);
 }
 
 .footer-social-link:hover {
   border-color: var(--cn-red-bright);
-  background: rgba(226, 49, 64, 0.14);
-  color: #fff;
+  background: color-mix(in srgb, var(--cn-red-bright) 14%, transparent);
+  color: var(--overlay-ink);
   transform: translateY(-3px);
 }
 
@@ -1326,7 +1464,7 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
 }
 
 .footer-list a {
-  color: rgba(238, 242, 248, 0.82);
+  color: var(--overlay-ink-soft);
   text-decoration: none;
   transition: color 0.2s;
 }
@@ -1339,7 +1477,7 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(207, 217, 232, 0.45);
+  color: color-mix(in srgb, var(--footer-ink) 45%, transparent);
   margin-bottom: 2px;
 }
 
@@ -1352,12 +1490,12 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   gap: 12px;
   flex-wrap: wrap;
   padding: 20px 0 26px;
-  border-top: 1px solid rgba(238, 242, 248, 0.09);
+  border-top: 1px solid color-mix(in srgb, var(--overlay-ink) 9%, transparent);
   font-size: 12.5px;
-  color: rgba(207, 217, 232, 0.55);
+  color: color-mix(in srgb, var(--footer-ink) 55%, transparent);
 }
 
-.footer-credit span { color: rgba(238, 242, 248, 0.85); font-weight: 700; }
+.footer-credit span { color: var(--overlay-ink-soft); font-weight: 700; }
 
 @media (max-width: 860px) {
   .footer-grid { grid-template-columns: 1fr; gap: 36px; }
@@ -1377,6 +1515,17 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
 @media (max-width: 900px) {
   .site-header-actions .site-nav-join { display: none; }
 }
+
+/* ═══ ALT SAYFA ÜST BOŞLUK DÜZELTMESİ ═══
+   Header sticky ve AKIŞ İÇİNDEDİR (yalnız anasayfada hero negatif margin ile
+   altına süzülür). pages.css'teki bazı padding-top'lar header'ın overlay olduğu
+   eski varsayımla --header-h kadar FAZLA boşluk bırakıyordu → başlık altında
+   büyük boş koyu bant. Kabuk geometrisi home.css'te yaşadığı için düzeltme
+   burada; `main` ile specificity pages.css'in (sayfa importuyla daha sonra
+   yüklenir) üzerine çıkarılır. */
+main .p-page-head { padding-top: clamp(32px, 6vw, 72px); }
+main .p-join-hero { padding-top: clamp(48px, 9vw, 110px); }
+main .p-404 { padding-top: 40px; }
 
 /* ═══ HERO SCROLL-SCRUB (P1) ═══
    Sayfa kaydıkça hero: arka planda parallax+ölçek, görsel koyulaşma, başlık
@@ -1421,6 +1570,49 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   opacity: calc(1 - var(--hero-p, 0) * 3);
 }
 
+/* ═══ HERO 3B TILT (madde 3) ═══
+   YALNIZ pointer:fine + motion tier 'full' + reduced-motion kapalıyken HeroCinematic
+   data-tilt="on" ekler ve --tilt-rx/--tilt-ry değişkenlerini rAF ile yazar (maks ~4°).
+   Mobil/dokunmatik ve düşük tier'da attribute hiç eklenmez → sıfır maliyet. */
+.hero[data-tilt] .hero-layout {
+  perspective: 1100px;
+}
+
+.hero[data-tilt] .hero-content {
+  transform: rotateX(var(--tilt-rx, 0deg)) rotateY(var(--tilt-ry, 0deg));
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+/* Scrub aktifken tilt, scrub transform'una eklemlenir (daha yüksek specificity;
+   opacity kuralı .hero[data-scrub] .hero-content'ten gelmeye devam eder) */
+.hero[data-tilt][data-scrub] .hero-content {
+  transform: translate3d(0, calc(var(--hero-p, 0) * -56px), 0) rotateX(var(--tilt-rx, 0deg))
+    rotateY(var(--tilt-ry, 0deg));
+}
+
+/* Mini manşet listesi ters yönde çok hafif süzülür — derinlik hissi
+   (--tilt-x/--tilt-y: JS'in yazdığı birimsiz -1..1 normalize işaretçi konumu) */
+.hero[data-tilt] .hero-list {
+  transform: translate3d(calc(var(--tilt-x, 0) * -6px), calc(var(--tilt-y, 0) * 5px), 0);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero[data-tilt] .hero-content,
+  .hero[data-tilt][data-scrub] .hero-content,
+  .hero[data-tilt] .hero-list {
+    transform: none;
+  }
+}
+
+/* Anasayfa yükleme iskeleti (site.css .s-skel-hero) yeni kabuk çekmesiyle hizalanır
+   (home.css site.css'ten sonra yüklenir → eşit specificity'de bu kural kazanır) */
+.s-skel-hero {
+  margin-top: calc(var(--shell-pull) * -1);
+  padding-top: calc(var(--shell-pull) + clamp(60px, 8vh, 110px));
+}
+
 /* ═══ HERO "CANLI" VARYANTI (A1 #3) ═══
    Aktif manşet son dakika (isBreaking) ise hero tam-kızıl bir varyanta geçer:
    perde kırmızı tonlanır ve nabızlı bir "CANLI" rozeti belirir. off tier
@@ -1433,8 +1625,8 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
 }
 
 .hero[data-variant='breaking'] .hero-badge {
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff;
+  background: color-mix(in srgb, var(--overlay-ink) 16%, transparent);
+  color: var(--overlay-ink);
 }
 
 .hero-live {
@@ -1443,8 +1635,8 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   gap: 7px;
   padding: 5px 12px 5px 10px;
   border-radius: 999px;
-  background: #e11722;
-  color: #fff;
+  background: #e11722; /* canlı kızıl — marka sabiti, iki temada aynı */
+  color: var(--accent-ink);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.09em;
@@ -1456,7 +1648,7 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--accent-ink);
   animation: hero-live-pulse 1.15s ease-in-out infinite;
 }
 
@@ -1493,6 +1685,8 @@ html:not([data-site-theme='truva']) .theme-icon-truva { transform: scale(0.8); o
 
 .hero-kl {
   display: inline-block;
+  /* fill 'both' + net from/to: animasyon tamamlanınca bitmiş hal KALICI —
+     gizli sekmede takılırsa site.css .page-revived kuralı anında tamamlar. */
   animation: hero-letter-in 0.62s var(--ease-out) both;
   will-change: transform, clip-path, opacity;
 }
@@ -1577,4 +1771,88 @@ html[data-motion='full'] .s-aurora {
   margin-top: clamp(28px, 4vw, 48px);
   display: flex;
   justify-content: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MOBİL TAM OPTİMİZASYON — kabuk (header/ticker/footer) + hero
+   375–430px telefon ve 768px tablet için sistematik geçiş.
+   Kural: yalnız CSS; mantık/JS değişmez.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Tablet (≤768px): "Benim İlçem" seçici daraltılır ── */
+@media (max-width: 768px) {
+  .site-header-actions .header-district { padding: 0.25rem 0.45rem; }
+  /* select genişliği sınırlanır — uzun ilçe adları header'ı taşırmasın */
+  .site-header-actions .header-district select {
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* ── Telefon (≤640px): header sıkılaşır, logo + ikonlar taşmaz ── */
+@media (max-width: 640px) {
+  .site-header-inner { gap: 10px; }
+  .site-logo { min-width: 0; }
+  /* Logo yüksekliği düşer, genişliği viewport'a oranla sınırlanır */
+  .site-logo img {
+    height: 34px;
+    max-width: min(40vw, 160px);
+    object-fit: contain;
+    object-position: left center;
+  }
+  .site-header.is-scrolled .site-logo img { height: 30px; }
+  .site-header-actions { gap: 6px; }
+
+  /* Arama overlay kapatma butonu köşeye daha yakın */
+  .overlay-close { top: 14px; right: 14px; }
+
+  /* Ticker: tek satır korunur, etiket/öğe sıkılaşır → daha çok başlık görünür */
+  .ticker-label { padding: 0 10px; font-size: 10.5px; letter-spacing: 0.12em; }
+  .ticker-item { padding: 0 16px; font-size: 13px; }
+
+  /* Hero: svh ile dinamik araç çubuğu zıplaması önlenir; alt boşluk kısalır.
+     (svh desteklemeyen tarayıcı ikinci satırı düşürür, vh geçerli kalır.) */
+  .hero {
+    min-height: max(calc(88vh + var(--ticker-h) + var(--citybar-h)), 520px);
+    min-height: max(calc(88svh + var(--ticker-h) + var(--citybar-h)), 520px);
+    padding-bottom: clamp(44px, 7vh, 68px);
+  }
+  .hero-title { font-size: clamp(29px, 8.4vw, 40px); margin: 12px 0 14px; }
+  .hero-meta { flex-wrap: wrap; row-gap: 8px; }
+  .hero-spot {
+    font-size: 15px;
+    line-height: 1.55;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .hero-cta { margin-top: 20px; }
+
+  /* Bülten girişi: iOS odak zoom'unu önlemek için ≥16px */
+  .newsletter-form input { font-size: 16px; }
+
+  /* Footer: sosyal ikonlar sarar, logo hafif küçülür */
+  .footer-social { flex-wrap: wrap; }
+  .footer-logo { height: 38px; }
+  .footer-list { overflow-wrap: break-word; }
+}
+
+/* ── Dar telefon (≤600px): ilçe seçici gizlenir (mobil menü + anasayfadan erişilir) ── */
+@media (max-width: 600px) {
+  .site-header-actions .header-district { display: none; }
+}
+
+/* ── Dokunmatik hedefler: kaba işaretçide ≥44px ── */
+@media (pointer: coarse) {
+  .header-icon-btn { width: 44px; height: 44px; }
+  .rail-controls button { width: 44px; height: 44px; }
+  .footer-social-link { width: 44px; height: 44px; }
+}
+
+/* ── Çok dar ekran güvenliği (≤360px): logo daha da daralır ── */
+@media (max-width: 360px) {
+  .site-logo img { max-width: 32vw; }
+  .site-header-inner { gap: 8px; }
 }

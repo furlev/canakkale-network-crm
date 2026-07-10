@@ -10,6 +10,10 @@ import { useMotionTier } from './motion/MotionProvider';
  * Fare itmesi (imleç yakınındaki parçacıklar kaçar) + scroll hızına tepki
  * (hızlı kaydırınca alan canlanır). Tema `data-site-theme` üzerinden CANLI okunur.
  *
+ * sparks (opt-in): true ise işaretçi hareket ederken imleçten kısa ömürlü kıvılcım
+ * parçacıkları saçılır (hero canlılık hissi). YALNIZ full tier + pointer:fine'da
+ * devreye girer; mevcut tek rAF döngüsüne eklemlenir, ek döngü/katman açılmaz.
+ *
  * Motion tier:
  *   off  → hiç çalışmaz (boş, şeffaf canvas kalır).
  *   lite → seyrek parçacık, fare/scroll etkileşimi kapalı, düşük maliyet.
@@ -18,7 +22,13 @@ import { useMotionTier } from './motion/MotionProvider';
  * Öncelik WebGL2 gl.POINTS + tek shader (bağımlılık yok, additive glow). WebGL2 yoksa
  * aynı prop API'siyle 2D canvas'a düşer. Resize'a dayanıklı; unmount'ta temizlenir.
  */
-export default function ParticleField({ density = 60 }: { density?: number }) {
+export default function ParticleField({
+  density = 60,
+  sparks = false,
+}: {
+  density?: number;
+  sparks?: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tier = useMotionTier();
 
@@ -29,6 +39,13 @@ export default function ParticleField({ density = 60 }: { density?: number }) {
     const lite = tier === 'lite';
     const count = Math.max(6, Math.round(density * (lite ? 0.4 : 1)));
     const interactive = !lite; // fare/scroll etkileşimi yalnız full'da
+    // Kıvılcım yalnız etkileşimli mod + hassas işaretçi (mobil/dokunmatikte kapalı)
+    const sparkOn =
+      sparks &&
+      interactive &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(pointer: fine)').matches;
+    const SPARK_CAP = sparkOn ? 26 : 0;
     const DPR = Math.min(window.devicePixelRatio || 1, 2);
 
     let W = 1;
@@ -61,15 +78,58 @@ export default function ParticleField({ density = 60 }: { density?: number }) {
     let scrollBoost = 0;
     let lastScrollY = typeof window !== 'undefined' ? window.scrollY : 0;
 
+    // ── Kıvılcımlar (sparks): işaretçiden saçılan kısa ömürlü parçacıklar ──
+    type S = {
+      x: number; y: number;
+      vx: number; vy: number;
+      r: number;
+      life: number; max: number; // sn — alpha life/max ile söner
+      hue: number;
+    };
+    const sparkArr: S[] = [];
+    let prevPX = -1;
+    let prevPY = -1;
+
     const onPointerMove = (e: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
       mouse.x = e.clientX - rect.left;
       mouse.y = e.clientY - rect.top;
       mouse.active =
         mouse.x >= -60 && mouse.x <= W + 60 && mouse.y >= -60 && mouse.y <= H + 60;
+
+      // İşaretçi canvas içinde yeterince hızlı hareket ediyorsa kıvılcım saç
+      if (sparkOn && mouse.active && mouse.x >= 0 && mouse.x <= W && mouse.y >= 0 && mouse.y <= H) {
+        const dx = prevPX < 0 ? 0 : mouse.x - prevPX;
+        const dy = prevPY < 0 ? 0 : mouse.y - prevPY;
+        prevPX = mouse.x;
+        prevPY = mouse.y;
+        const speed = Math.hypot(dx, dy);
+        if (speed > 2) {
+          const n = Math.min(2, Math.ceil(speed / 14));
+          for (let k = 0; k < n; k++) {
+            if (sparkArr.length >= SPARK_CAP) sparkArr.shift(); // en eskisi düşer
+            const max = 0.45 + Math.random() * 0.45;
+            sparkArr.push({
+              x: mouse.x + (Math.random() - 0.5) * 6,
+              y: mouse.y + (Math.random() - 0.5) * 6,
+              vx: dx * 0.06 + (Math.random() - 0.5) * 1.5,
+              vy: dy * 0.06 - Math.random() * 1.2,
+              r: 0.7 + Math.random() * 1.3,
+              life: max,
+              max,
+              hue: Math.random(),
+            });
+          }
+        }
+      } else {
+        prevPX = -1;
+        prevPY = -1;
+      }
     };
     const onPointerLeaveWin = () => {
       mouse.active = false;
+      prevPX = -1;
+      prevPY = -1;
     };
     const onScroll = () => {
       const y = window.scrollY;
@@ -126,6 +186,17 @@ export default function ParticleField({ density = 60 }: { density?: number }) {
           ps[i] = spawn(false);
           p = ps[i];
         }
+      }
+
+      // Kıvılcım simülasyonu: sönümlenen hız + hafif yukarı süzülme, ömür bitince düşer
+      for (let i = sparkArr.length - 1; i >= 0; i--) {
+        const s = sparkArr[i];
+        s.x += s.vx;
+        s.y += s.vy;
+        s.vx *= 0.95;
+        s.vy = s.vy * 0.95 - 0.045;
+        s.life -= 1 / 60;
+        if (s.life <= 0 || s.y < -12 || s.x < -12 || s.x > W + 12) sparkArr.splice(i, 1);
       }
     };
 
@@ -191,7 +262,8 @@ export default function ParticleField({ density = 60 }: { density?: number }) {
         if (gl.getProgramParameter(prog, gl.LINK_STATUS)) {
           runGL = true;
           const STRIDE = 7; // pos(2) size(1) alpha(1) color(3)
-          let data = new Float32Array(count * STRIDE);
+          // Kıvılcım kapasitesi de bufferda ayrılır (SPARK_CAP=0 iken eski boyutla aynı)
+          let data = new Float32Array((count + SPARK_CAP) * STRIDE);
           const vao = gl.createVertexArray();
           const vbo = gl.createBuffer();
           gl.bindVertexArray(vao);
@@ -238,10 +310,23 @@ export default function ParticleField({ density = 60 }: { density?: number }) {
               data[o + 5] = g;
               data[o + 6] = b;
             }
+            // Kıvılcımlar kor parçacıklarının hemen ardına yazılır (aynı draw call)
+            for (let j = 0; j < sparkArr.length; j++) {
+              const s = sparkArr[j];
+              const o = (ps.length + j) * STRIDE;
+              data[o] = (s.x / W) * 2 - 1;
+              data[o + 1] = 1 - (s.y / H) * 2;
+              data[o + 2] = s.r * 2.4 * DPR;
+              data[o + 3] = Math.min(1, s.life / s.max) * 0.9;
+              const [r, g, b] = colorFor(s.hue, truva);
+              data[o + 4] = r;
+              data[o + 5] = g;
+              data[o + 6] = b;
+            }
             gl.clearColor(0, 0, 0, 0);
             gl.clear(gl.COLOR_BUFFER_BIT);
             gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
-            gl.drawArrays(gl.POINTS, 0, ps.length);
+            gl.drawArrays(gl.POINTS, 0, ps.length + sparkArr.length);
             raf = requestAnimationFrame(frameGL);
           };
 
@@ -296,6 +381,15 @@ export default function ParticleField({ density = 60 }: { density?: number }) {
             ctx.fillStyle = `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${(p.alpha * flicker).toFixed(3)})`;
             ctx.fill();
           }
+          // Kıvılcımlar — ömürle sönen alfa
+          for (let j = 0; j < sparkArr.length; j++) {
+            const s = sparkArr[j];
+            const [r, g, b] = colorFor(s.hue, truva);
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)}, ${(Math.min(1, s.life / s.max) * 0.9).toFixed(3)})`;
+            ctx.fill();
+          }
           raf = requestAnimationFrame(frame2D);
         };
 
@@ -316,7 +410,7 @@ export default function ParticleField({ density = 60 }: { density?: number }) {
       cleanupGL?.();
       cleanup2D?.();
     };
-  }, [density, tier]);
+  }, [density, tier, sparks]);
 
   return <canvas ref={canvasRef} className="particle-field" aria-hidden="true" />;
 }

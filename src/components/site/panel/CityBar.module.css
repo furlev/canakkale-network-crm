@@ -1,6 +1,10 @@
 /* Header altı kompakt şehir şeridi — site.css tokenlarını kullanır. Tema-duyarlı. */
 
 .bar {
+  /* Anasayfada hero negatif margin ile bu şeridin altına süzülür (home.css --shell-pull);
+     position+z-index olmadan hero şeridi örtüyordu → şerit her sayfada görünür kalsın. */
+  position: relative;
+  z-index: 5;
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
   -webkit-backdrop-filter: blur(10px);
@@ -30,6 +34,9 @@
   height: 40px;
   overflow-x: auto;
   scrollbar-width: none;
+  /* Mobil: tek satır parmakla kayar, öğeler kenara yumuşakça hizalanır */
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 16px;
 }
 
 .inner::-webkit-scrollbar {
@@ -44,6 +51,7 @@
   text-decoration: none;
   white-space: nowrap;
   flex-shrink: 0;
+  scroll-snap-align: start;
   transition: color 0.18s;
 }
 
@@ -112,8 +120,28 @@
   }
 }
 
+/* Veri henüz yüklenmemişken zarif iskelet hapı */
+.skel {
+  display: inline-block;
+  width: 42px;
+  height: 12px;
+  border-radius: 6px;
+  vertical-align: middle;
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+  animation: citybar-skel 1.2s ease-in-out infinite;
+}
+
+@keyframes citybar-skel {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate {
+    animation: none;
+  }
+
+  .skel {
     animation: none;
   }
 }

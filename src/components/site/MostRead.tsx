@@ -8,6 +8,8 @@ import styles from './MostRead.module.css';
 export type MostReadItem = {
   slug: string;
   title: string;
+  /** Gösterilecek görüntülenme — sunucu displayViews (görüntülenme takviyesi dahil,
+   *  src/lib/view-boost.ts) ile hesaplayıp sayı olarak geçebilir. */
   views: number;
   categoryName: string | null;
 };

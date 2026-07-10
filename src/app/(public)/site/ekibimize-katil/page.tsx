@@ -61,10 +61,7 @@ export default async function JoinPage() {
                 ⏸️
               </span>
               <h2>Başvurular şu an kapalı</h2>
-              <p>
-                Yeni dönem başvuruları açıldığında burada duyuracağız. Bizi sosyal medyadan takip etmeyi
-                unutma!
-              </p>
+              <p>Yeni dönem başvuruları açıldığında burada duyuracağız.</p>
             </div>
           )}
         </div>

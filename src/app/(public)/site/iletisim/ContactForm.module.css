@@ -2,6 +2,11 @@
 
 .wrap {
   margin-top: 2.5rem;
+  /* Sola yapışma düzeltmesi (#13): form nerede kullanılırsa kullanılsın
+     kendi kapsayıcısında yatayda ortalanır. */
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
   border: 1px solid var(--line);
   border-radius: var(--radius, 14px);
   background: var(--surface);

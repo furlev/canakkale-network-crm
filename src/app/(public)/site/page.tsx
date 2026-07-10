@@ -1,4 +1,5 @@
 import prisma from '@/lib/prisma';
+import { displayViews, getViewBoostSettings, type ViewBoostSettings } from '@/lib/view-boost';
 import {
   DEFAULT_SITE_SETTINGS,
   formatDateTr,
@@ -37,6 +38,7 @@ const CARD_SELECT = {
   isBreaking: true,
   publishedAt: true,
   views: true,
+  viewBoost: true,
   authorName: true,
   videoUrl: true,
   category: { select: { name: true } },
@@ -56,12 +58,14 @@ type ArticleRow = {
   isBreaking: boolean;
   publishedAt: Date | null;
   views: number;
+  viewBoost?: unknown; // Prisma Json — habere özel takviye override'ı
   authorName: string;
   videoUrl: string | null;
   category: { name: string } | null;
 };
 
-function toCard(a: ArticleRow): ArticleCardData {
+// Sitede gösterilen sayı = views + takviye (haber detayıyla tutarlı — src/lib/view-boost.ts)
+function toCard(a: ArticleRow, boostCfg: ViewBoostSettings): ArticleCardData {
   return {
     id: a.id,
     slug: a.slug,
@@ -73,7 +77,7 @@ function toCard(a: ArticleRow): ArticleCardData {
     categoryName: a.category?.name ?? null,
     isBreaking: a.isBreaking,
     publishedAt: a.publishedAt,
-    views: a.views,
+    views: displayViews(a, boostCfg),
     authorName: a.authorName,
   };
 }
@@ -117,9 +121,10 @@ const EMPTY_DATA: HomeData = {
 
 async function getHomeData(): Promise<HomeData> {
   try {
-    const [settings, featured, latest, navCats, interviews, mostRead, articleCount, viewsAgg, categoryCount, districtGroups] =
+    const [settings, boostCfg, featured, latest, navCats, interviews, mostReadRaw, articleCount, viewsAgg, categoryCount, districtGroups] =
       await Promise.all([
         getSiteSettings(),
+        getViewBoostSettings(),
         prisma.siteArticle.findMany({
           where: { ...PUB, isFeatured: true },
           orderBy: PUB_ORDER,
@@ -143,10 +148,12 @@ async function getHomeData(): Promise<HomeData> {
           take: 6,
           select: CARD_SELECT,
         }),
+        // En çok okunanlar: gerçek views'a göre geniş aday kümesi çekilir; takviye
+        // uygulandıktan sonra yeniden sıralanıp 5'e indirilir (takviyeli algıyla tutarlı).
         prisma.siteArticle.findMany({
-          where: { ...PUB, views: { gt: 0 } },
+          where: PUB,
           orderBy: { views: 'desc' },
-          take: 5,
+          take: 20,
           select: CARD_SELECT,
         }),
         prisma.siteArticle.count({ where: PUB }),
@@ -196,14 +203,14 @@ async function getHomeData(): Promise<HomeData> {
         slug: c.slug,
         name: c.name,
         color: c.color,
-        articles: railArticles[i].map(toCard),
+        articles: railArticles[i].map(a => toCard(a, boostCfg)),
       }))
       .filter(r => r.articles.length >= 3);
 
     return {
       settings,
       hero: heroRows.map(toHero),
-      latest: latest.map(toCard),
+      latest: latest.map(a => toCard(a, boostCfg)),
       rails,
       interviews: interviews.map(a => ({
         id: a.id,
@@ -213,12 +220,16 @@ async function getHomeData(): Promise<HomeData> {
         videoUrl: a.videoUrl,
         publishedAt: a.publishedAt,
       })),
-      mostRead: mostRead.map(a => ({
-        slug: a.slug,
-        title: a.title,
-        views: a.views,
-        categoryName: a.category?.name ?? null,
-      })),
+      mostRead: mostReadRaw
+        .map(a => ({
+          slug: a.slug,
+          title: a.title,
+          views: displayViews(a, boostCfg),
+          categoryName: a.category?.name ?? null,
+        }))
+        .filter(m => m.views > 0)
+        .sort((x, y) => y.views - x.views)
+        .slice(0, 5),
       stats: {
         articleCount,
         totalViews: viewsAgg._sum.views ?? 0,
@@ -235,7 +246,14 @@ async function getHomeData(): Promise<HomeData> {
 export default async function HomePage() {
   const data = await getHomeData();
 
-  const stats: StatItem[] = [
+  // İstatistik bandı: CRM > Site Yönetimi > Ayarlar'da 'manual' mod + en az bir
+  // öğe girildiyse manuel liste; aksi halde DB'den hesaplanan otomatik değerler.
+  const manualStats =
+    data.settings.statsMode === 'manual' && data.settings.statsManual.length > 0
+      ? data.settings.statsManual
+      : null;
+
+  const stats: StatItem[] = manualStats ?? [
     { label: 'Yayınlanan Haber', value: data.stats.articleCount },
     { label: 'Toplam Görüntülenme', value: data.stats.totalViews, suffix: '+' },
     { label: 'Kategori', value: data.stats.categoryCount },
@@ -247,8 +265,8 @@ export default async function HomePage() {
       {/* 1 — Sinematik manşet */}
       <HeroCinematic items={data.hero} kinetic />
 
-      {/* 2 — İstatistik bandı */}
-      {data.stats.articleCount > 0 && <StatsBand stats={stats} />}
+      {/* 2 — İstatistik bandı (manuel liste varsa haber sayısından bağımsız görünür) */}
+      {(manualStats !== null || data.stats.articleCount > 0) && <StatsBand stats={stats} />}
 
       {/* 3 — Son haber akışı */}
       {data.latest.length > 0 && (

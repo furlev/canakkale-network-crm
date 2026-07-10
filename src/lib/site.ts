@@ -8,6 +8,9 @@ import prisma from '@/lib/prisma';
 
 // ─── Site ayarları (Setting key: 'site') ───
 
+/** Anasayfa istatistik bandı öğesi (manuel modda CRM'den girilir). */
+export type SiteStatItem = { label: string; value: number; suffix?: string; format?: 'plain' };
+
 export type SiteSettings = {
   title: string;
   slogan: string;
@@ -19,6 +22,17 @@ export type SiteSettings = {
   social: { facebook?: string; x?: string; instagram?: string; youtube?: string; tiktok?: string };
   tickerEnabled: boolean; // son dakika şeridi
   adsNotice: string; // reklam bilgilendirme metni
+  // ── Marka / kabuk (CRM > Site Yönetimi > Ayarlar'dan düzenlenir) ──
+  logoHeaderDark: string; // koyu (network) temada header logosu
+  logoHeaderLight: string; // açık (truva) temada header logosu
+  logoFooter: string; // footer logosu
+  copyrightText: string; // boşsa footer otomatik "© {yıl} Çanakkale Network — Tüm hakları saklıdır." basar
+  footerCredit: string; // footer alt satırı (ör. "Bir Condia Media yapımıdır.")
+  // ── Anasayfa istatistik bandı ──
+  statsMode: 'auto' | 'manual'; // auto: DB'den hesaplanır; manual: statsManual gösterilir
+  statsManual: SiteStatItem[];
+  // ── İletişim sayfası haritası (Google Maps embed URL) ──
+  mapsEmbedUrl: string;
 };
 
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
@@ -40,6 +54,16 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   tickerEnabled: true,
   adsNotice:
     'Web sitemiz, ziyaretçilerimize çevrimiçi reklamlar göstererek varlığını sürdürmektedir.',
+  logoHeaderDark: '/site/logo-dark.png',
+  logoHeaderLight: '/site/logo-light.png',
+  logoFooter: '/site/logo-dark.png',
+  copyrightText: '', // boş = footer yıl ile otomatik üretir
+  footerCredit: 'Bir Condia Media yapımıdır.',
+  statsMode: 'auto',
+  statsManual: [],
+  // ÇOMÜ İletişim Fakültesi — key'siz standart Google Maps embed
+  mapsEmbedUrl:
+    'https://maps.google.com/maps?q=%C3%87anakkale%20Onsekiz%20Mart%20%C3%9Cniversitesi%20%C4%B0leti%C5%9Fim%20Fak%C3%BCltesi&t=&z=15&ie=UTF8&iwloc=&output=embed',
 };
 
 export async function getSiteSettings(): Promise<SiteSettings> {
@@ -50,6 +74,25 @@ export async function getSiteSettings(): Promise<SiteSettings> {
     return { ...DEFAULT_SITE_SETTINGS, ...parsed, social: { ...DEFAULT_SITE_SETTINGS.social, ...(parsed.social || {}) } };
   } catch {
     return DEFAULT_SITE_SETTINGS;
+  }
+}
+
+// ─── Ekip vitrini (Setting key: 'siteTeam') — hakkımızda/künye ekip bölümü ───
+
+export type SiteTeamMember = { name: string; role: string; photoUrl?: string };
+export type SiteTeamGroup = { title: string; members: SiteTeamMember[] };
+export type SiteTeam = { groups: SiteTeamGroup[] };
+
+export const DEFAULT_SITE_TEAM: SiteTeam = { groups: [] };
+
+export async function getSiteTeam(): Promise<SiteTeam> {
+  try {
+    const row = await prisma.setting.findUnique({ where: { key: 'siteTeam' } });
+    if (!row) return DEFAULT_SITE_TEAM;
+    const parsed = JSON.parse(row.value);
+    return Array.isArray(parsed?.groups) ? (parsed as SiteTeam) : DEFAULT_SITE_TEAM;
+  } catch {
+    return DEFAULT_SITE_TEAM;
   }
 }
 

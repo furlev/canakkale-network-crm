@@ -20,7 +20,9 @@
   --surface-2: #17263d;
   --ink: #eef2f8;
   --ink-soft: #9fb0c8;
-  --ink-faint: #64758e;
+  /* ink-faint: kart yüzeyi (--surface) üzerinde de ≥4.5:1 kalacak kadar açık
+     (meta/tarih 12px metinler kart içinde yaşar; eski #64758e surface'ta 3.7:1 idi) */
+  --ink-faint: #75879f;
   --line: rgba(159, 176, 200, 0.14);
   --accent: var(--cn-red-bright);
   --accent-ink: #ffffff;
@@ -28,6 +30,24 @@
   --glow: 0 0 80px rgba(226, 49, 64, 0.14);
   --card-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
   --grain-opacity: 0.05;
+
+  /* ── Görsel-üstü katman tokenları (TEMA BAĞIMSIZ) ──
+     Kural: fotoğraf/video üzerindeki metin HER İKİ TEMADA da açık renktir ve
+     altında koyu bir scrim vardır. Açık temada koyu lacivert başlığın koyu
+     görsel üzerinde kaybolmasını kökten engeller. */
+  --scrim: #060d19;                            /* scrim/veil taban rengi */
+  --overlay-ink: #f2f6fc;                      /* görsel üstü ana metin */
+  --overlay-ink-soft: rgba(242, 246, 252, 0.78);
+  --overlay-ink-dim: rgba(242, 246, 252, 0.6);
+  --overlay-ink-faint: rgba(242, 246, 252, 0.45);
+  --overlay-line: rgba(242, 246, 252, 0.16);
+
+  /* Bant sabitleri: footer her iki temada koyu lacivert kalır (tasarım kararı) */
+  --footer-bg: #0a1424;
+  --footer-ink: #cfd9e8;
+
+  /* Durum renkleri */
+  --ok: #2fb96b;
 
   /* Ritim */
   --radius: 14px;
@@ -39,21 +59,28 @@
 }
 
 [data-site-theme='truva'] {
-  /* ── TRUVA (aydınlık) — parşömen & mürekkep ── */
-  --bg: #f3eee4;
-  --bg-elevated: #faf6ee;
-  --surface: #fbf8f1;
-  --surface-2: #efe8da;
-  --ink: #16263f;
-  --ink-soft: #4b5b74;
-  --ink-faint: #8593a8;
-  --line: rgba(22, 38, 63, 0.14);
+  /* ── TRUVA (aydınlık) — parşömen & mürekkep ──
+     Kontrast mantığı: yüzeyler krem-beyaz merdiveni (bg < elevated < surface),
+     metin tam kontrast lacivert; ink-faint bilinçli koyulaştırıldı (küçük
+     uppercase etiketler krem üzerinde ≥4.5:1 kalsın). Görsel-üstü scrim'ler
+     lacivert tabanlı ama koyuluk NETWORK ile eşdeğer — açık temada da görsel
+     üstü metin daima açık renk + koyu scrim. */
+  --bg: #f5f0e6;
+  --bg-elevated: #fbf7ee;
+  --surface: #fffdf7;
+  --surface-2: #eee6d6;
+  --ink: #14233b;
+  --ink-soft: #44546d;
+  /* krem zeminde (#f5f0e6) 4.8:1 — küçük uppercase etiketler AA sınırının üstünde */
+  --ink-faint: #5a6b83;
+  --line: rgba(20, 35, 59, 0.16);
   --accent: var(--cn-red);
   --accent-ink: #ffffff;
-  --veil: linear-gradient(180deg, rgba(22, 38, 63, 0) 0%, rgba(22, 38, 63, 0.45) 55%, rgba(22, 38, 63, 0.92) 100%);
+  --veil: linear-gradient(180deg, rgba(15, 27, 46, 0) 0%, rgba(15, 27, 46, 0.52) 55%, rgba(15, 27, 46, 0.94) 100%);
   --glow: 0 0 80px rgba(200, 32, 47, 0.10);
   --card-shadow: 0 10px 34px rgba(22, 38, 63, 0.14);
   --grain-opacity: 0.035;
+  --scrim: #0f1b2e; /* görsel-üstü scrim: lacivert ton, koyuluk korunur */
 }
 
 /* ── Taban ── */
@@ -169,11 +196,6 @@
   animation: s-pulse 1.6s ease-in-out infinite;
 }
 
-.s-badge-ai {
-  background: color-mix(in srgb, var(--cn-gold) 18%, transparent);
-  color: var(--cn-gold);
-}
-
 @keyframes s-pulse {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
   60% { box-shadow: 0 0 0 9px transparent; }
@@ -266,9 +288,35 @@
   transform: translateY(28px);
   transition: opacity 0.7s var(--ease-out), transform 0.7s var(--ease-out);
   transition-delay: var(--reveal-delay, 0s);
+  /* NOT (denetim bulgusu): eski "1.6s sonra kendini aç" CSS animasyonu KALDIRILDI —
+     fold altındaki tüm öğeleri erkenden açıp scroll-reveal estetiğini site
+     genelinde iptal ediyordu. Hayalet-içerik bug'ının gerçek güvenlik ağları
+     Reveal.tsx'te: scroll süpürmesi + 2.5s aralıklı görünür-süpürme +
+     visibilitychange/pageshow 'revive' + html:not(.js-ready) no-JS kuralı. */
 }
 
-.s-reveal.is-visible { opacity: 1; transform: none; }
+.s-reveal.is-visible { opacity: 1; transform: none; animation: none; }
+
+/* Sekmeye dönüş / bfcache restorasyonu: Reveal.tsx viewport içindeki öğelere
+   .reveal-instant ekler → yarım kalmış geçiş ANINDA tamamlanmış duruma oturur.
+   (!important: sonraki bölümlerdeki data-reveal varyant kuralları eş
+   specificity'de olduğundan terminal durumun her koşulda kazanması için.) */
+.s-reveal.reveal-instant { transition: none !important; animation: none !important; }
+
+/* Sekme geri görünür olduğunda (Reveal.tsx <html>'e ~1s'lik .page-revived basar):
+   hero'nun tek-atımlık giriş animasyonları takılı kaldıysa süre sıfırlanır →
+   fill both/forwards sayesinde bitmiş (from→to'nun TO) hali anında oturur.
+   İnfinite animasyonlar (nabız, wght nefesi) sınıf kalkınca kaldığı yerden sürer. */
+.page-revived .hero-word,
+.page-revived .hero-kl,
+.page-revived .hero-spot,
+.page-revived .hero-cta {
+  animation-duration: 0.01ms !important;
+  animation-delay: 0ms !important;
+  /* infinite wght nefesi pencere boyunca tek iterasyonda sabitlenir (titreme yok) */
+  animation-iteration-count: 1 !important;
+  animation-play-state: running !important;
+}
 
 /* No-JS / CDN düşmesi güvenlik ağı: JS başarıyla çalışıp <html> üzerine
    .js-ready eklemedikçe içerik ANINDA görünür kalır. Böylece script hiç
@@ -293,7 +341,7 @@ html:not(.js-ready) .s-reveal { opacity: 1; transform: none; transition: none; }
 /* ── Erişilebilirlik ── */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .s-reveal { opacity: 1; transform: none; transition: none; }
+  .s-reveal { opacity: 1; transform: none; transition: none; animation: none; }
   .s-grain::after { animation: none; }
   .s-badge-breaking { animation: none; }
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.15s !important; }
@@ -301,6 +349,34 @@ html:not(.js-ready) .s-reveal { opacity: 1; transform: none; transition: none; }
 
 @media (max-width: 720px) {
   .s-section-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
+
+/* ── Mobil kabuk ölçüsü: header telefonda sıkılaşır ──
+   --header-h'i okuyan her şey (shell-pull, sticky ofsetler, sayfa padding'leri)
+   otomatik uyum sağlar. */
+@media (max-width: 640px) {
+  :root { --header-h: 60px; }
+}
+
+/* ── Yatay taşma güvenlik ağı: uzun/bitişik kelimeli başlıklar kutusunda kırılır ── */
+.s-section-title,
+.s-card-title,
+.hero-title,
+.hero-fallback-title,
+.p-hero-title,
+.p-page-title,
+.p-join-title,
+.newsletter-title,
+.join-title,
+.mr-title,
+.reel-title {
+  overflow-wrap: break-word;
+}
+
+/* ── Dokunmatik hedefler: kaba işaretçide (telefon/tablet) ≥44px ── */
+@media (pointer: coarse) {
+  .s-btn { min-height: 44px; }
+  .s-share-ico { width: 44px; height: 44px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -421,7 +497,7 @@ html:not(.js-ready) .s-reveal { opacity: 1; transform: none; transition: none; }
   transition: opacity 0.7s var(--ease-out), clip-path 0.8s var(--ease-out);
   transition-delay: var(--reveal-delay, 0s);
 }
-.s-reveal[data-reveal='clip'].is-visible { clip-path: inset(0 0 0 0); }
+.s-reveal[data-reveal='clip'].is-visible { clip-path: inset(0 0 0 0); animation: none; }
 /* No-JS güvenlik ağı: clip varyantı da anında görünür kalsın */
 html:not(.js-ready) .s-reveal[data-reveal='clip'] { clip-path: none; }
 
@@ -463,7 +539,10 @@ html:not(.js-ready) .s-reveal[data-reveal='clip'] { clip-path: none; }
 .s-skel-card { pointer-events: none; }
 .s-skel-card .s-card-media { border-radius: 0; }
 
-/* Anasayfa hero iskeleti — hero ile yakın ölçü (CLS≈0) */
+/* Anasayfa hero iskeleti — hero ile yakın ölçü (CLS≈0).
+   Zemin TEMA BAĞIMSIZ koyu (görsel-üstü kuralı): gerçek hero her iki temada koyu
+   scrim taşır ve şeffaf başlayan header'ın açık (overlay) metni iskelet üzerinde
+   de okunmalı — truva'da krem iskelet, açık renkli menüyü görünmez kılıyordu. */
 .s-skel-hero {
   position: relative;
   display: flex;
@@ -472,7 +551,15 @@ html:not(.js-ready) .s-reveal[data-reveal='clip'] { clip-path: none; }
   margin-top: calc(var(--header-h) * -1);
   padding: calc(var(--header-h) + clamp(60px, 8vh, 110px)) 0 clamp(60px, 9vh, 100px);
   overflow: hidden;
-  background: linear-gradient(150deg, var(--bg-elevated), var(--bg));
+  background:
+    radial-gradient(900px 500px at 70% 20%, color-mix(in srgb, var(--cn-red) 16%, transparent), transparent),
+    linear-gradient(150deg, #0c1526, #070d18);
+}
+
+/* İskelet hapları koyu hero zemininde açık film olarak parlar (tema bağımsız);
+   genel .s-skel rengi truva'da krem olurdu → koyu zeminde kaybolurdu. */
+.s-skel-hero .s-skel {
+  background: color-mix(in srgb, var(--overlay-ink) 9%, transparent);
 }
 
 /* ── Okuma ilerlemesi — accent parıltı + baş nokta (p-progress'i tamamlar) ── */
@@ -538,7 +625,7 @@ html:not(.js-ready) .s-reveal[data-reveal='clip'] { clip-path: none; }
   color: var(--accent);
   box-shadow: var(--glow);
 }
-.s-share-ico.is-copied { border-color: #2fb96b; color: #2fb96b; }
+.s-share-ico.is-copied { border-color: var(--ok); color: var(--ok); }
 @media (min-width: 1200px) {
   .s-share-rail { display: flex; }
 }
@@ -547,5 +634,33 @@ html:not(.js-ready) .s-reveal[data-reveal='clip'] { clip-path: none; }
 @media (prefers-reduced-motion: reduce) {
   .s-skel::after { animation: none; opacity: 0.5; transform: none; }
   .s-card-gloss { transition: none; }
-  .s-reveal[data-reveal='clip'] { opacity: 1; clip-path: none; transition: none; }
+  .s-reveal[data-reveal='clip'] { opacity: 1; clip-path: none; transition: none; animation: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   GÖRSEL-ÜSTÜ OKUNABİLİRLİK (madde 8)
+   Kural: fotoğraf üzerindeki metin HER İKİ TEMADA da açık renk + koyu scrim.
+   Açık (truva) temada koyu lacivert --ink koyu görsellerde kayboluyordu.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Kart görseli üzerindeki rozet: accent-tonlu saydam zemin açık temada koyu
+   fotoğrafta okunmuyordu → iki temada da koyu cam zemin + açık metin. */
+.s-card-media .s-badge-cat {
+  background: color-mix(in srgb, var(--scrim) 62%, transparent);
+  color: var(--overlay-ink);
+  border: 1px solid var(--overlay-line);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+/* Makale hero'su (pages.css .p-hero): görsel + koyu veil üzerindeki tüm metin
+   açık renge sabitlenir. pages.css sayfa importlarıyla DAHA SONRA yüklendiği
+   için specificity bilinçli olarak bir kademe yüksek tutuldu. */
+.p-hero { color: var(--overlay-ink); }
+.p-hero .p-hero-meta { color: var(--overlay-ink-soft); }
+.p-hero .p-hero-meta .author { color: var(--overlay-ink); }
+.p-hero .p-hero-meta .sep { background: var(--overlay-ink-dim); }
+.p-hero .s-badge.s-badge-cat {
+  background: color-mix(in srgb, var(--scrim) 58%, transparent);
+  color: var(--overlay-ink);
 }

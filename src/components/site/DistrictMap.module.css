@@ -1,129 +1,96 @@
-/* Çanakkale ilçe haritası — basit tıklanabilir kart ızgarası (gerçek coğrafya
-   şart değil). site.css token'larını kullanır; tema-duyarlı. */
+/* Çanakkale ilçe haritası — GERÇEK idari sınırlı interaktif SVG.
+   Deniz zemini + dalga dokusu + haber yoğunluğuna göre choropleth dolgu.
+   site.css token'larını kullanır; iki temada da (network/truva) uyumludur.
+   Dar ekranda (≤640px) SVG gizlenir, ilçe çipleri gösterilir. */
 
 .map {
+  /* Tema-duyarlı harita renkleri — NETWORK (koyu) varsayılan */
+  --dm-sea-1: color-mix(in srgb, var(--bg-elevated) 62%, #144066);
+  --dm-sea-2: color-mix(in srgb, var(--bg) 76%, #0b2c4d);
+  --dm-land: color-mix(in srgb, var(--surface-2) 86%, var(--ink));
+  --dm-coast: color-mix(in srgb, var(--ink-soft) 38%, transparent);
+  --dm-wave: color-mix(in srgb, var(--ink-soft) 55%, transparent);
+  --dm-sea-ink: color-mix(in srgb, var(--ink-soft) 62%, transparent);
+
   position: relative;
+  max-width: 880px;
+  margin-inline: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background:
-    radial-gradient(700px 300px at 85% -30%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%),
-    var(--surface);
-  padding: clamp(16px, 3vw, 26px);
   overflow: hidden;
-}
-
-/* Dekoratif kıyı/deniz motifi — Çanakkale Boğazı'nı çağrıştıran soyut şerit */
-.motif {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0.06;
-  color: var(--accent);
-  pointer-events: none;
-}
-
-.grid {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr));
-  gap: clamp(8px, 1.4vw, 12px);
-}
-
-.tile {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px 14px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg-elevated) 60%, transparent);
-  color: var(--ink);
-  text-decoration: none;
-  transition:
-    transform 0.3s var(--ease-spring),
-    border-color 0.25s var(--ease-out),
-    background 0.25s var(--ease-out),
-    box-shadow 0.25s var(--ease-out);
-}
-
-.tile:hover {
-  transform: translateY(-3px);
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
-  background: var(--surface-2);
+  background: var(--dm-sea-2);
   box-shadow: var(--card-shadow);
 }
 
-.tile:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+/* TRUVA (aydınlık): parşömen kara + yumuşak mavi deniz */
+:global([data-site-theme='truva']) .map {
+  --dm-sea-1: color-mix(in srgb, var(--bg) 46%, #b7d2e6);
+  --dm-sea-2: color-mix(in srgb, var(--bg) 34%, #93b9d6);
+  --dm-land: var(--bg-elevated);
+  --dm-coast: color-mix(in srgb, var(--cn-navy) 34%, transparent);
+  --dm-wave: color-mix(in srgb, var(--cn-navy) 45%, transparent);
+  --dm-sea-ink: color-mix(in srgb, var(--cn-navy) 52%, transparent);
 }
-
-.tileActive {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
-}
-
-.name {
-  font-weight: 800;
-  font-size: 15px;
-  letter-spacing: -0.01em;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--ink-faint);
-}
-
-.tile:hover .badge,
-.tileActive .badge {
-  color: var(--accent);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tile {
-    transition: border-color 0.2s linear, background 0.2s linear;
-  }
-  .tile:hover {
-    transform: none;
-  }
-}
-
-/* ─────────────────────────────────────────────────────────────
-   İnteraktif SVG ilçe haritası (A1 #4) — yukarıdaki .grid/.tile
-   kart ızgarasının yerini alır. site.css token'larını kullanır.
-   ───────────────────────────────────────────────────────────── */
 
 .svg {
-  position: relative;
-  z-index: 1;
   display: block;
   width: 100%;
   height: auto;
-  overflow: visible; /* hover rozeti poligon dışına taşabilsin */
 }
 
-.water {
-  fill: color-mix(in srgb, var(--accent) 14%, transparent);
-  opacity: 0.7;
+/* ── Su ── */
+.seaStop1 { stop-color: var(--dm-sea-1); }
+.seaStop2 { stop-color: var(--dm-sea-2); }
+
+.wave {
+  fill: none;
+  stroke: var(--dm-wave);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+}
+
+.waves {
+  opacity: 0.12;
   pointer-events: none;
+  animation: dm-drift 16s linear infinite;
 }
 
+@keyframes dm-drift {
+  from { transform: translateX(0); }
+  to { transform: translateX(46px); }
+}
+
+.seaLabel {
+  fill: var(--dm-sea-ink);
+  font-family: var(--font-serif, Lora, Georgia), serif;
+  font-style: italic;
+  font-size: 17px;
+  letter-spacing: 0.14em;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Boğaz adı ilçelerin üzerine çizilir — kıyıya taştığı yerde su tonlu hâle */
+.straitLabel {
+  font-size: 15px;
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--dm-sea-2) 72%, transparent);
+  stroke-width: 3px;
+}
+
+/* ── İlçeler ── */
 /* Her ilçe bir SVG bağlantısıdır (klavye ile odaklanabilir, taranabilir) */
 .district {
   cursor: pointer;
   outline: none;
+  transition: transform 0.3s var(--ease-spring);
 }
 
 .shape {
-  fill: color-mix(in srgb, var(--bg-elevated) 72%, var(--surface));
-  stroke: var(--line);
-  stroke-width: 1.6;
+  /* choropleth: haber yoğunluğu (--dm-heat, TSX'ten %) accent'e karışır */
+  fill: color-mix(in srgb, var(--accent) var(--dm-heat, 0%), var(--dm-land));
+  stroke: var(--dm-coast);
+  stroke-width: 1.4;
   stroke-linejoin: round;
   transition:
     fill 0.25s var(--ease-out),
@@ -131,33 +98,55 @@
     filter 0.25s var(--ease-out);
 }
 
+/* Hover/odak: ilçe yükselir + parlar, kıyı çizgisi accent olur */
+.district:hover,
+.district:focus-visible {
+  transform: translateY(-5px);
+}
+
 .district:hover .shape,
 .district:focus-visible .shape {
-  fill: color-mix(in srgb, var(--accent) 34%, var(--surface-2));
+  fill: color-mix(in srgb, var(--accent) 38%, var(--dm-land));
   stroke: var(--accent);
-  filter: drop-shadow(0 6px 16px color-mix(in srgb, var(--accent) 30%, transparent));
+  stroke-width: 2.2;
+  filter: drop-shadow(0 8px 18px color-mix(in srgb, var(--accent) 35%, transparent));
 }
 
+/* Klavye odak halkası: kalın accent kontur + dış beyaz/koyu hâle */
 .district:focus-visible .shape {
-  stroke-width: 2.6;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 0 var(--accent-ink))
+    drop-shadow(0 8px 18px color-mix(in srgb, var(--accent) 45%, transparent));
 }
 
-/* Görüntülenen ilçe (ör. /ilce/[slug] alt haritasında) kalıcı vurgulu */
+/* Görüntülenen ilçe (/ilce/[slug] alt haritası) kalıcı vurgulu */
 .active .shape {
-  fill: color-mix(in srgb, var(--accent) 24%, var(--surface-2));
+  fill: color-mix(in srgb, var(--accent) 30%, var(--dm-land));
   stroke: var(--accent);
+  stroke-width: 2;
 }
 
 .label {
   fill: var(--ink);
   font-family: inherit;
-  font-size: 21px;
+  font-size: 20px;
   font-weight: 800;
   letter-spacing: -0.01em;
   pointer-events: none;
+  user-select: none;
   paint-order: stroke;
-  stroke: color-mix(in srgb, var(--surface) 85%, transparent);
-  stroke-width: 3px;
+  stroke: color-mix(in srgb, var(--dm-land) 80%, transparent);
+  stroke-width: 3.5px;
+}
+
+.labelSm {
+  font-size: 13px;
+  stroke-width: 2.5px;
+}
+
+/* Truva temasında etiket mürekkebi laciverte döner */
+:global([data-site-theme='truva']) .label {
+  fill: var(--cn-navy);
 }
 
 /* Yayın sayısı rozeti — varsayılan gizli, hover/odakta belirir */
@@ -181,15 +170,114 @@
 .badgeText {
   fill: var(--accent-ink);
   font-family: inherit;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .shape {
-    transition: fill 0.15s linear, stroke 0.15s linear;
+/* Sağ alt köşe ipucu */
+.hint {
+  position: absolute;
+  right: 14px;
+  bottom: 10px;
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--dm-sea-ink);
+  pointer-events: none;
+}
+
+/* ── Dar ekran çip ızgarası — varsayılan gizli ── */
+.chips {
+  display: none;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px; /* dokunma hedefi ≥44px */
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-elevated) 60%, transparent);
+  color: var(--ink);
+  text-decoration: none;
+  transition:
+    border-color 0.25s var(--ease-out),
+    background 0.25s var(--ease-out);
+}
+
+.chip:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: var(--surface-2);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chipActive {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+}
+
+.chipName {
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.chipCount {
+  flex: none;
+  min-width: 26px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--accent-ink);
+  background: color-mix(in srgb, var(--accent) 78%, var(--surface));
+}
+
+@media (max-width: 640px) {
+  .map {
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+    background: transparent;
+    box-shadow: none;
   }
-  .badge {
+
+  .svg,
+  .hint {
+    display: none;
+  }
+
+  .chips {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+
+/* ── Hareket azaltma: animasyon/yükselme yok ── */
+@media (prefers-reduced-motion: reduce) {
+  .waves {
+    animation: none;
+  }
+
+  .district,
+  .shape,
+  .badge,
+  .chip {
     transition: none;
+  }
+
+  .district:hover,
+  .district:focus-visible {
+    transform: none;
   }
 }

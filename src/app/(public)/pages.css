@@ -97,25 +97,7 @@
 .p-hero-meta .author { font-weight: 700; color: var(--ink); }
 .p-hero-meta .sep { width: 3px; height: 3px; border-radius: 50%; background: var(--ink-faint); }
 
-/* Yapay zekâ görsel rozeti — hero köşesi */
-.p-hero-ai {
-  position: absolute;
-  top: calc(var(--header-h) + 16px);
-  right: clamp(16px, 4vw, 32px);
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: var(--cn-gold);
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
-  border: 1px solid color-mix(in srgb, var(--cn-gold) 45%, transparent);
-  backdrop-filter: blur(8px);
-}
+/* NOT: "Temsili görsel" rozeti kaldırıldı (kullanıcı maddesi 4) — .p-hero-ai stilleri silindi. */
 
 /* ── Makale gövde yerleşimi ── */
 .p-article {
@@ -563,7 +545,11 @@
   padding-top: calc(var(--header-h) + clamp(48px, 9vw, 110px));
   padding-bottom: clamp(40px, 7vw, 80px);
   overflow: hidden;
-  background: var(--bg-elevated);
+  /* Sinematik zemin: foto olmasa da tek başına ayakta duran degrade kompozisyon */
+  background:
+    radial-gradient(1100px 460px at 82% -12%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 62%),
+    radial-gradient(820px 420px at 4% 108%, color-mix(in srgb, var(--cn-gold) 13%, transparent), transparent 58%),
+    linear-gradient(180deg, var(--bg-elevated), var(--bg));
   border-bottom: 1px solid var(--line);
 }
 
@@ -571,18 +557,23 @@
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url('/site/abide.png');
-  background-size: cover;
-  background-position: center 30%;
-  opacity: 0.14;
-  filter: saturate(0.6);
+  /* Ekip fotoğrafı (varsa /site/join-hero.jpg) + film dokusu.
+     Foto 404 ise katman boş kalır; alttaki degrade + doku zarif fallback olur. */
+  background-image:
+    url('/site/join-hero.jpg'),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: cover, 240px;
+  background-position: center 32%, 0 0;
+  background-repeat: no-repeat, repeat;
+  opacity: 0.15;
+  filter: saturate(0.65) contrast(1.05);
 }
 
 .p-join-hero::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, transparent 0%, var(--bg-elevated) 96%);
+  background: linear-gradient(180deg, transparent 0%, var(--bg) 96%);
 }
 
 .p-join-hero .s-container { position: relative; z-index: 2; }
@@ -920,12 +911,454 @@
   padding: clamp(28px, 5vw, 56px) clamp(16px, 4vw, 32px);
 }
 
+/* ═══ İletişim — kart rötuşları, kopyala butonu, form + harita yerleşimi ═══ */
+
+.p-contact-card {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Hover'da beliren üst vurgu çizgisi */
+.p-contact-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--cn-gold));
+  opacity: 0;
+  transition: opacity 0.35s;
+}
+
+.p-contact-card:hover::after { opacity: 1; }
+
+.p-contact-card .glyph svg { width: 20px; height: 20px; }
+
+.p-contact-card .glyph {
+  color: var(--accent);
+  transition: transform 0.35s var(--ease-spring);
+}
+
+.p-contact-card:hover .glyph { transform: translateY(-2px) scale(1.05); }
+
+.p-contact-mailrow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.p-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-faint);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, transform 0.25s var(--ease-spring);
+}
+
+.p-copy-btn:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+
+.p-copy-btn.copied { border-color: #2fb96b; color: #2fb96b; }
+
+.p-copy-btn svg { width: 13px; height: 13px; }
+
+/* Form (sol) + harita (sağ) — mobilde tek kolon */
+.p-contact-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(16px, 2.5vw, 24px);
+  align-items: stretch;
+  margin-top: clamp(28px, 4vw, 44px);
+}
+
+/* ContactForm kendi üst boşluğunu taşır; grid içinde hizayı bozmasın */
+.p-contact-layout > * { margin-top: 0; }
+
+/* Harita ayarlanmamışsa form tek başına ortalanır */
+.p-contact-layout.no-map {
+  grid-template-columns: minmax(0, 640px);
+  justify-content: center;
+}
+
+.p-map-frame {
+  position: relative;
+  min-height: 460px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.p-map-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  /* Network (koyu) temada haritayı geceye çevir */
+  filter: grayscale(0.12) invert(0.9) hue-rotate(184deg) brightness(0.92) contrast(0.9);
+}
+
+[data-site-theme='truva'] .p-map-frame iframe {
+  filter: saturate(0.95) contrast(1.02);
+}
+
+.p-map-badge {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 28px);
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.p-map-badge svg { width: 14px; height: 14px; color: var(--accent); flex-shrink: 0; }
+
+/* ═══ Hakkımızda — misyon girişi, değer/rakam vitrini, ekip ═══ */
+
+.p-about-lead {
+  max-width: 860px;
+  font-family: var(--font-serif, 'Lora'), Georgia, serif;
+  font-size: clamp(19px, 2.4vw, 25px);
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+
+.p-about-lead strong { color: var(--ink); font-weight: 700; }
+
+.p-about-lead::before {
+  content: '';
+  display: block;
+  width: 64px;
+  height: 3px;
+  border-radius: 2px;
+  margin-bottom: 22px;
+  background: linear-gradient(90deg, var(--accent), var(--cn-gold));
+}
+
+.p-values {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: clamp(16px, 2.5vw, 24px);
+  margin-top: clamp(32px, 5vw, 56px);
+}
+
+.p-value-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: clamp(22px, 3vw, 30px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  transition: transform 0.35s var(--ease-out), border-color 0.35s, box-shadow 0.35s;
+}
+
+.p-value-card:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  box-shadow: var(--card-shadow);
+}
+
+.p-value-card .glyph {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.p-value-card .glyph svg { width: 20px; height: 20px; }
+
+.p-value-card h3 { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; }
+
+.p-value-card p { font-size: 14px; line-height: 1.6; color: var(--ink-soft); }
+
+/* Rakam vitrini — ince çizgilerle bölünmüş bant */
+.p-about-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-top: clamp(32px, 5vw, 56px);
+}
+
+.p-about-stat {
+  background: var(--surface);
+  padding: clamp(20px, 3vw, 30px) clamp(18px, 2.5vw, 26px);
+}
+
+.p-about-stat .value {
+  display: block;
+  font-size: clamp(26px, 3.6vw, 42px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.p-about-stat .value .suffix { color: var(--accent); }
+
+.p-about-stat .label {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* İçerik prose bölümü */
+.p-about-prose {
+  max-width: 820px;
+  margin: clamp(32px, 5vw, 56px) auto 0;
+}
+
+/* Ekip vitrini */
+.p-team-group + .p-team-group { margin-top: clamp(28px, 4vw, 44px); }
+
+.p-team-group-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 16px;
+}
+
+.p-team-group-title::before {
+  content: '';
+  width: 22px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.p-team-group-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.p-team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr));
+  gap: clamp(12px, 2vw, 18px);
+}
+
+.p-member-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  padding: 22px 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  transition: transform 0.35s var(--ease-out), border-color 0.35s, box-shadow 0.35s;
+}
+
+.p-member-card:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  box-shadow: var(--card-shadow);
+}
+
+.p-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin-bottom: 10px;
+  font-weight: 800;
+  font-size: 21px;
+  letter-spacing: 0.02em;
+  color: var(--accent-ink);
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, var(--cn-navy)));
+  border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  user-select: none;
+}
+
+.p-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.p-member-card .name { font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
+
+.p-member-card .role { font-size: 12.5px; color: var(--ink-faint); font-weight: 600; }
+
+/* ═══ Sözleşmeler — hukuki sayfa kartları ═══ */
+
+.p-legal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  gap: clamp(16px, 2.5vw, 24px);
+}
+
+.p-legal-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: clamp(22px, 3vw, 30px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+  overflow: hidden;
+  transition: transform 0.35s var(--ease-out), border-color 0.35s, box-shadow 0.35s;
+}
+
+.p-legal-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--cn-gold));
+  opacity: 0;
+  transition: opacity 0.35s;
+}
+
+.p-legal-card:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  box-shadow: var(--card-shadow);
+}
+
+.p-legal-card:hover::after { opacity: 1; }
+
+.p-legal-card .glyph {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.p-legal-card .glyph svg { width: 20px; height: 20px; }
+
+.p-legal-card h2 { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; }
+
+.p-legal-card .date { font-size: 12.5px; color: var(--ink-faint); font-weight: 600; }
+
+.p-legal-card .excerpt {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.p-legal-card .cta {
+  margin-top: auto;
+  padding-top: 6px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.p-legal-card .cta::after {
+  content: ' →';
+  display: inline-block;
+  transition: transform 0.25s var(--ease-spring);
+}
+
+.p-legal-card:hover .cta::after { transform: translateX(4px); }
+
 /* ── Duyarlılık ── */
+@media (max-width: 960px) {
+  .p-contact-layout { grid-template-columns: 1fr; }
+  .p-map-frame { min-height: 340px; }
+}
+
 @media (max-width: 720px) {
   .p-search { flex-direction: column; }
   .p-search .s-btn { justify-content: center; }
-  .p-hero-ai { top: calc(var(--header-h) + 10px); right: 12px; }
   .prose { font-size: 17.5px; }
+
+  /* Harita: sabit yükseklik yerine orana bağlı — dar ekranda taşma/boşluk yok */
+  .p-map-frame { min-height: 0; aspect-ratio: 4 / 3; }
+
+  /* İletişim bilgi bandı: yan yana sıkışmak yerine dikey yığılır */
+  .p-contact-info { flex-direction: column; align-items: flex-start; gap: 14px; padding: 18px; }
+
+  /* Makale özeti + drop-cap telefonda bir kademe küçülür */
+  .p-article-summary { font-size: 17px; padding-left: 14px; }
+  .prose > p:first-of-type::first-letter { font-size: 2.9em; }
+
+  /* Geniş içerik kendi kabında yatay kayar; sayfa gövdesi taşmaz */
+  .prose table { display: block; overflow-x: auto; }
+  .prose pre { max-width: 100%; overflow-x: auto; }
+
+  /* iOS odak zoom'unu önle: form kontrolleri ≥16px */
+  .p-field input[type='text'],
+  .p-field input[type='email'],
+  .p-field input[type='tel'],
+  .p-field textarea,
+  .p-field select,
+  .p-search input { font-size: 16px; }
+}
+
+@media (max-width: 640px) {
+  /* Başvuru/iletişim formu gönder butonu tam genişlik — başparmak dostu */
+  .p-form-submit { align-self: stretch; justify-content: center; }
+
+  /* Makale hero'su telefonda kısalır; başlık okunur kalır */
+  .p-hero { min-height: clamp(340px, 56vh, 520px); }
+  .p-hero-inner { padding-top: clamp(96px, 18vh, 150px); }
+  .p-hero-noimg { min-height: clamp(240px, 36vh, 360px); }
+}
+
+/* ── Dokunmatik hedefler: kaba işaretçide ≥44px ── */
+@media (pointer: coarse) {
+  .p-share-btn,
+  .p-tag,
+  .p-chip,
+  .p-social a { min-height: 44px; }
+  .p-copy-btn { min-height: 44px; }
+  .p-page-link { min-width: 44px; height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import prisma from '@/lib/prisma';
+import { displayViews, getViewBoostSettings } from '@/lib/view-boost';
 import ArticleCard, { type ArticleCardData } from '@/components/site/ArticleCard';
 import Pagination from '@/components/site/pages/Pagination';
 import RevealInit from '@/components/site/pages/RevealInit';
@@ -72,6 +73,7 @@ export default async function CategoryPage(context: {
         isBreaking: true,
         publishedAt: true,
         views: true,
+        viewBoost: true,
         authorName: true,
       },
     }),
@@ -87,6 +89,8 @@ export default async function CategoryPage(context: {
     if (g.district) districtCounts[g.district] = g._count._all;
   }
 
+  // Sitede gösterilen sayı = views + takviye (haber detayıyla tutarlı)
+  const boostCfg = await getViewBoostSettings();
   const cards: ArticleCardData[] = articles.map(a => ({
     id: a.id,
     slug: a.slug,
@@ -98,7 +102,7 @@ export default async function CategoryPage(context: {
     categoryName: category.name,
     isBreaking: a.isBreaking,
     publishedAt: a.publishedAt,
-    views: a.views,
+    views: displayViews(a, boostCfg),
     authorName: a.authorName,
   }));
 

@@ -11,11 +11,15 @@ export type ArticleCardData = {
   title: string;
   summary?: string | null;
   imageAlt?: string | null;
+  /** Kayıt amaçlı — sitede "Temsili görsel" rozeti artık GÖSTERİLMEZ
+   *  (bilgilendirme /gorsel-politikasi sayfasında). Alan geriye uyum için tipte durur. */
   imageIsAi?: boolean;
   categorySlug?: string | null;
   categoryName?: string | null;
   isBreaking?: boolean;
   publishedAt?: Date | string | null;
+  /** Gösterilecek görüntülenme — sunucu displayViews (görüntülenme takviyesi dahil,
+   *  src/lib/view-boost.ts) ile hesaplayıp sayı olarak geçebilir. */
   views?: number;
   authorName?: string | null;
   /** Çanakkale ilçe slug'ı (varsa kartta '📍 İlçe' rozeti gösterilir). */
@@ -117,12 +121,6 @@ export default function ArticleCard({
             <>
               <span className="dot" />
               <span>{a.views.toLocaleString('tr-TR')} görüntülenme</span>
-            </>
-          )}
-          {a.imageIsAi && (
-            <>
-              <span className="dot" />
-              <span className="s-badge s-badge-ai" style={{ padding: '2px 8px' }}>Temsili görsel</span>
             </>
           )}
         </div>

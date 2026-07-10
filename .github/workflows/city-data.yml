@@ -2,10 +2,12 @@
 #   - market  : 15 dakikada bir  → döviz/altın (truncgil)
 #   - weather : saatlik          → Open-Meteo (11 ilçe + deniz dalga)
 #   - pharmacy: günlük 04:30 UTC (TR 07:30) → nöbetçi eczane
+#   - prayer  : günlük 00:30 UTC (TR 03:30) → namaz vakitleri (Aladhan, Diyanet metodu)
+#   - ferry   : günde 2 kez 03:20+15:20 UTC (TR 06:20/18:20) → GESTAŞ feribot tarifesi
 # Kurulum (repo Settings → Secrets and variables → Actions):
 #   - Secret  CRON_SECRET : .env'deki CRON_SECRET ile aynı değer
 #   - Variable CRM_URL    : https://panel.canakkale.network (sondaki / olmadan)
-# Not: workflow_dispatch elle tetiklemesinde ÜÇ iş de koşar (test için).
+# Not: workflow_dispatch elle tetiklemesinde TÜM işler koşar (test için).
 name: Şehir Panosu Verisi
 
 on:
@@ -13,6 +15,8 @@ on:
     - cron: '*/15 * * * *' # market
     - cron: '0 * * * *' # weather (saatlik)
     - cron: '30 4 * * *' # pharmacy (TR 07:30)
+    - cron: '30 0 * * *' # prayer (TR 03:30 — UTC ve TR takvim günü aynıyken)
+    - cron: '20 3,15 * * *' # ferry (TR 06:20 ve 18:20)
   workflow_dispatch: {}
 
 jobs:
@@ -48,3 +52,25 @@ jobs:
             --max-time 90 \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "${{ vars.CRM_URL }}/api/cron/pharmacy" || echo "pharmacy atlandı/başarısız"
+
+  prayer:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 0 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Namaz vakitleri güncelle
+        run: |
+          curl -fsS -X POST \
+            --max-time 30 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/prayer" || echo "prayer atlandı/başarısız"
+
+  ferry:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '20 3,15 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Feribot tarifesi güncelle (GESTAŞ)
+        run: |
+          curl -fsS -X POST \
+            --max-time 90 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.CRM_URL }}/api/cron/ferry" || echo "ferry atlandı/başarısız"

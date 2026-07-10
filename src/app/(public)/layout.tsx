@@ -78,7 +78,33 @@ type LayoutData = {
   settings: SiteSettings;
   navCategories: NavCategory[];
   ticker: TickerItem[];
+  /** breaking: kızıl SON DAKİKA · gundem: nötr GÜNDEM (24 saatte son dakika yoksa fallback) */
+  tickerMode: 'breaking' | 'gundem';
 };
+
+// Şerit sorgularının ortak select'i
+const TICKER_SELECT = {
+  slug: true,
+  title: true,
+  publishedAt: true,
+  category: { select: { color: true } },
+} as const;
+
+type TickerRow = {
+  slug: string;
+  title: string;
+  publishedAt: Date | null;
+  category: { color: string | null } | null;
+};
+
+function toTickerItem(b: TickerRow): TickerItem {
+  return {
+    slug: b.slug,
+    title: b.title,
+    timeAgo: b.publishedAt ? timeAgoTr(b.publishedAt) : '',
+    color: b.category?.color ?? undefined,
+  };
+}
 
 async function getLayoutData(): Promise<LayoutData> {
   try {
@@ -92,6 +118,7 @@ async function getLayoutData(): Promise<LayoutData> {
     ]);
 
     let ticker: TickerItem[] = [];
+    let tickerMode: 'breaking' | 'gundem' = 'breaking';
     if (settings.tickerEnabled) {
       const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const breaking = await prisma.siteArticle.findMany({
@@ -103,14 +130,21 @@ async function getLayoutData(): Promise<LayoutData> {
         },
         orderBy: { publishedAt: 'desc' },
         take: 10,
-        select: { slug: true, title: true, publishedAt: true, category: { select: { color: true } } },
+        select: TICKER_SELECT,
       });
-      ticker = breaking.map(b => ({
-        slug: b.slug,
-        title: b.title,
-        timeAgo: b.publishedAt ? timeAgoTr(b.publishedAt) : '',
-        color: b.category?.color ?? undefined,
-      }));
+      if (breaking.length > 0) {
+        ticker = breaking.map(toTickerItem);
+      } else {
+        // Son 24 saatte son dakika yok → şerit boş kalmasın: en yeni 8 haber "GÜNDEM" olarak akar
+        tickerMode = 'gundem';
+        const newest = await prisma.siteArticle.findMany({
+          where: { status: 'published', deletedAt: null },
+          orderBy: { publishedAt: { sort: 'desc', nulls: 'last' } },
+          take: 8,
+          select: TICKER_SELECT,
+        });
+        ticker = newest.map(toTickerItem);
+      }
     }
 
     const navCategories: NavCategory[] = (cats.length > 0 ? cats : DEFAULT_CATEGORIES).map(c => ({
@@ -118,19 +152,20 @@ async function getLayoutData(): Promise<LayoutData> {
       name: c.name,
     }));
 
-    return { settings, navCategories, ticker };
+    return { settings, navCategories, ticker, tickerMode };
   } catch {
     // DB erişilemese bile site iskeleti ayakta kalsın
     return {
       settings: DEFAULT_SITE_SETTINGS,
       navCategories: DEFAULT_CATEGORIES.map(c => ({ slug: c.slug, name: c.name })),
       ticker: [],
+      tickerMode: 'breaking',
     };
   }
 }
 
 export default async function PublicSiteLayout({ children }: { children: React.ReactNode }) {
-  const { settings, navCategories, ticker } = await getLayoutData();
+  const { settings, navCategories, ticker, tickerMode } = await getLayoutData();
 
   return (
     <html
@@ -149,10 +184,15 @@ export default async function PublicSiteLayout({ children }: { children: React.R
           <a href="#icerik" className="skip-link">
             İçeriğe atla
           </a>
-          {/* Acil durum bandı (deprem vb.) — en üstte, BreakingTicker'dan ÖNCE. active değilse null. */}
+          {/* Kabuk sırası: EmergencyBanner → SiteHeader → BreakingTicker → CityBar → main.
+              Acil durum bandı (deprem vb.) en üstte; active değilse null. */}
           <EmergencyBanner />
-          {settings.tickerEnabled && <BreakingTicker items={ticker} />}
-          <SiteHeader categories={navCategories} />
+          <SiteHeader
+            categories={navCategories}
+            logoDark={settings.logoHeaderDark}
+            logoLight={settings.logoHeaderLight}
+          />
+          {settings.tickerEnabled && <BreakingTicker items={ticker} mode={tickerMode} />}
           <CityBar />
           <main id="icerik">{children}</main>
           <SiteFooter settings={settings} />
