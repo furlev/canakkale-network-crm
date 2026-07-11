@@ -1,6 +1,17 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
+/**
+ * GÜVENLİK + DOĞRULUK: Panel tamamen oturum-ardı ve kullanıcıya özeldir; hiçbir
+ * sayfası statik prerender edilip CDN'de public önbelleğe ALINMAMALIDIR.
+ * Aksi halde (yaşanan olay) dashboard kökü `/` boş statik kabuk olarak
+ * `Cache-Control: s-maxage=31536000` ile CDN'e düşüyor, oturumsuz ziyaretçiye
+ * 204 boş yanıt servis ediliyor (proxy'deki /login yönlendirmesi baypas ediliyor)
+ * ve "linke girince hiçbir şey olmuyor" hatası oluşuyor. force-dynamic tüm panel
+ * alt ağacını istek-başına render'a zorlar → yanıtlar private/no-store, CDN cache'lemez.
+ */
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'Çanakkale Network CRM',
   description: 'canakkale.network haber sitesi için profesyonel CRM ve proje yönetim sistemi',
